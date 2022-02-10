@@ -7,6 +7,8 @@
 USTRUCT()
 struct CLIENTPREDICTION_API FPhysicsState {
 
+	static constexpr uint32 kInvalidFrame = -1;
+	
 	GENERATED_BODY()
 	
 	Chaos::FVec3 Location;
@@ -14,7 +16,7 @@ struct CLIENTPREDICTION_API FPhysicsState {
 	Chaos::FVec3 LinearVelocity;
 	Chaos::FVec3 AngularVelocity;
 	
-	uint32 FrameNumber = 0;
+	uint32 FrameNumber = kInvalidFrame;
 
 	FPhysicsState() = default;
 	explicit FPhysicsState(Chaos::FRigidBodyHandle_Internal* BodyHandle_Internal, uint32 FrameNumber) {
@@ -47,6 +49,13 @@ struct CLIENTPREDICTION_API FPhysicsState {
 
 		bOutSuccess = true;
 		return true;
+	}
+	
+	bool operator ==(const FPhysicsState& Other) const {
+		return Location.Equals(Other.Location, 0.2)
+			&& Rotation.Equals(Other.Rotation, 0.2)
+			&& LinearVelocity.Equals(Other.LinearVelocity, 0.2)
+			&& AngularVelocity.Equals(Other.AngularVelocity, 0.2);
 	}
 	
 };

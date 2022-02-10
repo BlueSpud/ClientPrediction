@@ -4,21 +4,29 @@
 
 #include "PhysicsState.h"
 
-#include "PhysicsComponent.generated.h"
+#include "ClientPredictionPhysicsComponent.generated.h"
 
-UCLASS(BlueprintType)
-class CLIENTPREDICTION_API UPhysicsComponent : public UActorComponent {
+UCLASS( ClassGroup=(ClientPrediction), meta=(BlueprintSpawnableComponent) )
+class CLIENTPREDICTION_API UClientPredictionPhysicsComponent : public UActorComponent {
 
 	GENERATED_BODY()
 
 public:
 
+	UClientPredictionPhysicsComponent();
+
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
 	/** The number of frames before the client will send an update to the server. */
 	UPROPERTY(EditAnywhere)
 	uint32 SyncFrames = 5;
 
-	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	/** The desired number of frames ahead that the client should be */
+	UPROPERTY(EditAnywhere)
+	uint32 ClientForwardPredictionFrames = 5;
 	
 protected:
 	virtual void OnRegister() override;
@@ -29,19 +37,26 @@ private:
 	void OnPhysicsAdvancedAutonomousProxy();
 	void OnPhysicsAdvancedAuthority();
 
-	UFUNCTION(Client, Unreliable)
+	void Rewind(FPhysicsState& State, Chaos::FRigidBodyHandle_Internal* Handle);
+	void ForceSimulate(uint32 Frames);
+	
+	UFUNCTION(NetMulticast, Unreliable)
 	void RecvServerState(FPhysicsState State);
 
 private:
-
-	static constexpr uint32 kInvalidFrame = -1;
 	
 	/**
 	 * If this object belongs to a client, the last acknowledged frame from the server.
 	 * At this frame the client was identical to the server. 
 	 */
-	uint32 AckedServerFrame = kInvalidFrame;
+	uint32 AckedServerFrame = FPhysicsState::kInvalidFrame;
 	uint32 NextLocalFrame = 0;
+
+	/**
+	 * Resimulations are queued from the physics thread, so we cannot block on the resimulation (otherwise deadlock).
+	 * This keeps track of how many frames are queued for resimulation.
+	 */
+	uint32 ForceSimulationFrames = 0;
 
 	/**
 	 * The timestep for each frame. It is expected that this is always constant and the server and client
@@ -58,6 +73,10 @@ private:
 	 * from the server and be read from the physics thread.
 	 */
 	std::atomic<FPhysicsState> LastServerState;
+
+	/** RPC's cannot be called on the physics thread. This is the queued states to send to the client from the main thread. */
+	TQueue<FPhysicsState> QueuedClientSendState;
+	
 	FDelegateHandle OnPhysicsAdvancedDelegate;
 	
 	UPROPERTY()
