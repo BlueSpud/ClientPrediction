@@ -1,25 +1,23 @@
 ﻿#pragma once
+
 #include "PhysicsProxy/SingleParticlePhysicsProxy.h"
+
+#include "PhysicsState.generated.h"
 
 USTRUCT()
 struct CLIENTPREDICTION_API FPhysicsState {
 
-	UPROPERTY()
+	GENERATED_BODY()
+	
 	Chaos::FVec3 Location;
-
-	UPROPERTY()
 	Chaos::FRotation3 Rotation;
-
-	UPROPERTY()
 	Chaos::FVec3 LinearVelocity;
-
-	UPROPERTY()
 	Chaos::FVec3 AngularVelocity;
-
-	UPROPERTY()
+	
 	uint32 FrameNumber = 0;
 
-	explicit FPhysicsState(Chaos::FRigidBodyHandle_Internal* BodyHandle_Internal) {
+	FPhysicsState() = default;
+	explicit FPhysicsState(Chaos::FRigidBodyHandle_Internal* BodyHandle_Internal, uint32 FrameNumber) {
 		check(BodyHandle_Internal);
 		check(BodyHandle_Internal->CanTreatAsKinematic());
 		
@@ -27,6 +25,8 @@ struct CLIENTPREDICTION_API FPhysicsState {
 		Rotation = BodyHandle_Internal->R();
 		LinearVelocity = BodyHandle_Internal->V();
 		AngularVelocity = BodyHandle_Internal->W();
+		
+		this->FrameNumber = FrameNumber;
 	}
 
 	void Rewind(Chaos::FRigidBodyHandle_Internal* BodyHandle_Internal) const {
@@ -37,5 +37,25 @@ struct CLIENTPREDICTION_API FPhysicsState {
 		BodyHandle_Internal->SetV(LinearVelocity);
 		BodyHandle_Internal->SetW(AngularVelocity);
 	}
+
+	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess) {
+		Ar << Location;
+		Ar << Rotation;
+		Ar << LinearVelocity;
+		Ar << AngularVelocity;
+		Ar << FrameNumber;
+
+		bOutSuccess = true;
+		return true;
+	}
 	
+};
+
+template<>
+struct TStructOpsTypeTraits<FPhysicsState> : public TStructOpsTypeTraitsBase2<FPhysicsState>
+{
+	enum
+	{
+		WithNetSerializer = true
+	};
 };
