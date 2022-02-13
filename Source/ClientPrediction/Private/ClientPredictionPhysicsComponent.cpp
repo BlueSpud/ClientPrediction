@@ -1,6 +1,5 @@
 ﻿#include "ClientPredictionPhysicsComponent.h"
 
-#include "ClientPrediction.h"
 #include "PBDRigidsSolver.h"
 
 UClientPredictionPhysicsComponent::UClientPredictionPhysicsComponent() {
@@ -15,6 +14,7 @@ void UClientPredictionPhysicsComponent::BeginPlay() {
 	
 	Chaos::FPhysicsSolver* Solver = GetWorld()->GetPhysicsScene()->GetSolver();
 	OnPhysicsAdvancedDelegate = Solver->AddPostAdvanceCallback(FSolverPostAdvance::FDelegate::CreateUObject(this, &UClientPredictionPhysicsComponent::OnPhysicsAdvanced));
+	PrePhysicsAdvancedDelegate = Solver->AddPreAdvanceCallback(FSolverPostAdvance::FDelegate::CreateUObject(this, &UClientPredictionPhysicsComponent::PrePhysicsAdvance));
 }
 
 void UClientPredictionPhysicsComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
@@ -27,11 +27,20 @@ void UClientPredictionPhysicsComponent::EndPlay(const EEndPlayReason::Type EndPl
 void UClientPredictionPhysicsComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	// Send states to the client
 	while (!QueuedClientSendState.IsEmpty()) {
 		FPhysicsState State;
 		QueuedClientSendState.Dequeue(State);
 		
 		RecvServerState(State);
+	}
+
+	// Send 
+	while (!InputBufferSendQueue.IsEmpty()) {
+		FInputPacket Packet;
+		InputBufferSendQueue.Dequeue(Packet);
+
+		RecvInputPacket(Packet);
 	}
 }
 
@@ -43,16 +52,50 @@ void UClientPredictionPhysicsComponent::OnRegister() {
 	check(UpdatedComponent);
 }
 
-void UClientPredictionPhysicsComponent::OnPhysicsAdvanced(float Dt) {
+void UClientPredictionPhysicsComponent::PrePhysicsAdvance(Chaos::FReal Dt) {
 	if (!Timestep) {
 		Timestep = Dt;
 	} else {
 		// It's expected that the timestep is always constant
 		checkSlow(Timestep == Dt);
 	}
+	
+	// TODO make this work with roles
+	if (GetOwner()->HasAuthority()) {
+		PrePhysicsAdvanceAuthority();
+	} else {
+		PrePhysicsAdvanceAutonomousProxy();
+	}
+}
 
-	const ENetRole OwnerRole = GetOwnerRole();
+void UClientPredictionPhysicsComponent::PrePhysicsAdvanceAutonomousProxy() {
+	// TODO generate input
+	if (ForceSimulationFrames == 0) {
+		FInputPacket Packet(NextInputPacket++);
+		InputBuffer.QueueInputClient(Packet);
+		InputBufferSendQueue.Enqueue(Packet);
+	}
+
+	// Apply input
+	FInputPacket Input;
+	InputBuffer.ConsumeInputClient(Input);
+	CurrentInputPacket = Input.PacketNumber;
+	
+}
+
+void UClientPredictionPhysicsComponent::PrePhysicsAdvanceAuthority() {
+	if (InputBuffer.ServerBufferSize() > 3) {
+		FInputPacket CurrentPacket;
+		InputBuffer.ConsumeInputServer(CurrentPacket);
+		CurrentInputPacket = CurrentPacket.PacketNumber;
+	}
+
+	// Apply input
+}
+
+void UClientPredictionPhysicsComponent::OnPhysicsAdvanced(Chaos::FReal Dt) {
 	// TODO make this work
+	// const ENetRole OwnerRole = GetOwnerRole();
 	// switch (OwnerRole) {
 	// case ENetRole::ROLE_Authority:
 	// 	OnPhysicsAdvancedAuthority();
@@ -81,7 +124,7 @@ void UClientPredictionPhysicsComponent::OnPhysicsAdvancedAuthority() {
 	
 	if (NextLocalFrame % SyncFrames) {
 		if (Handle) {
-			QueuedClientSendState.Enqueue(FPhysicsState(Handle, NextLocalFrame));
+			QueuedClientSendState.Enqueue(FPhysicsState(Handle, NextLocalFrame, CurrentInputPacket));
 		}
 	}
 
@@ -94,8 +137,9 @@ void UClientPredictionPhysicsComponent::OnPhysicsAdvancedAutonomousProxy() {
 	if (!Handle) {
 		return;
 	}
-	
-	FPhysicsState CurrentState(Handle, NextLocalFrame++);
+
+	// Subtract one since 1 - next is the current
+	FPhysicsState CurrentState(Handle, NextLocalFrame++, CurrentInputPacket);
 	ClientHistory.Enqueue(CurrentState);
 
 	// If there are frames that are being used to fast-forward/resimulate no logic needs to be performed
@@ -118,11 +162,11 @@ void UClientPredictionPhysicsComponent::OnPhysicsAdvancedAutonomousProxy() {
 		// Last state received from the server was already acknowledged
 		return;
 	}
-
-	UE_LOG(LogTemp, Log, TEXT("Processing frame %i from the server"), LocalLastServerState.FrameNumber);
+	
 	if (LocalLastServerState.FrameNumber > CurrentState.FrameNumber) {
 		// Server is ahead of the client. The client should just chuck out everything and resimulate
 		Rewind(LocalLastServerState, Handle);
+		InputBuffer.FastForward(LocalLastServerState.InputPacketNumber);
 		UE_LOG(LogTemp, Warning, TEXT("Client was behind server. Jumping to frame %i and resimulating"), LocalLastServerState.FrameNumber);
 		
 		ForceSimulate(ClientForwardPredictionFrames);
@@ -144,10 +188,12 @@ void UClientPredictionPhysicsComponent::OnPhysicsAdvancedAutonomousProxy() {
 		if (HistoricState == LocalLastServerState) {
 			// Server state and historic state matched, simulation was good up to LocalServerState.FrameNumber
 			AckedServerFrame = LocalLastServerState.FrameNumber;
-			UE_LOG(LogTemp, Log, TEXT("Acked up to %i"), AckedServerFrame);
+			InputBuffer.Ack(LocalLastServerState.InputPacketNumber);
+			UE_LOG(LogTemp, Log, TEXT("Acked up to %i, input packet %i"), AckedServerFrame, LocalLastServerState.InputPacketNumber);
 		} else {
 			// Server/client mismatch. Resimulate the client
 			Rewind(LocalLastServerState, Handle);
+			InputBuffer.Rewind(LocalLastServerState.InputPacketNumber);
 			UE_LOG(LogTemp, Warning, TEXT("Rewinding and resimulating from %i"), LocalLastServerState.FrameNumber);
 			
 			// TODO simulate back to the present, not just the distance from the server
@@ -165,6 +211,8 @@ void UClientPredictionPhysicsComponent::Rewind(FPhysicsState& State, Chaos::FRig
 	
 	// Add here because the body is at State.FrameNumber so the next frame will be State.FrameNumber + 1
 	NextLocalFrame = State.FrameNumber + 1;
+	
+	CurrentInputPacket = State.InputPacketNumber;
 }
 
 void UClientPredictionPhysicsComponent::ForceSimulate(uint32 Frames) {
@@ -178,4 +226,10 @@ void UClientPredictionPhysicsComponent::ForceSimulate(uint32 Frames) {
 	}
 }
 
-void UClientPredictionPhysicsComponent::RecvServerState_Implementation(FPhysicsState State) { LastServerState = State; }
+void UClientPredictionPhysicsComponent::RecvInputPacket_Implementation(FInputPacket Packet) { InputBuffer.QueueInputServer(Packet); }
+void UClientPredictionPhysicsComponent::RecvServerState_Implementation(FPhysicsState State) {
+	FPhysicsState LocalLastServerState = LastServerState;
+	if (LocalLastServerState.FrameNumber == FPhysicsState::kInvalidFrame || State.FrameNumber > LocalLastServerState.FrameNumber) {
+		LastServerState = State;
+	}
+}

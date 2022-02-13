@@ -17,9 +17,10 @@ struct CLIENTPREDICTION_API FPhysicsState {
 	Chaos::FVec3 AngularVelocity;
 	
 	uint32 FrameNumber = kInvalidFrame;
+	uint32 InputPacketNumber = kInvalidFrame;
 
 	FPhysicsState() = default;
-	explicit FPhysicsState(Chaos::FRigidBodyHandle_Internal* BodyHandle_Internal, uint32 FrameNumber) {
+	explicit FPhysicsState(Chaos::FRigidBodyHandle_Internal* BodyHandle_Internal, uint32 FrameNumber, uint32 InputPacketNumber) {
 		check(BodyHandle_Internal);
 		check(BodyHandle_Internal->CanTreatAsKinematic());
 		
@@ -29,6 +30,7 @@ struct CLIENTPREDICTION_API FPhysicsState {
 		AngularVelocity = BodyHandle_Internal->W();
 		
 		this->FrameNumber = FrameNumber;
+		this->InputPacketNumber = InputPacketNumber;
 	}
 
 	void Rewind(Chaos::FRigidBodyHandle_Internal* BodyHandle_Internal) const {
@@ -46,6 +48,7 @@ struct CLIENTPREDICTION_API FPhysicsState {
 		Ar << LinearVelocity;
 		Ar << AngularVelocity;
 		Ar << FrameNumber;
+		Ar << InputPacketNumber;
 
 		bOutSuccess = true;
 		return true;
@@ -55,7 +58,8 @@ struct CLIENTPREDICTION_API FPhysicsState {
 		return Location.Equals(Other.Location, 0.2)
 			&& Rotation.Equals(Other.Rotation, 0.2)
 			&& LinearVelocity.Equals(Other.LinearVelocity, 0.2)
-			&& AngularVelocity.Equals(Other.AngularVelocity, 0.2);
+			&& AngularVelocity.Equals(Other.AngularVelocity, 0.2)
+			&& InputPacketNumber == Other.InputPacketNumber;
 	}
 	
 };

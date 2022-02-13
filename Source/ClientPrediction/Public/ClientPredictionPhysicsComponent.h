@@ -2,6 +2,7 @@
 
 #include <atomic>
 
+#include "Input.h"
 #include "PhysicsState.h"
 
 #include "ClientPredictionPhysicsComponent.generated.h"
@@ -33,7 +34,11 @@ protected:
 
 private:
 
-	void OnPhysicsAdvanced(float Dt);
+	void PrePhysicsAdvance(Chaos::FReal Dt);
+	void PrePhysicsAdvanceAutonomousProxy();
+	void PrePhysicsAdvanceAuthority();
+	
+	void OnPhysicsAdvanced(Chaos::FReal Dt);
 	void OnPhysicsAdvancedAutonomousProxy();
 	void OnPhysicsAdvancedAuthority();
 
@@ -43,6 +48,10 @@ private:
 	UFUNCTION(NetMulticast, Unreliable)
 	void RecvServerState(FPhysicsState State);
 
+	UFUNCTION(Server, Unreliable)
+	void RecvInputPacket(FInputPacket Packet);
+
+
 private:
 	
 	/**
@@ -50,7 +59,14 @@ private:
 	 * At this frame the client was identical to the server. 
 	 */
 	uint32 AckedServerFrame = FPhysicsState::kInvalidFrame;
+	
 	uint32 NextLocalFrame = 0;
+
+	/** Client index for the next input packet number */
+	uint32 NextInputPacket = 0;
+
+	/** Input packet used for the current frame */
+	uint32 CurrentInputPacket = FPhysicsState::kInvalidFrame;
 
 	/**
 	 * Resimulations are queued from the physics thread, so we cannot block on the resimulation (otherwise deadlock).
@@ -74,9 +90,15 @@ private:
 	 */
 	std::atomic<FPhysicsState> LastServerState;
 
-	/** RPC's cannot be called on the physics thread. This is the queued states to send to the client from the main thread. */
+	/** RPC's cannot be called on the physics thread. This is the queued states to send to the client from the game thread. */
 	TQueue<FPhysicsState> QueuedClientSendState;
+
+	FInputBuffer InputBuffer;
 	
+	/** The inputs to send to the server (sending must be called from the game thread). */
+	TQueue<FInputPacket> InputBufferSendQueue;
+
+	FDelegateHandle PrePhysicsAdvancedDelegate;
 	FDelegateHandle OnPhysicsAdvancedDelegate;
 	
 	UPROPERTY()
