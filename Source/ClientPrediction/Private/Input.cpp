@@ -46,12 +46,12 @@ void FInputBuffer::Ack(uint32 PacketNumber) {
 	}
 }
 
-size_t FInputBuffer::ClientBufferSize() {
+uint32 FInputBuffer::ClientBufferSize() {
 	std::lock_guard<std::mutex> Lock(ClientMutex);
 	return ClientFrontBufferSize;
 }
 
-size_t FInputBuffer::ServerBufferSize() {
+uint32 FInputBuffer::ServerBufferSize() {
 	std::lock_guard<std::mutex> Lock(ServerMutex);
 	return ServerBuffer.Num();
 }

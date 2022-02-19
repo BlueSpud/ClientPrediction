@@ -60,18 +60,25 @@ void UClientPredictionPhysicsComponent::PrePhysicsAdvance(Chaos::FReal Dt) {
 		checkSlow(Timestep == Dt);
 	}
 	
-	// TODO make this work with roles
-	if (GetOwner()->HasAuthority()) {
+	// TODO make this work better
+	const ENetRole OwnerRole = GetOwnerRole();
+	switch (OwnerRole) {
+	case ENetRole::ROLE_Authority:
 		PrePhysicsAdvanceAuthority();
-	} else {
+		break;
+	case ENetRole::ROLE_AutonomousProxy:
 		PrePhysicsAdvanceAutonomousProxy();
+		break;
+	default:
+		return;
 	}
 }
 
 void UClientPredictionPhysicsComponent::PrePhysicsAdvanceAutonomousProxy() {
-	// TODO generate input
 	if (ForceSimulationFrames == 0 || InputBuffer.ClientBufferSize() == 0) {
 		FInputPacket Packet(NextInputPacket++);
+		InputDelegate.ExecuteIfBound(Packet);
+		
 		InputBuffer.QueueInputClient(Packet);
 		InputBufferSendQueue.Enqueue(Packet);
 	}
@@ -80,35 +87,40 @@ void UClientPredictionPhysicsComponent::PrePhysicsAdvanceAutonomousProxy() {
 	FInputPacket Input;
 	check(InputBuffer.ConsumeInputClient(Input));
 	CurrentInputPacket = Input.PacketNumber;
+
+	if (Input.bIsApplyingForce) {
+		FBodyInstance* Body = UpdatedComponent->GetBodyInstance();
+		Chaos::FRigidBodyHandle_Internal* Handle = Body->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
+		Handle->AddForce(Chaos::FVec3(0.0, 0.0, 1000000.0));
+	}
 }
 
 void UClientPredictionPhysicsComponent::PrePhysicsAdvanceAuthority() {
 	if (CurrentInputPacket != FPhysicsState::kInvalidFrame || InputBuffer.ServerBufferSize() > 15) {
-		FInputPacket CurrentPacket;
-		check(InputBuffer.ConsumeInputServer(CurrentPacket));
-		CurrentInputPacket = CurrentPacket.PacketNumber;
-	}
+		FInputPacket Input;
+		check(InputBuffer.ConsumeInputServer(Input));
+		CurrentInputPacket = Input.PacketNumber;
 
-	// Apply input
+		if (Input.bIsApplyingForce) {
+			FBodyInstance* Body = UpdatedComponent->GetBodyInstance();
+			Chaos::FRigidBodyHandle_Internal* Handle = Body->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
+			Handle->AddForce(Chaos::FVec3(0.0, 0.0, 1000000.0));
+		}
+	}
 }
 
 void UClientPredictionPhysicsComponent::OnPhysicsAdvanced(Chaos::FReal Dt) {
-	// TODO make this work
-	// const ENetRole OwnerRole = GetOwnerRole();
-	// switch (OwnerRole) {
-	// case ENetRole::ROLE_Authority:
-	// 	OnPhysicsAdvancedAuthority();
-	// 	break;
-	// case ENetRole::ROLE_AutonomousProxy:
-	// 	OnPhysicsAdvancedAutonomousProxy();
-	// 	break;
-	// default:
-	// 	return;
-	// }
-	if (GetOwner()->HasAuthority()) {
+	// TODO make this work better
+	const ENetRole OwnerRole = GetOwnerRole();
+	switch (OwnerRole) {
+	case ENetRole::ROLE_Authority:
 		OnPhysicsAdvancedAuthority();
-	} else {
+		break;
+	case ENetRole::ROLE_AutonomousProxy:
 		OnPhysicsAdvancedAutonomousProxy();
+		break;
+	default:
+		return;
 	}
 }
 
@@ -171,7 +183,7 @@ void UClientPredictionPhysicsComponent::OnPhysicsAdvancedAutonomousProxy() {
 		Rewind(LocalLastServerState, Handle);
 		UE_LOG(LogTemp, Warning, TEXT("Client was behind server. Jumping to frame %i and resimulating"), LocalLastServerState.FrameNumber);
 		
-		ForceSimulate(ClientForwardPredictionFrames);
+		ForceSimulate(FMath::Max(ClientForwardPredictionFrames, InputBuffer.ClientBufferSize()));
 	} else {
 		// Check history against the server state
 		FPhysicsState HistoricState;
@@ -191,14 +203,14 @@ void UClientPredictionPhysicsComponent::OnPhysicsAdvancedAutonomousProxy() {
 			// Server state and historic state matched, simulation was good up to LocalServerState.FrameNumber
 			AckedServerFrame = LocalLastServerState.FrameNumber;
 			InputBuffer.Ack(LocalLastServerState.InputPacketNumber);
-			UE_LOG(LogTemp, Log, TEXT("Acked up to %i, input packet %i"), AckedServerFrame, LocalLastServerState.InputPacketNumber);
+			UE_LOG(LogTemp, Log, TEXT("Acked up to %i, input packet %i. Input buffer had %i elements"), AckedServerFrame, LocalLastServerState.InputPacketNumber, InputBuffer.ClientBufferSize());
 		} else {
 			// Server/client mismatch. Resimulate the client
 			Rewind(LocalLastServerState, Handle);
 			UE_LOG(LogTemp, Error, TEXT("Rewinding and resimulating from frame %i which used input packet %i"), LocalLastServerState.FrameNumber, LocalLastServerState.InputPacketNumber);
 			
 			// TODO simulate back to the present, not just the distance from the server
-			ForceSimulate(ClientForwardPredictionFrames);
+			ForceSimulate(FMath::Max(ClientForwardPredictionFrames, InputBuffer.ClientBufferSize()));
 		}
 		
 	}

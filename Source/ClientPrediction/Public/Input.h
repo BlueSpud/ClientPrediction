@@ -50,8 +50,8 @@ public:
 	void Rewind(uint32 PacketNumber);
 	void Ack(uint32 PacketNumber);
 
-	size_t ClientBufferSize();
-	size_t ServerBufferSize();
+	uint32 ClientBufferSize();
+	uint32 ServerBufferSize();
 
 	void QueueInputServer(const FInputPacket& Packet);
 	void QueueInputClient(const FInputPacket& Packet);

@@ -21,6 +21,8 @@ public:
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
+public:
+	
 	/** The number of frames before the client will send an update to the server. */
 	UPROPERTY(EditAnywhere)
 	uint32 SyncFrames = 5;
@@ -28,6 +30,9 @@ public:
 	/** The desired number of frames ahead that the client should be */
 	UPROPERTY(EditAnywhere)
 	uint32 ClientForwardPredictionFrames = 5;
+
+	DECLARE_DELEGATE_OneParam(FInputProductionDelgate, FInputPacket&)
+	FInputProductionDelgate InputDelegate;
 	
 protected:
 	virtual void OnRegister() override;
