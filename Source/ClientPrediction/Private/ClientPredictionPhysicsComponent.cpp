@@ -70,7 +70,7 @@ void UClientPredictionPhysicsComponent::PrePhysicsAdvance(Chaos::FReal Dt) {
 
 void UClientPredictionPhysicsComponent::PrePhysicsAdvanceAutonomousProxy() {
 	// TODO generate input
-	if (ForceSimulationFrames == 0) {
+	if (ForceSimulationFrames == 0 || InputBuffer.ClientBufferSize() == 0) {
 		FInputPacket Packet(NextInputPacket++);
 		InputBuffer.QueueInputClient(Packet);
 		InputBufferSendQueue.Enqueue(Packet);
@@ -78,15 +78,14 @@ void UClientPredictionPhysicsComponent::PrePhysicsAdvanceAutonomousProxy() {
 
 	// Apply input
 	FInputPacket Input;
-	InputBuffer.ConsumeInputClient(Input);
+	check(InputBuffer.ConsumeInputClient(Input));
 	CurrentInputPacket = Input.PacketNumber;
-	
 }
 
 void UClientPredictionPhysicsComponent::PrePhysicsAdvanceAuthority() {
-	if (InputBuffer.ServerBufferSize() > 3) {
+	if (CurrentInputPacket != FPhysicsState::kInvalidFrame || InputBuffer.ServerBufferSize() > 15) {
 		FInputPacket CurrentPacket;
-		InputBuffer.ConsumeInputServer(CurrentPacket);
+		check(InputBuffer.ConsumeInputServer(CurrentPacket));
 		CurrentInputPacket = CurrentPacket.PacketNumber;
 	}
 
@@ -137,13 +136,12 @@ void UClientPredictionPhysicsComponent::OnPhysicsAdvancedAutonomousProxy() {
 	if (!Handle) {
 		return;
 	}
-
-	// Subtract one since 1 - next is the current
+	
 	FPhysicsState CurrentState(Handle, NextLocalFrame++, CurrentInputPacket);
 	ClientHistory.Enqueue(CurrentState);
 
 	// If there are frames that are being used to fast-forward/resimulate no logic needs to be performed
-	// for them/
+	// for them
 	if (ForceSimulationFrames) {
 		GetWorld()->GetPhysicsScene()->GetSolver()->UpdateGameThreadStructures();
 		
@@ -162,11 +160,15 @@ void UClientPredictionPhysicsComponent::OnPhysicsAdvancedAutonomousProxy() {
 		// Last state received from the server was already acknowledged
 		return;
 	}
+
+	if (LocalLastServerState.InputPacketNumber == FPhysicsState::kInvalidFrame) {
+		// Server has not started to consume input, ignore it since the client has been applying input since frame 0
+		return;
+	}
 	
 	if (LocalLastServerState.FrameNumber > CurrentState.FrameNumber) {
 		// Server is ahead of the client. The client should just chuck out everything and resimulate
 		Rewind(LocalLastServerState, Handle);
-		InputBuffer.FastForward(LocalLastServerState.InputPacketNumber);
 		UE_LOG(LogTemp, Warning, TEXT("Client was behind server. Jumping to frame %i and resimulating"), LocalLastServerState.FrameNumber);
 		
 		ForceSimulate(ClientForwardPredictionFrames);
@@ -193,8 +195,7 @@ void UClientPredictionPhysicsComponent::OnPhysicsAdvancedAutonomousProxy() {
 		} else {
 			// Server/client mismatch. Resimulate the client
 			Rewind(LocalLastServerState, Handle);
-			InputBuffer.Rewind(LocalLastServerState.InputPacketNumber);
-			UE_LOG(LogTemp, Warning, TEXT("Rewinding and resimulating from %i"), LocalLastServerState.FrameNumber);
+			UE_LOG(LogTemp, Error, TEXT("Rewinding and resimulating from frame %i which used input packet %i"), LocalLastServerState.FrameNumber, LocalLastServerState.InputPacketNumber);
 			
 			// TODO simulate back to the present, not just the distance from the server
 			ForceSimulate(ClientForwardPredictionFrames);
@@ -211,7 +212,8 @@ void UClientPredictionPhysicsComponent::Rewind(FPhysicsState& State, Chaos::FRig
 	
 	// Add here because the body is at State.FrameNumber so the next frame will be State.FrameNumber + 1
 	NextLocalFrame = State.FrameNumber + 1;
-	
+
+	InputBuffer.Rewind(State.InputPacketNumber);
 	CurrentInputPacket = State.InputPacketNumber;
 }
 

@@ -32,10 +32,6 @@ struct CLIENTPREDICTION_API FInputPacket {
 		bOutSuccess = true;
 		return true;
 	}
-
-	bool operator<(const FInputPacket& Other) const {
-		return PacketNumber < Other.PacketNumber;
-	}
 };
 
 template<>
@@ -50,12 +46,11 @@ struct TStructOpsTypeTraits<FInputPacket> : public TStructOpsTypeTraitsBase2<FIn
 class FInputBuffer {
 
 public:
-
+	
 	void Rewind(uint32 PacketNumber);
 	void Ack(uint32 PacketNumber);
-	void FastForward(uint32 PacketNumber);
 
-	size_t ClientFrontBufferIsEmpty();
+	size_t ClientBufferSize();
 	size_t ServerBufferSize();
 
 	void QueueInputServer(const FInputPacket& Packet);
@@ -63,10 +58,6 @@ public:
 	
 	bool ConsumeInputServer(FInputPacket& OutPacket);
 	bool ConsumeInputClient(FInputPacket& OutPacket);
-	
-private:
-
-	void Ack_Internal(uint32 PacketNumber);	
 	
 private:
 
@@ -79,6 +70,8 @@ private:
 	/** The inputs from the server */
 	TArray<FInputPacket> ServerBuffer;
 
+	uint32 ClientFrontBufferSize = 0;
+	
 	std::mutex ServerMutex;
 	std::mutex ClientMutex;
 

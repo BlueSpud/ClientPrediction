@@ -11,6 +11,8 @@ void FInputBuffer::Rewind(uint32 PacketNumber) {
 		BackupFrontBuffer.Enqueue(Packet);
 	}
 
+	ClientFrontBufferSize = 0;
+	
 	// Add all the un-acked packets to the front buffer to be reused
 	while (!BackBuffer.IsEmpty()) {
 		FInputPacket Packet;
@@ -18,6 +20,7 @@ void FInputBuffer::Rewind(uint32 PacketNumber) {
 
 		if (Packet.PacketNumber > PacketNumber) {
 			FrontBuffer.Enqueue(Packet);
+			++ClientFrontBufferSize;
 		}
 	}
 
@@ -25,35 +28,27 @@ void FInputBuffer::Rewind(uint32 PacketNumber) {
 	while (!BackupFrontBuffer.IsEmpty()) {
 		FInputPacket Packet;
 		BackupFrontBuffer.Dequeue(Packet);
+		
 		FrontBuffer.Enqueue(Packet);
+		++ClientFrontBufferSize;
 	}
 }
 
 void FInputBuffer::Ack(uint32 PacketNumber) {
 	std::lock_guard<std::mutex> Lock(ClientMutex);
-	Ack_Internal(PacketNumber);
-}
-
-void FInputBuffer::FastForward(uint32 PacketNumber) {
-	std::lock_guard<std::mutex> Lock(ClientMutex);
-
-	// Clear the back buffer up to the packet
-	Ack_Internal(PacketNumber);
-	
-	while (!FrontBuffer.IsEmpty()) {
-		if (FrontBuffer.Peek()->PacketNumber > PacketNumber) {
+	while (!BackBuffer.IsEmpty()) {
+		if (BackBuffer.Peek()->PacketNumber > PacketNumber) {
 			break;
 		}
 
 		FInputPacket PoppedPacket;
-		FrontBuffer.Dequeue(PoppedPacket);
+		BackBuffer.Dequeue(PoppedPacket);
 	}
 }
 
-size_t FInputBuffer::ClientFrontBufferIsEmpty() {
+size_t FInputBuffer::ClientBufferSize() {
 	std::lock_guard<std::mutex> Lock(ClientMutex);
-	return FrontBuffer.IsEmpty();
-	
+	return ClientFrontBufferSize;
 }
 
 size_t FInputBuffer::ServerBufferSize() {
@@ -64,12 +59,20 @@ size_t FInputBuffer::ServerBufferSize() {
 void FInputBuffer::QueueInputServer(const FInputPacket& Packet) {
 	std::lock_guard<std::mutex> Lock(ServerMutex);
 	ServerBuffer.Add(Packet);
-	ServerBuffer.Sort();
+
+	// Sort the input buffer in case packets have come in out of order
+	//
+	// Pop() on a TArray takes the last element, so we want the input buffer to be sorted from greatest to least.
+	// Then when we take the last element that will be the lowest number (ie next) input packet.
+	ServerBuffer.Sort([](const FInputPacket& First, const FInputPacket& Second) {
+		return First.PacketNumber > Second.PacketNumber;
+	});
 }
 
 void FInputBuffer::QueueInputClient(const FInputPacket& Packet) {
 	std::lock_guard<std::mutex> Lock(ClientMutex);
 	FrontBuffer.Enqueue(Packet);
+	++ClientFrontBufferSize;
 }
 
 bool FInputBuffer::ConsumeInputServer(FInputPacket& OutPacket) {
@@ -90,17 +93,8 @@ bool FInputBuffer::ConsumeInputClient(FInputPacket& OutPacket) {
 	}
 
 	FrontBuffer.Dequeue(OutPacket);
+	--ClientFrontBufferSize;
+	
 	BackBuffer.Enqueue(OutPacket);
 	return true;
-}
-
-void FInputBuffer::Ack_Internal(uint32 PacketNumber) {
-	while (!BackBuffer.IsEmpty()) {
-		if (BackBuffer.Peek()->PacketNumber > PacketNumber) {
-			break;
-		}
-
-		FInputPacket PoppedPacket;
-		BackBuffer.Dequeue(PoppedPacket);
-	}
 }
