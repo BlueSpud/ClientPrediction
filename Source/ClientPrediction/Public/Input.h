@@ -31,6 +31,7 @@ struct CLIENTPREDICTION_API FInputPacket {
 	}
 };
 
+template <typename InputPacket>
 class FInputBuffer {
 
 public:
@@ -38,25 +39,25 @@ public:
 	void Rewind(uint32 PacketNumber);
 	void Ack(uint32 PacketNumber);
 
-	uint32 ClientBufferSize();
-	uint32 ServerBufferSize();
+	uint32 RemoteBufferSize();
+	uint32 AuthorityBufferSize();
 
-	void QueueInputServer(const FInputPacket& Packet);
-	void QueueInputClient(const FInputPacket& Packet);
+	void QueueInputAuthority(const FInputPacket& Packet);
+	void QueueInputRemote(const FInputPacket& Packet);
 	
-	bool ConsumeInputServer(FInputPacket& OutPacket);
-	bool ConsumeInputClient(FInputPacket& OutPacket);
+	bool ConsumeInputAuthority(FInputPacket& OutPacket);
+	bool ConsumeInputRemote(FInputPacket& OutPacket);
 	
 private:
 
 	/** On the client the queued inputs. When rewinding the back buffer is swapped into the front buffer. */
-    TQueue<FInputPacket> FrontBuffer;
+    TQueue<InputPacket> FrontBuffer;
 
 	/** The inputs that have already been used on the client */
-	TQueue<FInputPacket> BackBuffer;
+	TQueue<InputPacket> BackBuffer;
 
 	/** The inputs from the server */
-	TArray<FInputPacket> ServerBuffer;
+	TArray<InputPacket> ServerBuffer;
 
 	uint32 ClientFrontBufferSize = 0;
 	

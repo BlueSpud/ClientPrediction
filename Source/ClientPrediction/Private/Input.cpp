@@ -1,6 +1,7 @@
 ﻿#include "Input.h"
 
-void FInputBuffer::Rewind(uint32 PacketNumber) {
+template <typename InputPacket>
+void FInputBuffer<InputPacket>::Rewind(uint32 PacketNumber) {
 	std::lock_guard<std::mutex> Lock(ClientMutex);
 
 	// TQueue deletes the move / copy constructor so copy the existing frot buffer
@@ -34,7 +35,8 @@ void FInputBuffer::Rewind(uint32 PacketNumber) {
 	}
 }
 
-void FInputBuffer::Ack(uint32 PacketNumber) {
+template <typename InputPacket>
+void FInputBuffer<InputPacket>::Ack(uint32 PacketNumber) {
 	std::lock_guard<std::mutex> Lock(ClientMutex);
 	while (!BackBuffer.IsEmpty()) {
 		if (BackBuffer.Peek()->PacketNumber > PacketNumber) {
@@ -46,17 +48,20 @@ void FInputBuffer::Ack(uint32 PacketNumber) {
 	}
 }
 
-uint32 FInputBuffer::ClientBufferSize() {
+template <typename InputPacket>
+uint32 FInputBuffer<InputPacket>::RemoteBufferSize() {
 	std::lock_guard<std::mutex> Lock(ClientMutex);
 	return ClientFrontBufferSize;
 }
 
-uint32 FInputBuffer::ServerBufferSize() {
+template <typename InputPacket>
+uint32 FInputBuffer<InputPacket>::AuthorityBufferSize() {
 	std::lock_guard<std::mutex> Lock(ServerMutex);
 	return ServerBuffer.Num();
 }
 
-void FInputBuffer::QueueInputServer(const FInputPacket& Packet) {
+template <typename InputPacket>
+void FInputBuffer<InputPacket>::QueueInputAuthority(const FInputPacket& Packet) {
 	std::lock_guard<std::mutex> Lock(ServerMutex);
 	ServerBuffer.Add(Packet);
 
@@ -69,13 +74,15 @@ void FInputBuffer::QueueInputServer(const FInputPacket& Packet) {
 	});
 }
 
-void FInputBuffer::QueueInputClient(const FInputPacket& Packet) {
+template <typename InputPacket>
+void FInputBuffer<InputPacket>::QueueInputRemote(const FInputPacket& Packet) {
 	std::lock_guard<std::mutex> Lock(ClientMutex);
 	FrontBuffer.Enqueue(Packet);
 	++ClientFrontBufferSize;
 }
 
-bool FInputBuffer::ConsumeInputServer(FInputPacket& OutPacket) {
+template <typename InputPacket>
+bool FInputBuffer<InputPacket>::ConsumeInputAuthority(FInputPacket& OutPacket) {
 	std::lock_guard<std::mutex> Lock(ServerMutex);
 	// TODO Make this handle missing packets
 	if (!ServerBuffer.Num()) {
@@ -86,7 +93,8 @@ bool FInputBuffer::ConsumeInputServer(FInputPacket& OutPacket) {
 	return true;
 }
 
-bool FInputBuffer::ConsumeInputClient(FInputPacket& OutPacket) {
+template <typename InputPacket>
+bool FInputBuffer<InputPacket>::ConsumeInputRemote(FInputPacket& OutPacket) {
 	std::lock_guard<std::mutex> Lock(ClientMutex);
 	if (FrontBuffer.IsEmpty()) {
 		return false;

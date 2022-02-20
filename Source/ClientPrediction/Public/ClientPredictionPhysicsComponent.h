@@ -99,7 +99,7 @@ private:
 	/** RPC's cannot be called on the physics thread. This is the queued states to send to the client from the game thread. */
 	TQueue<FPhysicsState> QueuedClientSendState;
 
-	FInputBuffer InputBuffer;
+	FInputBuffer<FInputPacket> InputBuffer;
 	
 	/** The inputs to send to the server (sending must be called from the game thread). */
 	TQueue<FInputPacket> InputBufferSendQueue;
