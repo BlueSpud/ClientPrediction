@@ -22,22 +22,7 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	template <typename ModelType>
-	ModelType* CreateModel() {
-		Model = MakeUnique<ModelType>();
-		Model->ForceSimulate = [&](uint32 Frames) {
-			ForceSimulate(Frames);
-		};
-
-		Model->EmitInputPacket = [&](FNetSerializationProxy& Proxy) {
-			InputBufferSendQueue.Enqueue(Proxy);
-		};
-
-		Model->EmitAuthorityState = [&](FNetSerializationProxy& Proxy) {
-			QueuedClientSendStates.Enqueue(Proxy);
-		};
-
-		return static_cast<ModelType*>(Model.Get());
-	}
+	ModelType* CreateModel();
 	
 public:
 
@@ -88,3 +73,21 @@ private:
 	class UPrimitiveComponent* UpdatedComponent;
 	
 };
+
+template <typename ModelType>
+ModelType* UClientPredictionComponent::CreateModel() {
+	Model = MakeUnique<ModelType>();
+	Model->ForceSimulate = [&](uint32 Frames) {
+		ForceSimulate(Frames);
+	};
+
+	Model->EmitInputPacket = [&](FNetSerializationProxy& Proxy) {
+		InputBufferSendQueue.Enqueue(Proxy);
+	};
+
+	Model->EmitAuthorityState = [&](FNetSerializationProxy& Proxy) {
+		QueuedClientSendStates.Enqueue(Proxy);
+	};
+
+	return static_cast<ModelType*>(Model.Get());
+}

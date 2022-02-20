@@ -56,6 +56,8 @@ void UClientPredictionComponent::OnRegister() {
 }
 
 void UClientPredictionComponent::PrePhysicsAdvance(Chaos::FReal Dt) {
+	check(Model);
+	
 	if (!Timestep) {
 		Timestep = Dt;
 	} else {
@@ -67,6 +69,8 @@ void UClientPredictionComponent::PrePhysicsAdvance(Chaos::FReal Dt) {
 }
 
 void UClientPredictionComponent::OnPhysicsAdvanced(Chaos::FReal Dt) {
+	check(Model);
+	
 	if (ForceSimulationFrames) {
 		GetWorld()->GetPhysicsScene()->GetSolver()->UpdateGameThreadStructures();
 		
@@ -88,8 +92,10 @@ void UClientPredictionComponent::ForceSimulate(uint32 Frames) {
 }
 
 void UClientPredictionComponent::RecvInputPacket_Implementation(FNetSerializationProxy Proxy) {
+	check(Model);
 	Model->ReceiveInputPacket(Proxy);
 }
 void UClientPredictionComponent::RecvServerState_Implementation(FNetSerializationProxy Proxy) {
+	check(Model);
 	Model->ReceiveAuthorityState(Proxy);
 }

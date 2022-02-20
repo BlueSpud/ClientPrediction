@@ -3,8 +3,9 @@
 #include "ClientPredictionNetSerialization.h"
 #include "Input.h"
 
-static constexpr uint32 ClientForwardPredictionFrames = 10;
-static constexpr uint32 SyncFrames = 5;
+static constexpr uint32 kClientForwardPredictionFrames = 10;
+static constexpr uint32 kAuthorityTargetInputBufferSize = 15;
+static constexpr uint32 kSyncFrames = 5;
 static constexpr uint32 kInvalidFrame = -1;
 
 /**
@@ -175,7 +176,7 @@ Rewind(const ModelState& State, UPrimitiveComponent* Component) {
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::PreTickAuthority(Chaos::FReal Dt, bool bIsForcedSimulation,
 UPrimitiveComponent* Component) {
-	if (CurrentInputPacketIdx != kInvalidFrame || InputBuffer.AuthorityBufferSize() > 15) {
+	if (CurrentInputPacketIdx != kInvalidFrame || InputBuffer.AuthorityBufferSize() > kAuthorityTargetInputBufferSize) {
 		check(InputBuffer.ConsumeInputAuthority(CurrentInputPacket));
 		CurrentInputPacketIdx = CurrentInputPacket.PacketNumber;
 	}
@@ -222,7 +223,7 @@ UPrimitiveComponent* Component) {
 	CurrentState.FrameNumber = NextLocalFrame++;
 	CurrentState.InputPacketNumber = CurrentInputPacketIdx;
 
-	if (NextLocalFrame % SyncFrames) {
+	if (NextLocalFrame % kSyncFrames) {
 		EmitAuthorityState.CheckCallable();
 
 		// Capture by value here so that the proxy stores the state with it
@@ -271,7 +272,7 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PostTickRemote(Chaos::F
 		// Server is ahead of the client. The client should just chuck out everything and resimulate
 		Rewind_Internal(LocalLastAuthorityState, Component);
 		UE_LOG(LogTemp, Warning, TEXT("Client was behind server. Jumping to frame %i and resimulating"), LocalLastAuthorityState.FrameNumber);
-		ForceSimulate(FMath::Max(ClientForwardPredictionFrames, InputBuffer.RemoteBufferSize()));
+		ForceSimulate(FMath::Max(kClientForwardPredictionFrames, InputBuffer.RemoteBufferSize()));
 	} else {
 		// Check history against the server state
 		ModelState HistoricState;
@@ -296,7 +297,7 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PostTickRemote(Chaos::F
 			// Server/client mismatch. Resimulate the client
 			Rewind_Internal(LocalLastAuthorityState, Component);
 			UE_LOG(LogTemp, Error, TEXT("Rewinding and resimulating from frame %i which used input packet %i"), LocalLastAuthorityState.FrameNumber, LocalLastAuthorityState.InputPacketNumber);
-			ForceSimulate(FMath::Max(ClientForwardPredictionFrames, InputBuffer.RemoteBufferSize()));
+			ForceSimulate(FMath::Max(kClientForwardPredictionFrames, InputBuffer.RemoteBufferSize()));
 		}
 		
 	}
