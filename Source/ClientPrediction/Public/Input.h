@@ -25,22 +25,10 @@ struct CLIENTPREDICTION_API FInputPacket {
 	/** Temporary test input */
 	bool bIsApplyingForce = false;
 
-	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess) {
+	void NetSerialize(FArchive& Ar) {
 		Ar << bIsApplyingForce;
 		Ar << PacketNumber;
-		
-		bOutSuccess = true;
-		return true;
 	}
-};
-
-template<>
-struct TStructOpsTypeTraits<FInputPacket> : public TStructOpsTypeTraitsBase2<FInputPacket>
-{
-	enum
-	{
-		WithNetSerializer = true
-	};
 };
 
 class FInputBuffer {
@@ -76,3 +64,4 @@ private:
 	std::mutex ClientMutex;
 
 };
+	

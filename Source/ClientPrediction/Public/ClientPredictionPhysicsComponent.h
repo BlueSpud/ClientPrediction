@@ -2,6 +2,7 @@
 
 #include <atomic>
 
+#include "ClientPredictionNetSerialization.h"
 #include "Input.h"
 #include "PhysicsState.h"
 
@@ -50,11 +51,11 @@ private:
 	void Rewind(FPhysicsState& State, Chaos::FRigidBodyHandle_Internal* Handle);
 	void ForceSimulate(uint32 Frames);
 	
-	UFUNCTION(NetMulticast, Unreliable)
+	UFUNCTION(Client, Unreliable)
 	void RecvServerState(FPhysicsState State);
 
 	UFUNCTION(Server, Unreliable)
-	void RecvInputPacket(FInputPacket Packet);
+	void RecvInputPacket(FNetSerializationProxy Proxy);
 
 
 private:

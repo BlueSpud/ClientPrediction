@@ -40,7 +40,12 @@ void UClientPredictionPhysicsComponent::TickComponent(float DeltaTime, ELevelTic
 		FInputPacket Packet;
 		InputBufferSendQueue.Dequeue(Packet);
 
-		RecvInputPacket(Packet);
+		FNetSerializationProxy Proxy;
+		Proxy.NetSerializeFunc = [&](FArchive& Ar) {
+			Packet.NetSerialize(Ar);
+		};
+		
+		RecvInputPacket(Proxy);
 	}
 }
 
@@ -240,7 +245,14 @@ void UClientPredictionPhysicsComponent::ForceSimulate(uint32 Frames) {
 	}
 }
 
-void UClientPredictionPhysicsComponent::RecvInputPacket_Implementation(FInputPacket Packet) { InputBuffer.QueueInputServer(Packet); }
+void UClientPredictionPhysicsComponent::RecvInputPacket_Implementation(FNetSerializationProxy Proxy) {
+	FInputPacket Packet;
+	Proxy.NetSerializeFunc = [&](FArchive& Ar) {
+		Packet.NetSerialize(Ar);
+	};
+
+	InputBuffer.QueueInputServer(Packet);
+}
 void UClientPredictionPhysicsComponent::RecvServerState_Implementation(FPhysicsState State) {
 	FPhysicsState LocalLastServerState = LastServerState;
 	if (LocalLastServerState.FrameNumber == FPhysicsState::kInvalidFrame || State.FrameNumber > LocalLastServerState.FrameNumber) {
