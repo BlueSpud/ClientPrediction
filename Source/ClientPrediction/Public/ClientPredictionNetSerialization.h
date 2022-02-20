@@ -12,6 +12,11 @@ struct FNetSerializationProxy {
 
 	GENERATED_BODY()
 
+	FNetSerializationProxy() = default;
+	FNetSerializationProxy(TFunction<void(FArchive& Ar)> NetSerializeFunc) {
+		this->NetSerializeFunc = NetSerializeFunc;
+	}
+
 	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess) {
 		if (Ar.IsLoading()) {
 			FNetBitReader& BitReader = static_cast<FNetBitReader&>(Ar);

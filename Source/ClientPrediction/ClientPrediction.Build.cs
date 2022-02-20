@@ -26,6 +26,7 @@ public class ClientPrediction : ModuleRules
 			new string[]
 			{
 				"Core",
+				"Chaos"
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);
@@ -36,9 +37,6 @@ public class ClientPrediction : ModuleRules
 			{
 				"CoreUObject",
 				"Engine",
-				"Slate",
-				"SlateCore",
-				"Chaos"
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
