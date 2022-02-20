@@ -40,6 +40,32 @@ public:
 	
 };
 
+/** Wraps a model state to include frame and input packet number */
+template <typename ModelState>
+struct FModelStateWrapper {
+
+	uint32 FrameNumber = kInvalidFrame;
+	uint32 InputPacketNumber = kInvalidFrame;
+	
+	ModelState State;
+
+	void NetSerialize(FArchive& Ar) {
+		Ar << FrameNumber;
+		Ar << InputPacketNumber;
+		
+		State.NetSerialize(Ar);
+	}
+
+	void Rewind(class UPrimitiveComponent* Component) const {
+		State.Rewind(Component);
+	}
+
+	bool operator ==(const FModelStateWrapper<ModelState>& Other) const {
+		return InputPacketNumber == Other.InputPacketNumber
+			&& State == Other.State;
+	}
+};
+
 template <typename InputPacket, typename ModelState>
 class BaseClientPredictionModel : public IClientPredictionModel {
 
@@ -80,7 +106,7 @@ private:
 	
 	void PostTickRemote(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component);
 
-	virtual void Rewind_Internal(const ModelState& State, UPrimitiveComponent* Component);
+	virtual void Rewind_Internal(const FModelStateWrapper<ModelState>& State, UPrimitiveComponent* Component);
 	
 private:
 	
@@ -101,15 +127,15 @@ private:
 	InputPacket CurrentInputPacket;
 	
 	/** On the client this is all of the frames that have not been reconciled with the server. */
-	TQueue<ModelState> ClientHistory;
+	TQueue<FModelStateWrapper<ModelState>> ClientHistory;
 
 	/**
 	 * The last state that was received from the authority.
 	 * We use atomic here because the state will be written to from whatever thread handles receiving the state
 	 * from the authority and be read from the physics thread.
 	 */
-	std::atomic<ModelState> LastAuthorityState;
-	ModelState CurrentState;
+	std::atomic<FModelStateWrapper<ModelState>> LastAuthorityState;
+	FModelStateWrapper<ModelState> CurrentState;
 
 	FInputBuffer<InputPacket> InputBuffer;
 
@@ -158,7 +184,7 @@ void BaseClientPredictionModel<InputPacket, ModelState>::ReceiveInputPacket(FNet
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::ReceiveAuthorityState(FNetSerializationProxy& Proxy) {
-	ModelState State;
+	FModelStateWrapper<ModelState> State;
 	Proxy.NetSerializeFunc = [&State](FArchive& Ar) {
 		State.NetSerialize(Ar);	
 	};
@@ -181,10 +207,10 @@ UPrimitiveComponent* Component) {
 		CurrentInputPacketIdx = CurrentInputPacket.PacketNumber;
 	}
 
-	ModelState LastState = CurrentState;
-	CurrentState = ModelState();
+	ModelState LastState = CurrentState.State;
+	CurrentState = FModelStateWrapper<ModelState>();
 	
-	Simulate(Dt, Component, LastState, CurrentState, CurrentInputPacket);
+	Simulate(Dt, Component, LastState, CurrentState.State, CurrentInputPacket);
 }
 
 template <typename InputPacket, typename ModelState>
@@ -210,16 +236,17 @@ UPrimitiveComponent* Component) {
 	check(InputBuffer.ConsumeInputRemote(CurrentInputPacket));
 	CurrentInputPacketIdx = CurrentInputPacket.PacketNumber;
 	
-	ModelState LastState = CurrentState;
-	CurrentState = ModelState();
+	ModelState LastState = CurrentState.State;
+	CurrentState = FModelStateWrapper<ModelState>();
 
-	Simulate(Dt, Component, LastState, CurrentState, CurrentInputPacket);
+	Simulate(Dt, Component, LastState, CurrentState.State, CurrentInputPacket);
 }
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::PostTickAuthority(Chaos::FReal Dt, bool bIsForcedSimulation,
 UPrimitiveComponent* Component) {
-	PostSimulate(Dt, Component, CurrentState, CurrentInputPacket);
+	PostSimulate(Dt, Component, CurrentState.State, CurrentInputPacket);
+	
 	CurrentState.FrameNumber = NextLocalFrame++;
 	CurrentState.InputPacketNumber = CurrentInputPacketIdx;
 
@@ -227,7 +254,7 @@ UPrimitiveComponent* Component) {
 		EmitAuthorityState.CheckCallable();
 
 		// Capture by value here so that the proxy stores the state with it
-		ModelState LocalCurrentState = CurrentState;
+		FModelStateWrapper<ModelState> LocalCurrentState = CurrentState;
 		FNetSerializationProxy Proxy([=](FArchive& Ar) mutable {
 			LocalCurrentState.NetSerialize(Ar);
 		});
@@ -239,7 +266,7 @@ UPrimitiveComponent* Component) {
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::PostTickRemote(Chaos::FReal Dt, bool bIsForcedSimulation,
 	UPrimitiveComponent* Component) {
-	PostSimulate(Dt, Component, CurrentState, CurrentInputPacket);
+	PostSimulate(Dt, Component, CurrentState.State, CurrentInputPacket);
 	
 	CurrentState.FrameNumber = NextLocalFrame++;
 	CurrentState.InputPacketNumber = CurrentInputPacketIdx;
@@ -251,7 +278,7 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PostTickRemote(Chaos::F
 		return;
 	}
 	
-	ModelState LocalLastAuthorityState = LastAuthorityState;
+	FModelStateWrapper<ModelState> LocalLastAuthorityState = LastAuthorityState;
 	
 	if (LocalLastAuthorityState.FrameNumber == kInvalidFrame) {
 		// Never received a frame from the server
@@ -275,7 +302,7 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PostTickRemote(Chaos::F
 		ForceSimulate(FMath::Max(kClientForwardPredictionFrames, InputBuffer.RemoteBufferSize()));
 	} else {
 		// Check history against the server state
-		ModelState HistoricState;
+		FModelStateWrapper<ModelState> HistoricState;
 		bool bFound = false;
 		
 		while (!ClientHistory.IsEmpty()) {
@@ -304,7 +331,7 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PostTickRemote(Chaos::F
 }
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::Rewind_Internal(const ModelState& State,
+void BaseClientPredictionModel<InputPacket, ModelState>::Rewind_Internal(const FModelStateWrapper<ModelState>& State,
 UPrimitiveComponent* Component) {
 
 	ClientHistory.Empty();
@@ -316,5 +343,5 @@ UPrimitiveComponent* Component) {
 	InputBuffer.Rewind(State.InputPacketNumber);
 	CurrentInputPacketIdx = State.InputPacketNumber;
 
-	Rewind(State, Component);
+	Rewind(State.State, Component);
 }

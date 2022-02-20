@@ -5,17 +5,11 @@
 
 template <typename ModelState>
 struct FPhysicsStateWrapper {
-
-	uint32 FrameNumber = kInvalidFrame;
-	uint32 InputPacketNumber = kInvalidFrame;
 	
 	ModelState State;
 	FPhysicsState PhysicsState;
 
 	void NetSerialize(FArchive& Ar) {
-		Ar << FrameNumber;
-		Ar << InputPacketNumber;
-		
 		State.NetSerialize(Ar);
 		PhysicsState.NetSerialize(Ar);
 	}
@@ -26,8 +20,7 @@ struct FPhysicsStateWrapper {
 	}
 
 	bool operator ==(const FPhysicsStateWrapper<ModelState>& Other) const {
-		return InputPacketNumber == Other.InputPacketNumber
-			&& State == Other.State
+		return State == Other.State
 			&& PhysicsState == Other.PhysicsState;
 	}
 };
