@@ -131,10 +131,10 @@ protected:
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input) = 0;
 	virtual void PostSimulate(Chaos::FReal Dt, UPrimitiveComponent* Component, ModelState& OutState, const InputPacket& Input) = 0;
 
-	virtual void Rewind(const ModelState& State, UPrimitiveComponent* Component);
-
 private:
 
+	void Rewind(const ModelState& State, UPrimitiveComponent* Component);
+	
 	void PreTickAuthority(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component);
 	
 	void PreTickRemote(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component);
@@ -143,7 +143,7 @@ private:
 	
 	void PostTickRemote(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component);
 
-	virtual void Rewind_Internal(const FModelStateWrapper<ModelState>& State, UPrimitiveComponent* Component);
+	void Rewind_Internal(const FModelStateWrapper<ModelState>& State, UPrimitiveComponent* Component);
 	
 private:
 	
