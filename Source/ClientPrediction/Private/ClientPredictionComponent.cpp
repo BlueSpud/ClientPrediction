@@ -1,30 +1,30 @@
-﻿#include "ClientPredictionPhysicsComponent.h"
+﻿#include "ClientPredictionComponent.h"
 
 #include "PBDRigidsSolver.h"
 
-UClientPredictionPhysicsComponent::UClientPredictionPhysicsComponent() {
+UClientPredictionComponent::UClientPredictionComponent() {
 	SetIsReplicatedByDefault(true);
 
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = true;
 }
 
-void UClientPredictionPhysicsComponent::BeginPlay() {
+void UClientPredictionComponent::BeginPlay() {
 	Super::BeginPlay();
 	
 	Chaos::FPhysicsSolver* Solver = GetWorld()->GetPhysicsScene()->GetSolver();
-	OnPhysicsAdvancedDelegate = Solver->AddPostAdvanceCallback(FSolverPostAdvance::FDelegate::CreateUObject(this, &UClientPredictionPhysicsComponent::OnPhysicsAdvanced));
-	PrePhysicsAdvancedDelegate = Solver->AddPreAdvanceCallback(FSolverPostAdvance::FDelegate::CreateUObject(this, &UClientPredictionPhysicsComponent::PrePhysicsAdvance));
+	OnPhysicsAdvancedDelegate = Solver->AddPostAdvanceCallback(FSolverPostAdvance::FDelegate::CreateUObject(this, &UClientPredictionComponent::OnPhysicsAdvanced));
+	PrePhysicsAdvancedDelegate = Solver->AddPreAdvanceCallback(FSolverPostAdvance::FDelegate::CreateUObject(this, &UClientPredictionComponent::PrePhysicsAdvance));
 }
 
-void UClientPredictionPhysicsComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
+void UClientPredictionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
 	Super::EndPlay(EndPlayReason);
 	
 	Chaos::FPhysicsSolver* Solver = GetWorld()->GetPhysicsScene()->GetSolver();
 	Solver->RemovePostAdvanceCallback(OnPhysicsAdvancedDelegate);
 }
 
-void UClientPredictionPhysicsComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) {
+void UClientPredictionComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	// Send states to the client
@@ -49,7 +49,7 @@ void UClientPredictionPhysicsComponent::TickComponent(float DeltaTime, ELevelTic
 	}
 }
 
-void UClientPredictionPhysicsComponent::OnRegister() {
+void UClientPredictionComponent::OnRegister() {
 	Super::OnRegister();
 
 	// TODO make this more sophisticated
@@ -57,7 +57,7 @@ void UClientPredictionPhysicsComponent::OnRegister() {
 	check(UpdatedComponent);
 }
 
-void UClientPredictionPhysicsComponent::PrePhysicsAdvance(Chaos::FReal Dt) {
+void UClientPredictionComponent::PrePhysicsAdvance(Chaos::FReal Dt) {
 	if (!Timestep) {
 		Timestep = Dt;
 	} else {
@@ -79,7 +79,7 @@ void UClientPredictionPhysicsComponent::PrePhysicsAdvance(Chaos::FReal Dt) {
 	}
 }
 
-void UClientPredictionPhysicsComponent::PrePhysicsAdvanceAutonomousProxy() {
+void UClientPredictionComponent::PrePhysicsAdvanceAutonomousProxy() {
 	if (ForceSimulationFrames == 0 || InputBuffer.RemoteBufferSize() == 0) {
 		FInputPacket Packet(NextInputPacket++);
 		InputDelegate.ExecuteIfBound(Packet);
@@ -100,7 +100,7 @@ void UClientPredictionPhysicsComponent::PrePhysicsAdvanceAutonomousProxy() {
 	}
 }
 
-void UClientPredictionPhysicsComponent::PrePhysicsAdvanceAuthority() {
+void UClientPredictionComponent::PrePhysicsAdvanceAuthority() {
 	if (CurrentInputPacket != FPhysicsState::kInvalidFrame || InputBuffer.AuthorityBufferSize() > 15) {
 		FInputPacket Input;
 		check(InputBuffer.ConsumeInputAuthority(Input));
@@ -114,7 +114,7 @@ void UClientPredictionPhysicsComponent::PrePhysicsAdvanceAuthority() {
 	}
 }
 
-void UClientPredictionPhysicsComponent::OnPhysicsAdvanced(Chaos::FReal Dt) {
+void UClientPredictionComponent::OnPhysicsAdvanced(Chaos::FReal Dt) {
 	// TODO make this work better
 	const ENetRole OwnerRole = GetOwnerRole();
 	switch (OwnerRole) {
@@ -129,7 +129,7 @@ void UClientPredictionPhysicsComponent::OnPhysicsAdvanced(Chaos::FReal Dt) {
 	}
 }
 
-void UClientPredictionPhysicsComponent::OnPhysicsAdvancedAuthority() {
+void UClientPredictionComponent::OnPhysicsAdvancedAuthority() {
 	checkSlow(ForceSimulateFrames == 0) // Server should never resimulate / fast-forward
 	
 	FBodyInstance* Body = UpdatedComponent->GetBodyInstance();
@@ -147,7 +147,7 @@ void UClientPredictionPhysicsComponent::OnPhysicsAdvancedAuthority() {
 	++NextLocalFrame;
 }
 
-void UClientPredictionPhysicsComponent::OnPhysicsAdvancedAutonomousProxy() {
+void UClientPredictionComponent::OnPhysicsAdvancedAutonomousProxy() {
 	FBodyInstance* Body = UpdatedComponent->GetBodyInstance();
 	Chaos::FRigidBodyHandle_Internal* Handle = Body->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
 	if (!Handle) {
@@ -221,7 +221,7 @@ void UClientPredictionPhysicsComponent::OnPhysicsAdvancedAutonomousProxy() {
 	}
 }
 
-void UClientPredictionPhysicsComponent::Rewind(FPhysicsState& State, Chaos::FRigidBodyHandle_Internal* Handle) {
+void UClientPredictionComponent::Rewind(FPhysicsState& State, Chaos::FRigidBodyHandle_Internal* Handle) {
 	State.Rewind(Handle);
 
 	ClientHistory.Empty();
@@ -234,7 +234,7 @@ void UClientPredictionPhysicsComponent::Rewind(FPhysicsState& State, Chaos::FRig
 	CurrentInputPacket = State.InputPacketNumber;
 }
 
-void UClientPredictionPhysicsComponent::ForceSimulate(uint32 Frames) {
+void UClientPredictionComponent::ForceSimulate(uint32 Frames) {
 	ForceSimulationFrames = Frames;
 
 	auto Solver = GetWorld()->GetPhysicsScene()->GetSolver();
@@ -245,7 +245,7 @@ void UClientPredictionPhysicsComponent::ForceSimulate(uint32 Frames) {
 	}
 }
 
-void UClientPredictionPhysicsComponent::RecvInputPacket_Implementation(FNetSerializationProxy Proxy) {
+void UClientPredictionComponent::RecvInputPacket_Implementation(FNetSerializationProxy Proxy) {
 	FInputPacket Packet;
 	Proxy.NetSerializeFunc = [&](FArchive& Ar) {
 		Packet.NetSerialize(Ar);
@@ -253,7 +253,7 @@ void UClientPredictionPhysicsComponent::RecvInputPacket_Implementation(FNetSeria
 
 	InputBuffer.QueueInputAuthority(Packet);
 }
-void UClientPredictionPhysicsComponent::RecvServerState_Implementation(FPhysicsState State) {
+void UClientPredictionComponent::RecvServerState_Implementation(FPhysicsState State) {
 	FPhysicsState LocalLastServerState = LastServerState;
 	if (LocalLastServerState.FrameNumber == FPhysicsState::kInvalidFrame || State.FrameNumber > LocalLastServerState.FrameNumber) {
 		LastServerState = State;

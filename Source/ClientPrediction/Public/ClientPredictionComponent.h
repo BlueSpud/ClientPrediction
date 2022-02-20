@@ -6,16 +6,16 @@
 #include "Input.h"
 #include "PhysicsState.h"
 
-#include "ClientPredictionPhysicsComponent.generated.h"
+#include "ClientPredictionComponent.generated.h"
 
 UCLASS( ClassGroup=(ClientPrediction), meta=(BlueprintSpawnableComponent) )
-class CLIENTPREDICTION_API UClientPredictionPhysicsComponent : public UActorComponent {
+class CLIENTPREDICTION_API UClientPredictionComponent : public UActorComponent {
 
 	GENERATED_BODY()
 
 public:
 
-	UClientPredictionPhysicsComponent();
+	UClientPredictionComponent();
 
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
