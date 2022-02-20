@@ -9,21 +9,32 @@ struct FPhysicsStateWrapper {
 	ModelState State;
 	FPhysicsState PhysicsState;
 
-	void NetSerialize(FArchive& Ar) {
-		State.NetSerialize(Ar);
-		PhysicsState.NetSerialize(Ar);
-	}
+	void NetSerialize(FArchive& Ar);
 
-	void Rewind(class UPrimitiveComponent* Component) const {
-		PhysicsState.Rewind(Component);
-		State.Rewind(Component);
-	}
+	void Rewind(class UPrimitiveComponent* Component) const;
 
-	bool operator ==(const FPhysicsStateWrapper<ModelState>& Other) const {
-		return State == Other.State
-			&& PhysicsState == Other.PhysicsState;
-	}
+	bool operator ==(const FPhysicsStateWrapper<ModelState>& Other) const;
 };
+
+template <typename ModelState>
+void FPhysicsStateWrapper<ModelState>::NetSerialize(FArchive& Ar) {
+	State.NetSerialize(Ar);
+	PhysicsState.NetSerialize(Ar);
+}
+
+template <typename ModelState>
+void FPhysicsStateWrapper<ModelState>::Rewind(UPrimitiveComponent* Component) const {
+	PhysicsState.Rewind(Component);
+	State.Rewind(Component);
+}
+
+template <typename ModelState>
+bool FPhysicsStateWrapper<ModelState>::operator==(const FPhysicsStateWrapper<ModelState>& Other) const {
+	return State == Other.State
+		&& PhysicsState == Other.PhysicsState;
+}
+
+/**********************************************************************************************************************/
 
 struct CLIENTPREDICTION_API FEmptyState {
 	void NetSerialize(FArchive& Ar) {}

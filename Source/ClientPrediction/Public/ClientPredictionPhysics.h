@@ -10,9 +10,6 @@ struct FPhysicsState {
 	Chaos::FVec3 LinearVelocity;
 	Chaos::FVec3 AngularVelocity;
 
-	FPhysicsState() = default;
-	~FPhysicsState() = default;
-
 	void Rewind(UPrimitiveComponent* Component) const {
 		FBodyInstance* Body = Component->GetBodyInstance();
 		Chaos::FRigidBodyHandle_Internal* Handle = Body->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
@@ -42,20 +39,10 @@ struct FPhysicsState {
 
 struct CLIENTPREDICTION_API FInputPacket {
 
-	FInputPacket() = default;
-	~FInputPacket() = default;
-	
-	/** 
-	* Input frames have their own number independent of the frame number because they are not necessarily consumed in 
-	* lockstep with the frames they're generated on due to latency. 
-	*/
-	uint32 PacketNumber = kInvalidFrame;
-
 	/** Temporary test input */
 	bool bIsApplyingForce = false;
 
 	void NetSerialize(FArchive& Ar) {
 		Ar << bIsApplyingForce;
-		Ar << PacketNumber;
 	}
 };

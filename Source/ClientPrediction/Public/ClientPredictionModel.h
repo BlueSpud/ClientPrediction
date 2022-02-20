@@ -40,6 +40,8 @@ public:
 	
 };
 
+/**********************************************************************************************************************/
+
 /** Wraps a model state to include frame and input packet number */
 template <typename ModelState>
 struct FModelStateWrapper {
@@ -49,22 +51,57 @@ struct FModelStateWrapper {
 	
 	ModelState State;
 
-	void NetSerialize(FArchive& Ar) {
-		Ar << FrameNumber;
-		Ar << InputPacketNumber;
-		
-		State.NetSerialize(Ar);
-	}
+	void NetSerialize(FArchive& Ar);
 
-	void Rewind(class UPrimitiveComponent* Component) const {
-		State.Rewind(Component);
-	}
+	void Rewind(class UPrimitiveComponent* Component) const;
 
-	bool operator ==(const FModelStateWrapper<ModelState>& Other) const {
-		return InputPacketNumber == Other.InputPacketNumber
-			&& State == Other.State;
-	}
+	bool operator ==(const FModelStateWrapper<ModelState>& Other) const;
 };
+
+template <typename ModelState>
+void FModelStateWrapper<ModelState>::NetSerialize(FArchive& Ar)  {
+	Ar << FrameNumber;
+	Ar << InputPacketNumber;
+		
+	State.NetSerialize(Ar);
+}
+
+template <typename ModelState>
+void FModelStateWrapper<ModelState>::Rewind(class UPrimitiveComponent* Component) const  {
+	State.Rewind(Component);
+}
+
+template <typename ModelState>
+bool FModelStateWrapper<ModelState>::operator==(const FModelStateWrapper<ModelState>& Other) const {
+	return InputPacketNumber == Other.InputPacketNumber
+		&& State == Other.State;
+}
+
+/**********************************************************************************************************************/
+
+template <typename InputPacket>
+struct FInputPacketWrapper {
+
+	/** 
+	 * Input frames have their own number independent of the frame number because they are not necessarily consumed in 
+	 * lockstep with the frames they're generated on due to latency. 
+	 */
+	uint32 PacketNumber = kInvalidFrame;
+
+	InputPacket Packet;
+
+	void NetSerialize(FArchive& Ar);
+	
+};
+
+template <typename InputPacket>
+void FInputPacketWrapper<InputPacket>::NetSerialize(FArchive& Ar) {
+	Ar << PacketNumber;
+	
+	Packet.NetSerialize(Ar);
+}
+
+/**********************************************************************************************************************/
 
 template <typename InputPacket, typename ModelState>
 class BaseClientPredictionModel : public IClientPredictionModel {
@@ -124,7 +161,7 @@ private:
 
 	/** Input packet used for the current frame */
 	uint32 CurrentInputPacketIdx = kInvalidFrame;
-	InputPacket CurrentInputPacket;
+	FInputPacketWrapper<InputPacket> CurrentInputPacket;
 	
 	/** On the client this is all of the frames that have not been reconciled with the server. */
 	TQueue<FModelStateWrapper<ModelState>> ClientHistory;
@@ -137,7 +174,7 @@ private:
 	std::atomic<FModelStateWrapper<ModelState>> LastAuthorityState;
 	FModelStateWrapper<ModelState> CurrentState;
 
-	FInputBuffer<InputPacket> InputBuffer;
+	FInputBuffer<FInputPacketWrapper<InputPacket>> InputBuffer;
 
 };
 
@@ -173,7 +210,7 @@ UPrimitiveComponent* Component, ENetRole Role) {
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::ReceiveInputPacket(FNetSerializationProxy& Proxy) {
-	InputPacket Packet;
+	FInputPacketWrapper<InputPacket> Packet;
 	Proxy.NetSerializeFunc = [&Packet](FArchive& Ar) {
 		Packet.NetSerialize(Ar);	
 	};
@@ -210,17 +247,17 @@ UPrimitiveComponent* Component) {
 	ModelState LastState = CurrentState.State;
 	CurrentState = FModelStateWrapper<ModelState>();
 	
-	Simulate(Dt, Component, LastState, CurrentState.State, CurrentInputPacket);
+	Simulate(Dt, Component, LastState, CurrentState.State, CurrentInputPacket.Packet);
 }
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::PreTickRemote(Chaos::FReal Dt, bool bIsForcedSimulation,
 UPrimitiveComponent* Component) {
 	if (bIsForcedSimulation || InputBuffer.RemoteBufferSize() == 0) {
-		InputPacket Packet;
+		FInputPacketWrapper<InputPacket> Packet;
 		Packet.PacketNumber = NextInputPacket++;
 		
-		InputDelegate.ExecuteIfBound(Packet);
+		InputDelegate.ExecuteIfBound(Packet.Packet);
 		InputBuffer.QueueInputRemote(Packet);
 
 		EmitInputPacket.CheckCallable();
@@ -239,13 +276,13 @@ UPrimitiveComponent* Component) {
 	ModelState LastState = CurrentState.State;
 	CurrentState = FModelStateWrapper<ModelState>();
 
-	Simulate(Dt, Component, LastState, CurrentState.State, CurrentInputPacket);
+	Simulate(Dt, Component, LastState, CurrentState.State, CurrentInputPacket.Packet);
 }
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::PostTickAuthority(Chaos::FReal Dt, bool bIsForcedSimulation,
 UPrimitiveComponent* Component) {
-	PostSimulate(Dt, Component, CurrentState.State, CurrentInputPacket);
+	PostSimulate(Dt, Component, CurrentState.State, CurrentInputPacket.Packet);
 	
 	CurrentState.FrameNumber = NextLocalFrame++;
 	CurrentState.InputPacketNumber = CurrentInputPacketIdx;
@@ -266,7 +303,7 @@ UPrimitiveComponent* Component) {
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::PostTickRemote(Chaos::FReal Dt, bool bIsForcedSimulation,
 	UPrimitiveComponent* Component) {
-	PostSimulate(Dt, Component, CurrentState.State, CurrentInputPacket);
+	PostSimulate(Dt, Component, CurrentState.State, CurrentInputPacket.Packet);
 	
 	CurrentState.FrameNumber = NextLocalFrame++;
 	CurrentState.InputPacketNumber = CurrentInputPacketIdx;
