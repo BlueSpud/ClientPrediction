@@ -253,7 +253,7 @@ UPrimitiveComponent* Component) {
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::PreTickRemote(Chaos::FReal Dt, bool bIsForcedSimulation,
 UPrimitiveComponent* Component) {
-	if (bIsForcedSimulation || InputBuffer.RemoteBufferSize() == 0) {
+	if (!bIsForcedSimulation || InputBuffer.RemoteBufferSize() == 0) {
 		FInputPacketWrapper<InputPacket> Packet;
 		Packet.PacketNumber = NextInputPacket++;
 		
@@ -356,7 +356,7 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PostTickRemote(Chaos::F
 			// Server state and historic state matched, simulation was good up to LocalServerState.FrameNumber
 			AckedServerFrame = LocalLastAuthorityState.FrameNumber;
 			InputBuffer.Ack(LocalLastAuthorityState.InputPacketNumber);
-			UE_LOG(LogTemp, Log, TEXT("Acked up to %i, input packet %i. Input buffer had %i elements"), AckedServerFrame, LocalLastAuthorityState.InputPacketNumber, InputBuffer.RemoteBufferSize());
+			UE_LOG(LogTemp, Verbose, TEXT("Acked up to %i, input packet %i. Input buffer had %i elements"), AckedServerFrame, LocalLastAuthorityState.InputPacketNumber, InputBuffer.RemoteBufferSize());
 		} else {
 			// Server/client mismatch. Resimulate the client
 			Rewind_Internal(LocalLastAuthorityState, Component);

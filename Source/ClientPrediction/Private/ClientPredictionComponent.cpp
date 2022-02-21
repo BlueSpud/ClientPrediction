@@ -14,7 +14,8 @@ UClientPredictionComponent::~UClientPredictionComponent() = default;
 
 void UClientPredictionComponent::BeginPlay() {
 	Super::BeginPlay();
-	
+
+	check(UpdatedComponent);
 	Chaos::FPhysicsSolver* Solver = GetWorld()->GetPhysicsScene()->GetSolver();
 	OnPhysicsAdvancedDelegate = Solver->AddPostAdvanceCallback(FSolverPostAdvance::FDelegate::CreateUObject(this, &UClientPredictionComponent::OnPhysicsAdvanced));
 	PrePhysicsAdvancedDelegate = Solver->AddPreAdvanceCallback(FSolverPostAdvance::FDelegate::CreateUObject(this, &UClientPredictionComponent::PrePhysicsAdvance));
@@ -52,7 +53,6 @@ void UClientPredictionComponent::OnRegister() {
 
 	// TODO make this more sophisticated
 	UpdatedComponent = Cast<UPrimitiveComponent>(GetOwner()->GetRootComponent());
-	check(UpdatedComponent);
 }
 
 void UClientPredictionComponent::PrePhysicsAdvance(Chaos::FReal Dt) {
@@ -70,20 +70,21 @@ void UClientPredictionComponent::PrePhysicsAdvance(Chaos::FReal Dt) {
 
 void UClientPredictionComponent::OnPhysicsAdvanced(Chaos::FReal Dt) {
 	check(Model);
-	
-	if (ForceSimulationFrames) {
+
+	bool bIsForcedSimulation = ForceSimulationFrames > 0;
+	if (bIsForcedSimulation) {
 		GetWorld()->GetPhysicsScene()->GetSolver()->UpdateGameThreadStructures();
-		
 		--ForceSimulationFrames;
 	}
 	
-	Model->PostTick(Dt, ForceSimulationFrames != 0, UpdatedComponent, GetOwnerRole());
+	Model->PostTick(Dt, bIsForcedSimulation, UpdatedComponent, GetOwnerRole());
 }
 
 void UClientPredictionComponent::ForceSimulate(uint32 Frames) {
 	ForceSimulationFrames = Frames;
-
+	
 	auto Solver = GetWorld()->GetPhysicsScene()->GetSolver();
+	check(Solver);
 
 	// These will be enqueued to the physics thread, it won't be blocking.
 	for (uint32 i = 0; i < Frames; i++) {
