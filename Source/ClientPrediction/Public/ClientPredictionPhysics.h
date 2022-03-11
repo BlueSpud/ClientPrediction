@@ -36,13 +36,3 @@ struct FPhysicsState {
 	}
 	
 };
-
-struct CLIENTPREDICTION_API FInputPacket {
-
-	/** Temporary test input */
-	bool bIsApplyingForce = false;
-
-	void NetSerialize(FArchive& Ar) {
-		Ar << bIsApplyingForce;
-	}
-};

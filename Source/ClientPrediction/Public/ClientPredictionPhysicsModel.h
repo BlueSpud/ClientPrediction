@@ -94,5 +94,3 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Simulate(Chaos::
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::PostSimulate(Chaos::FReal Dt,
 	UPrimitiveComponent* Component, ModelState& OutState, const InputPacket& Input) {}
-
-using ClientPredictionPhysicsModel = BaseClientPredictionPhysicsModel<FInputPacket, FEmptyState>;
