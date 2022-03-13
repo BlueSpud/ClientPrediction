@@ -38,7 +38,7 @@ private:
 	void OnPhysicsAdvanced(Chaos::FReal Dt);
 	void ForceSimulate(uint32 Frames);
 	
-	UFUNCTION(Client, Unreliable)
+	UFUNCTION(NetMulticast, Unreliable)
 	void RecvServerState(FNetSerializationProxy Proxy);
 
 	UFUNCTION(Server, Unreliable)

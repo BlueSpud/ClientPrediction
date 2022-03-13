@@ -19,10 +19,13 @@ public:
 	IClientPredictionModel() = default;
 	virtual ~IClientPredictionModel() = default;
 
+	virtual void Initialize(UPrimitiveComponent* Component, ENetRole Role) = 0;
+
 // Simulation ticking
 
 	virtual void PreTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ENetRole Role) = 0;
 	virtual void PostTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ENetRole Role) = 0;
+	virtual void GameThreadTick(const float Dt, UPrimitiveComponent* Component, ENetRole Role) = 0;
 
 // Input packet / state receiving
 
@@ -112,11 +115,10 @@ public:
 	virtual ~BaseClientPredictionModel() override = default;
 
 	virtual void PreTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ENetRole Role) override final;
-	
 	virtual void PostTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ENetRole Role) override final;
-	
+	virtual void GameThreadTick(const float Dt, UPrimitiveComponent* Component, ENetRole Role) override final;
+
 	virtual void ReceiveInputPacket(FNetSerializationProxy& Proxy) override final;
-	
 	virtual void ReceiveAuthorityState(FNetSerializationProxy& Proxy) override final;
 
 public:
@@ -208,6 +210,22 @@ UPrimitiveComponent* Component, ENetRole Role) {
 		break;
 	default:
 		return;
+	}
+}
+
+template <typename InputPacket, typename ModelState>
+void BaseClientPredictionModel<InputPacket, ModelState>::GameThreadTick(const float Dt, UPrimitiveComponent* Component, ENetRole Role) {
+	switch (Role) {
+	case ENetRole::ROLE_SimulatedProxy: {
+		// TODO make this interpolate from a buffer
+		FModelStateWrapper<ModelState> LocalLastAuthorityState = LastAuthorityState;
+		if (LocalLastAuthorityState.FrameNumber != kInvalidFrame) {
+			LocalLastAuthorityState.Rewind(Component);
+		}
+		break;
+	}
+	default:
+		break;
 	}
 }
 

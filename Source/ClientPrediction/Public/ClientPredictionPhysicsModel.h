@@ -51,7 +51,9 @@ public:
 
 	BaseClientPredictionPhysicsModel() = default;
 	virtual ~BaseClientPredictionPhysicsModel() override = default;
-	
+
+	virtual void Initialize(UPrimitiveComponent* Component, ENetRole Role) override;
+
 protected:
 	
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const State& PrevState, State& OutState, const InputPacket& Input) override final;
@@ -60,6 +62,14 @@ protected:
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input);
 	virtual void PostSimulate(Chaos::FReal Dt, UPrimitiveComponent* Component, ModelState& OutState, const InputPacket& Input);
 };
+
+template <typename InputPacket, typename ModelState>
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Initialize(UPrimitiveComponent* Component, ENetRole Role) {
+	// Disable physics on simulated proxies since they will just mirror the server
+	if (Role == ENetRole::ROLE_SimulatedProxy) {
+		Component->SetSimulatePhysics(false);
+	}
+}
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Simulate(Chaos::FReal Dt,

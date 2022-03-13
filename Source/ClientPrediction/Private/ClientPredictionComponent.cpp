@@ -3,7 +3,7 @@
 #include "ClientPredictionPhysicsModel.h"
 #include "PBDRigidsSolver.h"
 
-UClientPredictionComponent::UClientPredictionComponent() : Model() {
+UClientPredictionComponent::UClientPredictionComponent() {
 	SetIsReplicatedByDefault(true);
 
 	PrimaryComponentTick.bCanEverTick = true;
@@ -16,6 +16,8 @@ void UClientPredictionComponent::BeginPlay() {
 	Super::BeginPlay();
 
 	check(UpdatedComponent);
+	Model->Initialize(UpdatedComponent, GetOwnerRole());
+	
 	Chaos::FPhysicsSolver* Solver = GetWorld()->GetPhysicsScene()->GetSolver();
 	OnPhysicsAdvancedDelegate = Solver->AddPostAdvanceCallback(FSolverPostAdvance::FDelegate::CreateUObject(this, &UClientPredictionComponent::OnPhysicsAdvanced));
 	PrePhysicsAdvancedDelegate = Solver->AddPreAdvanceCallback(FSolverPostAdvance::FDelegate::CreateUObject(this, &UClientPredictionComponent::PrePhysicsAdvance));
@@ -46,6 +48,8 @@ void UClientPredictionComponent::TickComponent(float DeltaTime, ELevelTick TickT
 		
 		RecvInputPacket(Proxy);
 	}
+
+	Model->GameThreadTick(DeltaTime, UpdatedComponent, GetOwnerRole());
 }
 
 void UClientPredictionComponent::OnRegister() {

@@ -11,14 +11,18 @@ struct FPhysicsState {
 	Chaos::FVec3 AngularVelocity;
 
 	void Rewind(UPrimitiveComponent* Component) const {
-		FBodyInstance* Body = Component->GetBodyInstance();
-		Chaos::FRigidBodyHandle_Internal* Handle = Body->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
-		check(Handle);
-
-		Handle->SetX(Location);
-		Handle->SetR(Rotation);
-		Handle->SetV(LinearVelocity);
-		Handle->SetW(AngularVelocity);
+		if (Component->IsSimulatingPhysics()) {
+			FBodyInstance* Body = Component->GetBodyInstance();
+			Chaos::FRigidBodyHandle_Internal* Handle = Body->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
+			
+			Handle->SetX(Location);
+			Handle->SetR(Rotation);
+			Handle->SetV(LinearVelocity);
+			Handle->SetW(AngularVelocity);
+		} else {
+			Component->SetWorldLocation(Location);
+			Component->SetWorldRotation(Rotation);
+		}
 	}
 
 	void NetSerialize(FArchive& Ar) {
