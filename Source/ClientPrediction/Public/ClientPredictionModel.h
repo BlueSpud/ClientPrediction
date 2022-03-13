@@ -2,11 +2,11 @@
 
 #include "ClientPredictionNetSerialization.h"
 #include "Input.h"
+#include "Declares.h"
 
 static constexpr uint32 kClientForwardPredictionFrames = 10;
-static constexpr uint32 kAuthorityTargetInputBufferSize = 15;
+static constexpr uint32 kAuthorityTargetInputBufferSize = 25;
 static constexpr uint32 kSyncFrames = 5;
-static constexpr uint32 kInvalidFrame = -1;
 
 /**
  * The interface for the client prediction model. This exists so that the prediction component can hold a
@@ -105,12 +105,10 @@ void FInputPacketWrapper<InputPacket>::NetSerialize(FArchive& Ar) {
 
 template <typename InputPacket, typename ModelState>
 class BaseClientPredictionModel : public IClientPredictionModel {
-
-	// TODO wrap InputPacket and SimulationState so subclasses don't have access to the frame number
 	
 public:
 
-	BaseClientPredictionModel() = default;
+	BaseClientPredictionModel();
 	virtual ~BaseClientPredictionModel() override = default;
 
 	virtual void PreTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ENetRole Role) override final;
@@ -179,6 +177,11 @@ private:
 };
 
 template <typename InputPacket, typename ModelState>
+BaseClientPredictionModel<InputPacket, ModelState>::BaseClientPredictionModel() {
+	InputBuffer.SetAuthorityTargetBufferSize(kAuthorityTargetInputBufferSize);
+}
+
+template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::PreTick(Chaos::FReal Dt, bool bIsForcedSimulation,
 UPrimitiveComponent* Component, ENetRole Role) {
 	switch (Role) {
@@ -231,15 +234,13 @@ void BaseClientPredictionModel<InputPacket, ModelState>::ReceiveAuthorityState(F
 }
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::
-Rewind(const ModelState& State, UPrimitiveComponent* Component) {
+void BaseClientPredictionModel<InputPacket, ModelState>::Rewind(const ModelState& State, UPrimitiveComponent* Component) {
 	State.Rewind(Component);
 }
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::PreTickAuthority(Chaos::FReal Dt, bool bIsForcedSimulation,
-UPrimitiveComponent* Component) {
-	if (CurrentInputPacketIdx != kInvalidFrame || InputBuffer.AuthorityBufferSize() > kAuthorityTargetInputBufferSize) {
+void BaseClientPredictionModel<InputPacket, ModelState>::PreTickAuthority(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component) {
+	if (CurrentInputPacketIdx != kInvalidFrame || InputBuffer.AuthorityBufferSize() > InputBuffer.GetAuthorityTargetBufferSize()) {
 		check(InputBuffer.ConsumeInputAuthority(CurrentInputPacket));
 		CurrentInputPacketIdx = CurrentInputPacket.PacketNumber;
 	}
