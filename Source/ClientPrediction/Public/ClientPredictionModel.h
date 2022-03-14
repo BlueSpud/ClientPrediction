@@ -6,6 +6,7 @@
 
 static constexpr uint32 kClientForwardPredictionFrames = 10;
 static constexpr uint32 kAuthorityTargetInputBufferSize = 25;
+static constexpr uint32 kInputWindowSize = 3;
 static constexpr uint32 kSyncFrames = 5;
 
 /**
@@ -29,7 +30,7 @@ public:
 
 // Input packet / state receiving
 
-	virtual void ReceiveInputPacket(FNetSerializationProxy& Proxy) = 0;
+	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) = 0;
 	virtual void ReceiveAuthorityState(FNetSerializationProxy& Proxy) = 0;
 	
 public:
@@ -38,7 +39,7 @@ public:
 	TFunction<void(uint32)> ForceSimulate;
 
 	/** These are the functions to queue RPC sends. The proxies should use functions that capture by value */
-	TFunction<void(FNetSerializationProxy&)> EmitInputPacket;
+	TFunction<void(FNetSerializationProxy&)> EmitInputPackets;
 	TFunction<void(FNetSerializationProxy&)> EmitAuthorityState;
 	
 };
@@ -94,6 +95,9 @@ struct FInputPacketWrapper {
 	InputPacket Packet;
 
 	void NetSerialize(FArchive& Ar);
+
+	template <typename InputPacket_>
+	friend FArchive& operator<<(FArchive& Ar, FInputPacketWrapper<InputPacket_>& Wrapper);
 	
 };
 
@@ -102,6 +106,12 @@ void FInputPacketWrapper<InputPacket>::NetSerialize(FArchive& Ar) {
 	Ar << PacketNumber;
 	
 	Packet.NetSerialize(Ar);
+}
+
+template <typename InputPacket>
+FArchive& operator<<(FArchive& Ar, FInputPacketWrapper<InputPacket>& Wrapper) {
+	Wrapper.NetSerialize(Ar);
+	return Ar;
 }
 
 /**********************************************************************************************************************/
@@ -118,7 +128,7 @@ public:
 	virtual void PostTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ENetRole Role) override final;
 	virtual void GameThreadTick(const float Dt, UPrimitiveComponent* Component, ENetRole Role) override final;
 
-	virtual void ReceiveInputPacket(FNetSerializationProxy& Proxy) override final;
+	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override final;
 	virtual void ReceiveAuthorityState(FNetSerializationProxy& Proxy) override final;
 
 public:
@@ -176,6 +186,9 @@ private:
 
 	FInputBuffer<FInputPacketWrapper<InputPacket>> InputBuffer;
 
+	/* We send each input with several previous inputs. In case a packet is dropped, the next send will also contain the new dropped input */
+	TArray<FInputPacketWrapper<InputPacket>> SlidingInputWindow;
+
 };
 
 template <typename InputPacket, typename ModelState>
@@ -230,14 +243,16 @@ void BaseClientPredictionModel<InputPacket, ModelState>::GameThreadTick(const fl
 }
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::ReceiveInputPacket(FNetSerializationProxy& Proxy) {
-	FInputPacketWrapper<InputPacket> Packet;
-	Proxy.NetSerializeFunc = [&Packet](FArchive& Ar) {
-		Packet.NetSerialize(Ar);	
+void BaseClientPredictionModel<InputPacket, ModelState>::ReceiveInputPackets(FNetSerializationProxy& Proxy) {
+	TArray<FInputPacketWrapper<InputPacket>> Packets;
+	Proxy.NetSerializeFunc = [&Packets](FArchive& Ar) {
+		Ar << Packets;
 	};
 
 	Proxy.Deserialize();
-	InputBuffer.QueueInputAuthority(Packet);
+	for (const FInputPacketWrapper<InputPacket>& Packet : Packets) {
+		InputBuffer.QueueInputAuthority(Packet);
+	}
 }
 
 template <typename InputPacket, typename ModelState>
@@ -279,14 +294,19 @@ UPrimitiveComponent* Component) {
 		InputDelegate.ExecuteIfBound(Packet.Packet);
 		InputBuffer.QueueInputRemote(Packet);
 
-		EmitInputPacket.CheckCallable();
+		EmitInputPackets.CheckCallable();
+
+		if (SlidingInputWindow.Num() >= kInputWindowSize) {
+			SlidingInputWindow.Pop();
+		}
 		
-		// Capture by value here so that the proxy stores the input packet with it
+		// Capture by value here so that the proxy stores the input packets with it
+		SlidingInputWindow.Insert(Packet, 0);
 		FNetSerializationProxy Proxy([=](FArchive& Ar) mutable {
-			Packet.NetSerialize(Ar);
+			Ar << SlidingInputWindow;
 		});
 		
-		EmitInputPacket(Proxy);
+		EmitInputPackets(Proxy);
 	}
 	
 	check(InputBuffer.ConsumeInputRemote(CurrentInputPacket));

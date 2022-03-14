@@ -81,7 +81,7 @@ ModelType* UClientPredictionComponent::CreateModel() {
 		ForceSimulate(Frames);
 	};
 
-	Model->EmitInputPacket = [&](FNetSerializationProxy& Proxy) {
+	Model->EmitInputPackets = [&](FNetSerializationProxy& Proxy) {
 		InputBufferSendQueue.Enqueue(Proxy);
 	};
 

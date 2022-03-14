@@ -98,7 +98,7 @@ void UClientPredictionComponent::ForceSimulate(uint32 Frames) {
 
 void UClientPredictionComponent::RecvInputPacket_Implementation(FNetSerializationProxy Proxy) {
 	check(Model);
-	Model->ReceiveInputPacket(Proxy);
+	Model->ReceiveInputPackets(Proxy);
 }
 void UClientPredictionComponent::RecvServerState_Implementation(FNetSerializationProxy Proxy) {
 	check(Model);

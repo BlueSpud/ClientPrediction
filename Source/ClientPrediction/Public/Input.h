@@ -118,7 +118,7 @@ public:
 		} else if (AuthorityInputPacketNumber + 1 != AuthorityBuffer[AuthorityBufferSize - 1].PacketNumber) {
 			// If the next packet was not the next packet in the sequence, just assume that the missing packet was the same as the last one.
 			// This can also lead to minor client de-syncs if the missing input packet on the client is different from the last packet.
-			UE_LOG(LogTemp, Warning, TEXT("Did not use sequential input %i to %i"), AuthorityInputPacketNumber, OutPacket.PacketNumber);
+			UE_LOG(LogTemp, Warning, TEXT("Did not use sequential input %i %i"), AuthorityInputPacketNumber + 1, AuthorityBuffer[AuthorityBufferSize - 1].PacketNumber);
 			OutPacket = LastAuthorityPacket;
 			OutPacket.PacketNumber = AuthorityInputPacketNumber + 1;
 		} else {
