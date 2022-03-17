@@ -3,6 +3,7 @@
 #include "ClientPredictionNetSerialization.h"
 #include "Input.h"
 #include "Declares.h"
+#include "Physics/ImmediatePhysics/ImmediatePhysicsDeclares.h"
 
 static constexpr uint32 kClientForwardPredictionFrames = 10;
 static constexpr uint32 kAuthorityTargetInputBufferSize = 25;
@@ -24,9 +25,9 @@ public:
 
 // Simulation ticking
 
-	virtual void PreTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ENetRole Role) = 0;
-	virtual void PostTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ENetRole Role) = 0;
-	virtual void GameThreadTick(const float Dt, UPrimitiveComponent* Component, ENetRole Role) = 0;
+	virtual void PreTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, ENetRole Role) = 0;
+	virtual void PostTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, ENetRole Role) = 0;
+	virtual void GameThreadTick(const float Dt, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, ENetRole Role) = 0;
 
 // Input packet / state receiving
 
@@ -57,7 +58,7 @@ struct FModelStateWrapper {
 
 	void NetSerialize(FArchive& Ar);
 
-	void Rewind(class UPrimitiveComponent* Component) const;
+	void Rewind(class UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) const;
 
 	bool operator ==(const FModelStateWrapper<ModelState>& Other) const;
 };
@@ -71,8 +72,8 @@ void FModelStateWrapper<ModelState>::NetSerialize(FArchive& Ar)  {
 }
 
 template <typename ModelState>
-void FModelStateWrapper<ModelState>::Rewind(class UPrimitiveComponent* Component) const  {
-	State.Rewind(Component);
+void FModelStateWrapper<ModelState>::Rewind(class UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) const  {
+	State.Rewind(Component, Handle);
 }
 
 template <typename ModelState>
@@ -124,9 +125,9 @@ public:
 	BaseClientPredictionModel();
 	virtual ~BaseClientPredictionModel() override = default;
 
-	virtual void PreTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ENetRole Role) override final;
-	virtual void PostTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ENetRole Role) override final;
-	virtual void GameThreadTick(const float Dt, UPrimitiveComponent* Component, ENetRole Role) override final;
+	virtual void PreTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, ENetRole Role) override final;
+	virtual void PostTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, ENetRole Role) override final;
+	virtual void GameThreadTick(const float Dt, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, ENetRole Role) override final;
 
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override final;
 	virtual void ReceiveAuthorityState(FNetSerializationProxy& Proxy) override final;
@@ -138,22 +139,22 @@ public:
 	
 protected:
 
-	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input) = 0;
-	virtual void PostSimulate(Chaos::FReal Dt, UPrimitiveComponent* Component, ModelState& OutState, const InputPacket& Input) = 0;
+	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input) = 0;
+	virtual void PostSimulate(Chaos::FReal Dt, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, ModelState& OutState, const InputPacket& Input) = 0;
 
 private:
 
-	void Rewind(const ModelState& State, UPrimitiveComponent* Component);
+	void Rewind(const ModelState& State, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle);
 	
-	void PreTickAuthority(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component);
+	void PreTickAuthority(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle);
 	
-	void PreTickRemote(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component);
+	void PreTickRemote(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle);
 	
-	void PostTickAuthority(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component);
+	void PostTickAuthority(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle);
 	
-	void PostTickRemote(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component);
+	void PostTickRemote(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle);
 
-	void Rewind_Internal(const FModelStateWrapper<ModelState>& State, UPrimitiveComponent* Component);
+	void Rewind_Internal(const FModelStateWrapper<ModelState>& State, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle);
 	
 private:
 	
@@ -197,14 +198,13 @@ BaseClientPredictionModel<InputPacket, ModelState>::BaseClientPredictionModel() 
 }
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::PreTick(Chaos::FReal Dt, bool bIsForcedSimulation,
-UPrimitiveComponent* Component, ENetRole Role) {
+void BaseClientPredictionModel<InputPacket, ModelState>::PreTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, ENetRole Role) {
 	switch (Role) {
 	case ENetRole::ROLE_Authority:
-		PreTickAuthority(Dt, bIsForcedSimulation, Component);
+		PreTickAuthority(Dt, bIsForcedSimulation, Component, Handle);
 		break;
 	case ENetRole::ROLE_AutonomousProxy:
-		PreTickRemote(Dt, bIsForcedSimulation, Component);
+		PreTickRemote(Dt, bIsForcedSimulation, Component, Handle);
 		break;
 	default:
 		return;
@@ -212,14 +212,13 @@ UPrimitiveComponent* Component, ENetRole Role) {
 }
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::PostTick(Chaos::FReal Dt, bool bIsForcedSimulation,
-UPrimitiveComponent* Component, ENetRole Role) {
+void BaseClientPredictionModel<InputPacket, ModelState>::PostTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, ENetRole Role) {
 	switch (Role) {
 	case ENetRole::ROLE_Authority:
-		PostTickAuthority(Dt, bIsForcedSimulation, Component);
+		PostTickAuthority(Dt, bIsForcedSimulation, Component, Handle);
 		break;
 	case ENetRole::ROLE_AutonomousProxy:
-		PostTickRemote(Dt, bIsForcedSimulation, Component);
+		PostTickRemote(Dt, bIsForcedSimulation, Component, Handle);
 		break;
 	default:
 		return;
@@ -227,13 +226,13 @@ UPrimitiveComponent* Component, ENetRole Role) {
 }
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::GameThreadTick(const float Dt, UPrimitiveComponent* Component, ENetRole Role) {
+void BaseClientPredictionModel<InputPacket, ModelState>::GameThreadTick(const float Dt, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, ENetRole Role) {
 	switch (Role) {
 	case ENetRole::ROLE_SimulatedProxy: {
 		// TODO make this interpolate from a buffer
 		FModelStateWrapper<ModelState> LocalLastAuthorityState = LastAuthorityState;
 		if (LocalLastAuthorityState.FrameNumber != kInvalidFrame) {
-			LocalLastAuthorityState.Rewind(Component);
+			LocalLastAuthorityState.Rewind(Component, Handle);
 		}
 		break;
 	}
@@ -267,12 +266,12 @@ void BaseClientPredictionModel<InputPacket, ModelState>::ReceiveAuthorityState(F
 }
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::Rewind(const ModelState& State, UPrimitiveComponent* Component) {
-	State.Rewind(Component);
+void BaseClientPredictionModel<InputPacket, ModelState>::Rewind(const ModelState& State, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) {
+	State.Rewind(Component, Handle);
 }
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::PreTickAuthority(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component) {
+void BaseClientPredictionModel<InputPacket, ModelState>::PreTickAuthority(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) {
 	if (CurrentInputPacketIdx != kInvalidFrame || InputBuffer.AuthorityBufferSize() > InputBuffer.GetAuthorityTargetBufferSize()) {
 		check(InputBuffer.ConsumeInputAuthority(CurrentInputPacket));
 		CurrentInputPacketIdx = CurrentInputPacket.PacketNumber;
@@ -281,12 +280,12 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PreTickAuthority(Chaos:
 	ModelState LastState = CurrentState.State;
 	CurrentState = FModelStateWrapper<ModelState>();
 	
-	Simulate(Dt, Component, LastState, CurrentState.State, CurrentInputPacket.Packet);
+	Simulate(Dt, Component, Handle, LastState, CurrentState.State, CurrentInputPacket.Packet);
 }
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::PreTickRemote(Chaos::FReal Dt, bool bIsForcedSimulation,
-UPrimitiveComponent* Component) {
+UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) {
 	if (!bIsForcedSimulation || InputBuffer.RemoteBufferSize() == 0) {
 		FInputPacketWrapper<InputPacket> Packet;
 		Packet.PacketNumber = NextInputPacket++;
@@ -315,13 +314,13 @@ UPrimitiveComponent* Component) {
 	ModelState LastState = CurrentState.State;
 	CurrentState = FModelStateWrapper<ModelState>();
 
-	Simulate(Dt, Component, LastState, CurrentState.State, CurrentInputPacket.Packet);
+	Simulate(Dt, Component, Handle, LastState, CurrentState.State, CurrentInputPacket.Packet);
 }
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::PostTickAuthority(Chaos::FReal Dt, bool bIsForcedSimulation,
-UPrimitiveComponent* Component) {
-	PostSimulate(Dt, Component, CurrentState.State, CurrentInputPacket.Packet);
+UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) {
+	PostSimulate(Dt, Component, Handle, CurrentState.State, CurrentInputPacket.Packet);
 	
 	CurrentState.FrameNumber = NextLocalFrame++;
 	CurrentState.InputPacketNumber = CurrentInputPacketIdx;
@@ -341,8 +340,8 @@ UPrimitiveComponent* Component) {
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::PostTickRemote(Chaos::FReal Dt, bool bIsForcedSimulation,
-	UPrimitiveComponent* Component) {
-	PostSimulate(Dt, Component, CurrentState.State, CurrentInputPacket.Packet);
+	UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) {
+	PostSimulate(Dt, Component, Handle, CurrentState.State, CurrentInputPacket.Packet);
 	
 	CurrentState.FrameNumber = NextLocalFrame++;
 	CurrentState.InputPacketNumber = CurrentInputPacketIdx;
@@ -373,7 +372,7 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PostTickRemote(Chaos::F
 	
 	if (LocalLastAuthorityState.FrameNumber > CurrentState.FrameNumber) {
 		// Server is ahead of the client. The client should just chuck out everything and resimulate
-		Rewind_Internal(LocalLastAuthorityState, Component);
+		Rewind_Internal(LocalLastAuthorityState, Component, Handle);
 		UE_LOG(LogTemp, Warning, TEXT("Client was behind server. Jumping to frame %i and resimulating"), LocalLastAuthorityState.FrameNumber);
 		ForceSimulate(FMath::Max(kClientForwardPredictionFrames, InputBuffer.RemoteBufferSize()));
 	} else {
@@ -398,7 +397,7 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PostTickRemote(Chaos::F
 			UE_LOG(LogTemp, Verbose, TEXT("Acked up to %i, input packet %i. Input buffer had %i elements"), AckedServerFrame, LocalLastAuthorityState.InputPacketNumber, InputBuffer.RemoteBufferSize());
 		} else {
 			// Server/client mismatch. Resimulate the client
-			Rewind_Internal(LocalLastAuthorityState, Component);
+			Rewind_Internal(LocalLastAuthorityState, Component, Handle);
 			UE_LOG(LogTemp, Error, TEXT("Rewinding and resimulating from frame %i which used input packet %i"), LocalLastAuthorityState.FrameNumber, LocalLastAuthorityState.InputPacketNumber);
 			ForceSimulate(FMath::Max(kClientForwardPredictionFrames, InputBuffer.RemoteBufferSize()));
 		}
@@ -407,8 +406,7 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PostTickRemote(Chaos::F
 }
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::Rewind_Internal(const FModelStateWrapper<ModelState>& State,
-UPrimitiveComponent* Component) {
+void BaseClientPredictionModel<InputPacket, ModelState>::Rewind_Internal(const FModelStateWrapper<ModelState>& State, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) {
 
 	ClientHistory.Empty();
 	AckedServerFrame = State.FrameNumber;
@@ -419,5 +417,5 @@ UPrimitiveComponent* Component) {
 	InputBuffer.Rewind(State.InputPacketNumber);
 	CurrentInputPacketIdx = State.InputPacketNumber;
 
-	Rewind(State.State, Component);
+	Rewind(State.State, Component, Handle);
 }

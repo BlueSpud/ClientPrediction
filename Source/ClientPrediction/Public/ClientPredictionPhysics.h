@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "ClientPredictionModel.h"
+#include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsActorHandle_Chaos.h"
 #include "PhysicsProxy/SingleParticlePhysicsProxy.h"
 
 struct FPhysicsState {
@@ -10,19 +11,14 @@ struct FPhysicsState {
 	Chaos::FVec3 LinearVelocity;
 	Chaos::FVec3 AngularVelocity;
 
-	void Rewind(UPrimitiveComponent* Component) const {
-		if (Component->IsSimulatingPhysics()) {
-			FBodyInstance* Body = Component->GetBodyInstance();
-			Chaos::FRigidBodyHandle_Internal* Handle = Body->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
-			
-			Handle->SetX(Location);
-			Handle->SetR(Rotation);
-			Handle->SetV(LinearVelocity);
-			Handle->SetW(AngularVelocity);
-		} else {
-			Component->SetWorldLocation(Location);
-			Component->SetWorldRotation(Rotation);
-		}
+	void Rewind(ImmediatePhysics::FActorHandle* Handle) const {
+		FTransform RewindTransform;
+		RewindTransform.SetLocation(Location);
+		RewindTransform.SetRotation(Rotation);
+		
+		Handle->SetWorldTransform(RewindTransform);
+		Handle->SetLinearVelocity(LinearVelocity);
+		Handle->SetAngularVelocity(AngularVelocity);
 	}
 
 	void NetSerialize(FArchive& Ar) {

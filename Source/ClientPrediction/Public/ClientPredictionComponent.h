@@ -3,6 +3,7 @@
 #include "ClientPredictionNetSerialization.h"
 #include "ClientPredictionPhysics.h"
 #include "Input.h"
+#include "Physics/ImmediatePhysics/ImmediatePhysicsDeclares.h"
 
 #include "ClientPredictionComponent.generated.h"
 
@@ -48,12 +49,6 @@ private:
 private:
 
 	/**
-	 * Resimulations are queued from the physics thread, so we cannot block on the resimulation (otherwise deadlock).
-	 * This keeps track of how many frames are queued for resimulation.
-	 */
-	uint32 ForceSimulationFrames = 0;
-
-	/**
 	 * The timestep for each frame. It is expected that this is always constant and the server and client
 	 * are using the exact same timestep. Async physics should be enabled.
 	 */
@@ -71,6 +66,12 @@ private:
 	
 	UPROPERTY()
 	class UPrimitiveComponent* UpdatedComponent;
+	
+	ImmediatePhysics::FSimulation* PhysicsSimulation = nullptr;
+	ImmediatePhysics::FActorHandle* UpdatedComponentPhysicsHandle = nullptr;
+
+	float AccumulatedTime = 0.0;
+	bool bIsForceSimulating = false;
 	
 };
 

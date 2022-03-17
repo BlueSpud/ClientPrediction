@@ -11,7 +11,7 @@ struct FPhysicsStateWrapper {
 
 	void NetSerialize(FArchive& Ar);
 
-	void Rewind(class UPrimitiveComponent* Component) const;
+	void Rewind(class UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) const;
 
 	bool operator ==(const FPhysicsStateWrapper<ModelState>& Other) const;
 };
@@ -23,8 +23,8 @@ void FPhysicsStateWrapper<ModelState>::NetSerialize(FArchive& Ar) {
 }
 
 template <typename ModelState>
-void FPhysicsStateWrapper<ModelState>::Rewind(UPrimitiveComponent* Component) const {
-	PhysicsState.Rewind(Component);
+void FPhysicsStateWrapper<ModelState>::Rewind(UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) const {
+	PhysicsState.Rewind(Handle);
 	State.Rewind(Component);
 }
 
@@ -56,10 +56,10 @@ public:
 
 protected:
 	
-	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const State& PrevState, State& OutState, const InputPacket& Input) override final;
-	virtual void PostSimulate(Chaos::FReal Dt, UPrimitiveComponent* Component, State& OutState, const InputPacket& Input) override final;
+	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, const State& PrevState, State& OutState, const InputPacket& Input) override final;
+	virtual void PostSimulate(Chaos::FReal Dt, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, State& OutState, const InputPacket& Input) override final;
 
-	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input);
+	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input);
 	virtual void PostSimulate(Chaos::FReal Dt, UPrimitiveComponent* Component, ModelState& OutState, const InputPacket& Input);
 };
 
@@ -73,33 +73,28 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Initialize(UPrim
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Simulate(Chaos::FReal Dt,
-UPrimitiveComponent* Component, const State& PrevState, State& OutState, const InputPacket& Input) {
-	Simulate(Dt, Component, PrevState.State, OutState.State, Input);
+UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, const State& PrevState, State& OutState, const InputPacket& Input) {
+	Simulate(Dt, Component, Handle, PrevState.State, OutState.State, Input);
 }
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::PostSimulate(Chaos::FReal Dt,
-UPrimitiveComponent* Component, State& OutState, const InputPacket& Input) {
-	FBodyInstance* Body = Component->GetBodyInstance();
-	Chaos::FRigidBodyHandle_Internal* Handle = Body->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
-	if (!Handle) {
-		return;
-	}
+UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, State& OutState, const InputPacket& Input) {
+	FTransform WorldTransform = Handle->GetWorldTransform();
 	
-	check(Handle);
-	check(Handle->CanTreatAsKinematic());
-		
-	OutState.PhysicsState.Location = Handle->X();
-	OutState.PhysicsState.Rotation = Handle->R();
-	OutState.PhysicsState.LinearVelocity = Handle->V();
-	OutState.PhysicsState.AngularVelocity = Handle->W();
+	OutState.PhysicsState.Location = WorldTransform.GetLocation();
+	OutState.PhysicsState.Rotation = WorldTransform.GetRotation();
+	OutState.PhysicsState.LinearVelocity = Handle->GetLinearVelocity();
+	OutState.PhysicsState.AngularVelocity = Handle->GetAngularVelocity();
 
+	Component->SetWorldTransform(WorldTransform);
+	
 	PostSimulate(Dt, Component, OutState.State, Input);
 }
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Simulate(Chaos::FReal Dt,
-	UPrimitiveComponent* Component, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input) {}
+	UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input) {}
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::PostSimulate(Chaos::FReal Dt,
