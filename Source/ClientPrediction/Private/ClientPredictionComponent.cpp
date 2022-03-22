@@ -29,18 +29,18 @@ void UClientPredictionComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
 void UClientPredictionComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	AccumulatedTime += DeltaTime;
+	while (AccumulatedTime >= kFixedDt) {
+		AccumulatedTime = FMath::Clamp(AccumulatedTime - kFixedDt, 0.0, AccumulatedTime);
+		Model->Tick(kFixedDt, UpdatedComponent, GetOwnerRole());
+	}
+	
 	// Send states to the client(s)
 	while (!QueuedClientSendStates.IsEmpty()) {
 		FNetSerializationProxy Proxy;
 		QueuedClientSendStates.Dequeue(Proxy);
 		
 		RecvServerState(Proxy);
-	}
-
-	AccumulatedTime += DeltaTime;
-	while (AccumulatedTime >= kFixedDt) {
-		AccumulatedTime = FMath::Clamp(AccumulatedTime - kFixedDt, 0.0, AccumulatedTime);
-		Model->Tick(kFixedDt, UpdatedComponent, GetOwnerRole());
 	}
 
 	// Send input packets to the authority

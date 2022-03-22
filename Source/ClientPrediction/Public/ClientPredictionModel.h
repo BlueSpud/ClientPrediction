@@ -30,10 +30,6 @@ public:
 
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) = 0;
 	virtual void ReceiveAuthorityState(FNetSerializationProxy& Proxy) = 0;
-
-protected:
-
-	virtual void Tick(Chaos::FReal Dt, bool bIsForceSimulating, UPrimitiveComponent* Component, ENetRole Role) = 0;
 	
 public:
 
@@ -128,7 +124,7 @@ public:
 	
 protected:
 
-	virtual void Tick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ENetRole Role) override final;
+	void Tick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ENetRole Role);
 
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input) = 0;
 	virtual void Rewind(const ModelState& State, UPrimitiveComponent* Component) = 0;

@@ -88,7 +88,7 @@ private:
 		
 	};
 
-	TMap<UPrimitiveComponent*, FSimulationActor> StaticSimulationActors;
+	TMap<const UPrimitiveComponent*, FSimulationActor> StaticSimulationActors;
 	
 };
 
@@ -160,8 +160,9 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::UpdateWorld(UPri
 		{
 			if (UPrimitiveComponent* OverlapComp = Overlap.GetComponent())
 			{
-				if (StaticSimulationActors.Find(OverlapComp)) {
+				if (StaticSimulationActors.Find(OverlapComp) != nullptr) {
 					StaticSimulationActors[OverlapComp].TicksSinceLastSeen = 0;
+					continue;
 				}
 				
 				const bool bIsSelf = (Owner == OverlapComp->GetOwner());
@@ -171,7 +172,7 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::UpdateWorld(UPri
 					ImmediatePhysics::FActorHandle* ActorHandle = PhysicsSimulation->CreateActor(ImmediatePhysics::EActorType::KinematicActor, &OverlapComp->BodyInstance, OverlapComp->GetComponentTransform());
 					PhysicsSimulation->AddToCollidingPairs(ActorHandle);
 
-					StaticSimulationActors.Add(Component, FSimulationActor(ActorHandle));
+					StaticSimulationActors.Add(OverlapComp, FSimulationActor(ActorHandle));
 				}
 			}
 		}
