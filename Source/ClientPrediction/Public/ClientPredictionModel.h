@@ -136,11 +136,12 @@ protected:
 private:
 	
 	void TickAuthority(Chaos::FReal Dt, UPrimitiveComponent* Component);
-	void TickRemote(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component);
+	void TickAutoProxy(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component);
+	void TickSimProxy(Chaos::FReal Dt, UPrimitiveComponent* Component);
 	
 	void PostTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ENetRole Role);
 	void PostTickAuthority(Chaos::FReal Dt, UPrimitiveComponent* Component);
-	void PostTickRemote(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component);
+	void PostTickAutoProxy(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component);
 
 	void Rewind_Internal(const FModelStateWrapper<ModelState>& State, UPrimitiveComponent* Component);
 	
@@ -154,10 +155,10 @@ private:
 	 */
 	uint32 AckedServerFrame = kInvalidFrame;
 
-	/** The index of the next frame on both the remote and authority */
+	/** The index of the next frame on both the remotes and authority */
 	uint32 NextLocalFrame = 0;
 
-	/** Remote index for the next input packet number */
+	/** Autonomous proxy index for the next input packet number */
 	uint32 NextInputPacket = 0;
 
 	/** Input packet used for the current frame */
@@ -194,7 +195,10 @@ void BaseClientPredictionModel<InputPacket, ModelState>::Tick(Chaos::FReal Dt, b
 		TickAuthority(Dt, Component);
 		break;
 	case ENetRole::ROLE_AutonomousProxy:
-		TickRemote(Dt, bIsForcedSimulation, Component);
+		TickAutoProxy(Dt, bIsForcedSimulation, Component);
+		break;
+	case ENetRole::ROLE_SimulatedProxy:
+		TickSimProxy(Dt, Component);
 		break;
 	default:
 		return;
@@ -246,7 +250,7 @@ void BaseClientPredictionModel<InputPacket, ModelState>::TickAuthority(Chaos::FR
 }
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::TickRemote(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component) {
+void BaseClientPredictionModel<InputPacket, ModelState>::TickAutoProxy(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component) {
 	if (!bIsForcedSimulation || InputBuffer.RemoteBufferSize() == 0) {
 		FInputPacketWrapper<InputPacket> Packet;
 		Packet.PacketNumber = NextInputPacket++;
@@ -279,13 +283,22 @@ void BaseClientPredictionModel<InputPacket, ModelState>::TickRemote(Chaos::FReal
 }
 
 template <typename InputPacket, typename ModelState>
+void BaseClientPredictionModel<InputPacket, ModelState>::TickSimProxy(Chaos::FReal Dt, UPrimitiveComponent* Component) {
+
+	// TODO interpolate from a snapshot buffer
+	FModelStateWrapper<ModelState> LocalLastAuthorityState = LastAuthorityState;
+	Rewind(LocalLastAuthorityState.State, Component);
+	
+}
+
+template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::PostTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ENetRole Role) {
 	switch (Role) {
 	case ENetRole::ROLE_Authority:
 		PostTickAuthority(Dt, Component);
 		break;
 	case ENetRole::ROLE_AutonomousProxy:
-		PostTickRemote(Dt, bIsForcedSimulation, Component);
+		PostTickAutoProxy(Dt, bIsForcedSimulation, Component);
 		break;
 	default:
 		return;
@@ -311,7 +324,7 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PostTickAuthority(Chaos
 }
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::PostTickRemote(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component) {
+void BaseClientPredictionModel<InputPacket, ModelState>::PostTickAutoProxy(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component) {
 	CurrentState.FrameNumber = NextLocalFrame++;
 	CurrentState.InputPacketNumber = CurrentInputPacketIdx;
 	ClientHistory.Enqueue(CurrentState);

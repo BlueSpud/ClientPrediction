@@ -11,7 +11,7 @@ struct FPhysicsState {
 	Chaos::FVec3 LinearVelocity;
 	Chaos::FVec3 AngularVelocity;
 
-	void Rewind(ImmediatePhysics::FActorHandle* Handle) const {
+	void Rewind(ImmediatePhysics::FActorHandle* Handle, UPrimitiveComponent* Component) const {
 		FTransform RewindTransform;
 		RewindTransform.SetLocation(Location);
 		RewindTransform.SetRotation(Rotation);
@@ -19,6 +19,8 @@ struct FPhysicsState {
 		Handle->SetWorldTransform(RewindTransform);
 		Handle->SetLinearVelocity(LinearVelocity);
 		Handle->SetAngularVelocity(AngularVelocity);
+
+		Component->SetWorldTransform(RewindTransform);
 	}
 
 	void NetSerialize(FArchive& Ar) {

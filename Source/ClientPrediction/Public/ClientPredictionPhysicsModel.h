@@ -4,7 +4,7 @@
 #include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsActorHandle_Chaos.h"
 
 #include "ClientPredictionModel.h"
-#include "ClientPredictionPhysics.h"
+#include "ClientPredictionPhysicsDeclares.h"
 #include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsSimulation_Chaos.h"
 
 template <typename ModelState>
@@ -28,7 +28,7 @@ void FPhysicsStateWrapper<ModelState>::NetSerialize(FArchive& Ar) {
 
 template <typename ModelState>
 void FPhysicsStateWrapper<ModelState>::Rewind(UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) const {
-	PhysicsState.Rewind(Handle);
+	PhysicsState.Rewind(Handle, Component);
 	State.Rewind(Component);
 }
 
@@ -68,9 +68,27 @@ protected:
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input);
 
 private:
+
+	void UpdateWorld(UPrimitiveComponent* Component);
+	
+private:
 	
 	ImmediatePhysics::FActorHandle* SimulatedBodyHandle = nullptr;
 	ImmediatePhysics::FSimulation* PhysicsSimulation = nullptr;
+
+	struct FSimulationActor {
+
+		FSimulationActor(ImmediatePhysics::FActorHandle* Handle) : Handle(Handle) {}
+
+		/** Memory is managed by simulation */
+		ImmediatePhysics::FActorHandle* Handle = nullptr;
+
+		/** The number of ticks ago that this actor was last seen by an overlap cast */
+		uint32 TicksSinceLastSeen = 0;
+		
+	};
+
+	TMap<UPrimitiveComponent*, FSimulationActor> StaticSimulationActors;
 	
 };
 
@@ -93,30 +111,6 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Initialize(UPrim
 	PhysicsSimulation->SetNumActiveBodies(1, {0});
 	
 	PhysicsSimulation->SetSolverIterations( 0.0166666f, 5, 5, 5, 5, 5, 5);
-
-	UWorld* UnsafeWorld = Component->GetWorld();
-	FPhysScene* PhysScene = UnsafeWorld->GetPhysicsScene();
-	
-	if ((UnsafeWorld != nullptr) && (PhysScene != nullptr))
-	{
-		TArray<FOverlapResult> Overlaps;
-		AActor* Owner = Cast<AActor>(Component->GetOwner());
-		UnsafeWorld->OverlapMultiByChannel(Overlaps, Owner->GetActorLocation(), FQuat::Identity, ECollisionChannel::ECC_Visibility, FCollisionShape::MakeSphere(10000.0), FCollisionQueryParams::DefaultQueryParam, FCollisionResponseParams(ECR_Overlap));
-
-		for (const FOverlapResult& Overlap : Overlaps)
-		{
-			if (UPrimitiveComponent* OverlapComp = Overlap.GetComponent())
-			{
-				const bool bIsSelf = (Owner == OverlapComp->GetOwner());
-				if (!bIsSelf)
-				{
-					// Create a kinematic actor. Not using Static as world-static objects may move in the simulation's frame of reference
-					ImmediatePhysics::FActorHandle* ActorHandle = PhysicsSimulation->CreateActor(ImmediatePhysics::EActorType::KinematicActor, &OverlapComp->BodyInstance, OverlapComp->GetComponentTransform());
-					PhysicsSimulation->AddToCollidingPairs(ActorHandle);
-				}
-			}
-		}
-	}
 	
 	Initialize(Component, SimulatedBodyHandle, Role);
 }
@@ -126,6 +120,8 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Initialize(UPrim
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const State& PrevState, State& OutState, const InputPacket& Input) {
+	UpdateWorld(Component);
+
 	Simulate(Dt, Component, SimulatedBodyHandle, PrevState.State, OutState.State, Input);
 	
 	PhysicsSimulation->Simulate(Dt, 1.0, 1, FVector(0.0, 0.0, -980.0));
@@ -148,3 +144,36 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Rewind(const FPh
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Simulate(Chaos::FReal Dt,
 	UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input) {}
+
+template <typename InputPacket, typename ModelState>
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::UpdateWorld(UPrimitiveComponent* Component) {
+	UWorld* UnsafeWorld = Component->GetWorld();
+	FPhysScene* PhysScene = UnsafeWorld->GetPhysicsScene();
+	
+	if ((UnsafeWorld != nullptr) && (PhysScene != nullptr))
+	{
+		TArray<FOverlapResult> Overlaps;
+		AActor* Owner = Cast<AActor>(Component->GetOwner());
+		UnsafeWorld->OverlapMultiByChannel(Overlaps, Owner->GetActorLocation(), FQuat::Identity, ECollisionChannel::ECC_Visibility, FCollisionShape::MakeSphere(10000.0), FCollisionQueryParams::DefaultQueryParam, FCollisionResponseParams(ECR_Overlap));
+
+		for (const FOverlapResult& Overlap : Overlaps)
+		{
+			if (UPrimitiveComponent* OverlapComp = Overlap.GetComponent())
+			{
+				if (StaticSimulationActors.Find(OverlapComp)) {
+					StaticSimulationActors[OverlapComp].TicksSinceLastSeen = 0;
+				}
+				
+				const bool bIsSelf = (Owner == OverlapComp->GetOwner());
+				if (!bIsSelf)
+				{
+					// Create a kinematic actor. Not using Static as world-static objects may move in the simulation's frame of reference
+					ImmediatePhysics::FActorHandle* ActorHandle = PhysicsSimulation->CreateActor(ImmediatePhysics::EActorType::KinematicActor, &OverlapComp->BodyInstance, OverlapComp->GetComponentTransform());
+					PhysicsSimulation->AddToCollidingPairs(ActorHandle);
+
+					StaticSimulationActors.Add(Component, FSimulationActor(ActorHandle));
+				}
+			}
+		}
+	}
+}
