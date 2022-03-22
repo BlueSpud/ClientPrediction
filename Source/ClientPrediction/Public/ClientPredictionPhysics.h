@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include "ClientPredictionModel.h"
+#include "Physics/ImmediatePhysics/ImmediatePhysicsDeclares.h"
 #include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsActorHandle_Chaos.h"
 #include "PhysicsProxy/SingleParticlePhysicsProxy.h"
 
