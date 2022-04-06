@@ -34,6 +34,8 @@ void UClientPredictionComponent::TickComponent(float DeltaTime, ELevelTick TickT
 		AccumulatedTime = FMath::Clamp(AccumulatedTime - kFixedDt, 0.0, AccumulatedTime);
 		Model->Tick(kFixedDt, UpdatedComponent, GetOwnerRole());
 	}
+
+	Model->Finalize(AccumulatedTime / kFixedDt, UpdatedComponent, GetOwnerRole());
 	
 	// Send states to the client(s)
 	while (!QueuedClientSendStates.IsEmpty()) {

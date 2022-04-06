@@ -16,6 +16,7 @@ struct FPhysicsStateWrapper {
 	void NetSerialize(FArchive& Ar);
 
 	void Rewind(class UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) const;
+	void Interpolate(float Alpha, const FPhysicsStateWrapper& Other);
 
 	bool operator ==(const FPhysicsStateWrapper<ModelState>& Other) const;
 };
@@ -33,6 +34,12 @@ void FPhysicsStateWrapper<ModelState>::Rewind(UPrimitiveComponent* Component, Im
 }
 
 template <typename ModelState>
+void FPhysicsStateWrapper<ModelState>::Interpolate(float Alpha, const FPhysicsStateWrapper& Other) {
+	PhysicsState.Interpolate(Alpha, Other.PhysicsState);
+	State.Interpolate(Alpha, Other.State);
+}
+
+template <typename ModelState>
 bool FPhysicsStateWrapper<ModelState>::operator==(const FPhysicsStateWrapper<ModelState>& Other) const {
 	return State == Other.State
 		&& PhysicsState == Other.PhysicsState;
@@ -43,6 +50,7 @@ bool FPhysicsStateWrapper<ModelState>::operator==(const FPhysicsStateWrapper<Mod
 struct CLIENTPREDICTION_API FEmptyState {
 	void NetSerialize(FArchive& Ar) {}
 	void Rewind(class UPrimitiveComponent* Component) const {}
+	void Interpolate(float Alpha, const FEmptyState& Other) {}
 	bool operator ==(const FEmptyState& Other) const { return true; }
 };
 
@@ -66,6 +74,8 @@ protected:
 
 	// Should be implemented by child classes
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input);
+
+	virtual void ApplyState(UPrimitiveComponent* Component, const FPhysicsStateWrapper<ModelState>& State) override;
 
 private:
 
@@ -109,8 +119,8 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Initialize(UPrim
 	check(SimulatedBodyHandle);
 	SimulatedBodyHandle->SetEnabled(true);
 	PhysicsSimulation->SetNumActiveBodies(1, {0});
-	
-	PhysicsSimulation->SetSolverIterations( 0.0166666f, 5, 5, 5, 5, 5, 5);
+
+	PhysicsSimulation->SetSolverSettings(0.0166666f, -1.0, -1.0f, 5, 5, 5);
 	
 	Initialize(Component, SimulatedBodyHandle, Role);
 }
@@ -132,8 +142,6 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Simulate(Chaos::
 	OutState.PhysicsState.Rotation = WorldTransform.GetRotation();
 	OutState.PhysicsState.LinearVelocity = SimulatedBodyHandle->GetLinearVelocity();
 	OutState.PhysicsState.AngularVelocity = SimulatedBodyHandle->GetAngularVelocity();
-
-	Component->SetWorldTransform(WorldTransform);
 }
 
 template <typename InputPacket, typename ModelState>
@@ -144,6 +152,12 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Rewind(const FPh
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Simulate(Chaos::FReal Dt,
 	UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input) {}
+
+template <typename InputPacket, typename ModelState>
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::ApplyState(UPrimitiveComponent* Component, const FPhysicsStateWrapper<ModelState>& State) {
+	Component->SetWorldLocation(State.PhysicsState.Location);
+	Component->SetWorldRotation(State.PhysicsState.Rotation);
+}
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::UpdateWorld(UPrimitiveComponent* Component) {

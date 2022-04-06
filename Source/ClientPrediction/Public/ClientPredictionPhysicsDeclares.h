@@ -19,8 +19,13 @@ struct FPhysicsState {
 		Handle->SetWorldTransform(RewindTransform);
 		Handle->SetLinearVelocity(LinearVelocity);
 		Handle->SetAngularVelocity(AngularVelocity);
+	}
 
-		Component->SetWorldTransform(RewindTransform);
+	void Interpolate(float Alpha, const FPhysicsState& Other) {
+		Location = FMath::Lerp(Location, Other.Location, Alpha);
+		Rotation = Chaos::FRotation3::FastLerp(Rotation, Other.Rotation, Alpha);
+		LinearVelocity = FMath::Lerp(LinearVelocity, Other.LinearVelocity, Alpha);
+		AngularVelocity = FMath::Lerp(AngularVelocity, Other.AngularVelocity, Alpha);
 	}
 
 	void NetSerialize(FArchive& Ar) {

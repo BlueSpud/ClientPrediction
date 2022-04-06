@@ -26,6 +26,13 @@ public:
 
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component, ENetRole Role) = 0;
 
+	/**
+	 * To be called after ticks have been performed and finalizes the output from the model.
+	 * @param Alpha the percentage that time is between the current tick and the next tick.
+	 * @param Component The component that should be updated.
+	 * @param Role The network role to finalize the output for */
+	virtual void Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component, ENetRole Role) = 0;
+
 // Input packet / state receiving
 
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) = 0;
@@ -113,6 +120,8 @@ public:
 	virtual ~BaseClientPredictionModel() override = default;
 
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component, ENetRole Role) override final;
+
+	virtual void Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component, ENetRole Role) override final;
 	
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override final;
 	virtual void ReceiveAuthorityState(FNetSerializationProxy& Proxy) override final;
@@ -128,6 +137,8 @@ protected:
 
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input) = 0;
 	virtual void Rewind(const ModelState& State, UPrimitiveComponent* Component) = 0;
+
+	virtual void ApplyState(UPrimitiveComponent* Component, const ModelState& State);
 	
 private:
 	
@@ -141,7 +152,7 @@ private:
 
 	void Rewind_Internal(const FModelStateWrapper<ModelState>& State, UPrimitiveComponent* Component);
 	
-	void ForceSimulate(uint32 Ticks, Chaos::FReal TickDt, UPrimitiveComponent* Component, ENetRole Role);
+	void ForceSimulate(uint32 Ticks, Chaos::FReal TickDt, UPrimitiveComponent* Component);
 	
 private:
 	
@@ -163,14 +174,15 @@ private:
 	
 	/** On the client this is all of the frames that have not been reconciled with the server. */
 	TQueue<FModelStateWrapper<ModelState>> ClientHistory;
-
+	
 	/**
 	 * The last state that was received from the authority.
 	 * We use atomic here because the state will be written to from whatever thread handles receiving the state
 	 * from the authority and be read from the physics thread.
 	 */
-	std::atomic<FModelStateWrapper<ModelState>> LastAuthorityState;
+	FModelStateWrapper<ModelState> LastAuthorityState;
 	FModelStateWrapper<ModelState> CurrentState;
+	ModelState LastState;
 
 	FInputBuffer<FInputPacketWrapper<InputPacket>> InputBuffer;
 
@@ -182,30 +194,6 @@ private:
 template <typename InputPacket, typename ModelState>
 BaseClientPredictionModel<InputPacket, ModelState>::BaseClientPredictionModel() {
 	InputBuffer.SetAuthorityTargetBufferSize(kAuthorityTargetInputBufferSize);
-}
-
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::Tick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ENetRole Role) {
-	switch (Role) {
-	case ENetRole::ROLE_Authority:
-		TickAuthority(Dt, Component);
-		break;
-	case ENetRole::ROLE_AutonomousProxy:
-		TickAutoProxy(Dt, bIsForcedSimulation, Component);
-		break;
-	case ENetRole::ROLE_SimulatedProxy:
-		TickSimProxy(Dt, Component);
-		break;
-	default:
-		return;
-	}
-	
-	PostTick(Dt, bIsForcedSimulation, Component, Role);
-}
-
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component, ENetRole Role) {
-	Tick(Dt, false, Component, Role);
 }
 
 template <typename InputPacket, typename ModelState>
@@ -233,15 +221,39 @@ void BaseClientPredictionModel<InputPacket, ModelState>::ReceiveAuthorityState(F
 }
 
 template <typename InputPacket, typename ModelState>
+void BaseClientPredictionModel<InputPacket, ModelState>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component, ENetRole Role) {
+	Tick(Dt, false, Component, Role);
+}
+
+template <typename InputPacket, typename ModelState>
+void BaseClientPredictionModel<InputPacket, ModelState>::Tick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ENetRole Role) {
+	LastState = CurrentState.State;
+
+	switch (Role) {
+	case ENetRole::ROLE_Authority:
+		TickAuthority(Dt, Component);
+		break;
+	case ENetRole::ROLE_AutonomousProxy:
+		TickAutoProxy(Dt, bIsForcedSimulation, Component);
+		break;
+	case ENetRole::ROLE_SimulatedProxy:
+		TickSimProxy(Dt, Component);
+		break;
+	default:
+		return;
+	}
+	
+	PostTick(Dt, bIsForcedSimulation, Component, Role);
+}
+
+template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::TickAuthority(Chaos::FReal Dt, UPrimitiveComponent* Component) {
 	if (CurrentInputPacketIdx != kInvalidFrame || InputBuffer.AuthorityBufferSize() > InputBuffer.GetAuthorityTargetBufferSize()) {
 		check(InputBuffer.ConsumeInputAuthority(CurrentInputPacket));
 		CurrentInputPacketIdx = CurrentInputPacket.PacketNumber;
 	}
-
-	ModelState LastState = CurrentState.State;
-	CurrentState = FModelStateWrapper<ModelState>();
 	
+	CurrentState = FModelStateWrapper<ModelState>();
 	Simulate(Dt, Component, LastState, CurrentState.State, CurrentInputPacket.Packet);
 }
 
@@ -272,9 +284,7 @@ void BaseClientPredictionModel<InputPacket, ModelState>::TickAutoProxy(Chaos::FR
 	check(InputBuffer.ConsumeInputRemote(CurrentInputPacket));
 	CurrentInputPacketIdx = CurrentInputPacket.PacketNumber;
 	
-	ModelState LastState = CurrentState.State;
 	CurrentState = FModelStateWrapper<ModelState>();
-
 	Simulate(Dt, Component, LastState, CurrentState.State, CurrentInputPacket.Packet);
 }
 
@@ -282,13 +292,14 @@ template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::TickSimProxy(Chaos::FReal Dt, UPrimitiveComponent* Component) {
 
 	// TODO interpolate from a snapshot buffer
-	FModelStateWrapper<ModelState> LocalLastAuthorityState = LastAuthorityState;
-	Rewind(LocalLastAuthorityState.State, Component);
-	
+	CurrentState = LastAuthorityState;
 }
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::PostTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ENetRole Role) {
+	CurrentState.FrameNumber = NextLocalFrame++;
+	CurrentState.InputPacketNumber = CurrentInputPacketIdx;
+	
 	switch (Role) {
 	case ENetRole::ROLE_Authority:
 		PostTickAuthority(Dt, Component);
@@ -303,16 +314,12 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PostTick(Chaos::FReal D
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::PostTickAuthority(Chaos::FReal Dt, UPrimitiveComponent* Component) {
-	CurrentState.FrameNumber = NextLocalFrame++;
-	CurrentState.InputPacketNumber = CurrentInputPacketIdx;
-
 	if (NextLocalFrame % kSyncFrames) {
 		EmitAuthorityState.CheckCallable();
 
 		// Capture by value here so that the proxy stores the state with it
-		FModelStateWrapper<ModelState> LocalCurrentState = CurrentState;
 		FNetSerializationProxy Proxy([=](FArchive& Ar) mutable {
-			LocalCurrentState.NetSerialize(Ar);
+			CurrentState.NetSerialize(Ar);
 		});
 		
 		EmitAuthorityState(Proxy);
@@ -321,8 +328,6 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PostTickAuthority(Chaos
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::PostTickAutoProxy(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component) {
-	CurrentState.FrameNumber = NextLocalFrame++;
-	CurrentState.InputPacketNumber = CurrentInputPacketIdx;
 	ClientHistory.Enqueue(CurrentState);
 
 	// If there are frames that are being used to fast-forward/resimulate no logic needs to be performed
@@ -331,28 +336,27 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PostTickAutoProxy(Chaos
 		return;
 	}
 	
-	FModelStateWrapper<ModelState> LocalLastAuthorityState = LastAuthorityState;
-	
-	if (LocalLastAuthorityState.FrameNumber == kInvalidFrame) {
+	if (LastAuthorityState.FrameNumber == kInvalidFrame) {
 		// Never received a frame from the server
 		return;
 	}
 
-	if (LocalLastAuthorityState.FrameNumber <= AckedServerFrame && AckedServerFrame != kInvalidFrame) {
+	if (LastAuthorityState.FrameNumber <= AckedServerFrame && AckedServerFrame != kInvalidFrame) {
 		// Last state received from the server was already acknowledged
 		return;
 	}
 
-	if (LocalLastAuthorityState.InputPacketNumber == kInvalidFrame) {
+	if (LastAuthorityState.InputPacketNumber == kInvalidFrame) {
 		// Server has not started to consume input, ignore it since the client has been applying input since frame 0
 		return;
 	}
 	
-	if (LocalLastAuthorityState.FrameNumber > CurrentState.FrameNumber) {
+	if (LastAuthorityState.FrameNumber > CurrentState.FrameNumber) {
 		// Server is ahead of the client. The client should just chuck out everything and resimulate
-		Rewind_Internal(LocalLastAuthorityState, Component);
-		UE_LOG(LogTemp, Warning, TEXT("Client was behind server. Jumping to frame %i and resimulating"), LocalLastAuthorityState.FrameNumber);
-		ForceSimulate(FMath::Max(kClientForwardPredictionFrames, InputBuffer.RemoteBufferSize()), Dt, Component, ENetRole::ROLE_AutonomousProxy);
+		UE_LOG(LogTemp, Warning, TEXT("Client was behind server. Jumping to frame %i and resimulating"), LastAuthorityState.FrameNumber);
+		
+		Rewind_Internal(LastAuthorityState, Component);
+		ForceSimulate(FMath::Max(kClientForwardPredictionFrames, InputBuffer.RemoteBufferSize()), Dt, Component);
 	} else {
 		// Check history against the server state
 		FModelStateWrapper<ModelState> HistoricState;
@@ -360,7 +364,7 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PostTickAutoProxy(Chaos
 		
 		while (!ClientHistory.IsEmpty()) {
 			ClientHistory.Dequeue(HistoricState);
-			if (HistoricState.FrameNumber == LocalLastAuthorityState.FrameNumber) {
+			if (HistoricState.FrameNumber == LastAuthorityState.FrameNumber) {
 				bFound = true;
 				break;
 			}
@@ -368,24 +372,34 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PostTickAutoProxy(Chaos
 
 		check(bFound);
 
-		if (HistoricState == LocalLastAuthorityState) {
+		if (HistoricState == LastAuthorityState) {
 			// Server state and historic state matched, simulation was good up to LocalServerState.FrameNumber
-			AckedServerFrame = LocalLastAuthorityState.FrameNumber;
-			InputBuffer.Ack(LocalLastAuthorityState.InputPacketNumber);
-			UE_LOG(LogTemp, Verbose, TEXT("Acked up to %i, input packet %i. Input buffer had %i elements"), AckedServerFrame, LocalLastAuthorityState.InputPacketNumber, InputBuffer.RemoteBufferSize());
+			AckedServerFrame = LastAuthorityState.FrameNumber;
+			InputBuffer.Ack(LastAuthorityState.InputPacketNumber);
+			UE_LOG(LogTemp, Verbose, TEXT("Acked up to %i, input packet %i. Input buffer had %i elements"), AckedServerFrame, LastAuthorityState.InputPacketNumber, InputBuffer.RemoteBufferSize());
 		} else {
 			// Server/client mismatch. Resimulate the client
-			Rewind_Internal(LocalLastAuthorityState, Component);
-			UE_LOG(LogTemp, Error, TEXT("Rewinding and resimulating from frame %i which used input packet %i"), LocalLastAuthorityState.FrameNumber, LocalLastAuthorityState.InputPacketNumber);
-			ForceSimulate(FMath::Max(kClientForwardPredictionFrames, InputBuffer.RemoteBufferSize()), Dt, Component, ENetRole::ROLE_AutonomousProxy);
+			UE_LOG(LogTemp, Error, TEXT("Rewinding and resimulating from frame %i which used input packet %i"), LastAuthorityState.FrameNumber, LastAuthorityState.InputPacketNumber);
+
+			Rewind_Internal(LastAuthorityState, Component);
+			ForceSimulate(FMath::Max(kClientForwardPredictionFrames, InputBuffer.RemoteBufferSize()), Dt, Component);
 		}
 		
 	}
 }
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::Rewind_Internal(const FModelStateWrapper<ModelState>& State, UPrimitiveComponent* Component) {
+void BaseClientPredictionModel<InputPacket, ModelState>::ApplyState(UPrimitiveComponent* Component, const ModelState& State) {}
 
+template <typename InputPacket, typename ModelState>
+void BaseClientPredictionModel<InputPacket, ModelState>::Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component, ENetRole Role) {
+	ModelState InterpolatedState = LastState;
+	InterpolatedState.Interpolate(Alpha, CurrentState.State);
+	ApplyState(Component, InterpolatedState);
+}
+
+template <typename InputPacket, typename ModelState>
+void BaseClientPredictionModel<InputPacket, ModelState>::Rewind_Internal(const FModelStateWrapper<ModelState>& State, UPrimitiveComponent* Component) {
 	ClientHistory.Empty();
 	AckedServerFrame = State.FrameNumber;
 	
@@ -399,8 +413,8 @@ void BaseClientPredictionModel<InputPacket, ModelState>::Rewind_Internal(const F
 }
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::ForceSimulate(uint32 Ticks, Chaos::FReal TickDt, UPrimitiveComponent* Component, ENetRole Role) {
+void BaseClientPredictionModel<InputPacket, ModelState>::ForceSimulate(uint32 Ticks, Chaos::FReal TickDt, UPrimitiveComponent* Component) {
 	for (uint32 i = 0; i < Ticks; i++) {
-		Tick(TickDt, true, Component, Role);
+		Tick(TickDt, true, Component, ENetRole::ROLE_AutonomousProxy);
 	}
 }
