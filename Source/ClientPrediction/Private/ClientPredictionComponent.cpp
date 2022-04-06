@@ -3,6 +3,11 @@
 #include "ClientPredictionPhysicsModel.h"
 #include "PBDRigidsSolver.h"
 
+#include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsActorHandle_Chaos.h"
+#include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsSimulation_Chaos.h"
+
+static constexpr Chaos::FReal kFixedDt = 0.0166666;
+
 UClientPredictionComponent::UClientPredictionComponent() {
 	SetIsReplicatedByDefault(true);
 
@@ -10,30 +15,29 @@ UClientPredictionComponent::UClientPredictionComponent() {
 	PrimaryComponentTick.bStartWithTickEnabled = true;
 }
 
-UClientPredictionComponent::~UClientPredictionComponent() = default;
-
 void UClientPredictionComponent::BeginPlay() {
 	Super::BeginPlay();
 
 	check(UpdatedComponent);
 	Model->Initialize(UpdatedComponent, GetOwnerRole());
-	
-	Chaos::FPhysicsSolver* Solver = GetWorld()->GetPhysicsScene()->GetSolver();
-	OnPhysicsAdvancedDelegate = Solver->AddPostAdvanceCallback(FSolverPostAdvance::FDelegate::CreateUObject(this, &UClientPredictionComponent::OnPhysicsAdvanced));
-	PrePhysicsAdvancedDelegate = Solver->AddPreAdvanceCallback(FSolverPostAdvance::FDelegate::CreateUObject(this, &UClientPredictionComponent::PrePhysicsAdvance));
 }
 
 void UClientPredictionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
 	Super::EndPlay(EndPlayReason);
-	
-	Chaos::FPhysicsSolver* Solver = GetWorld()->GetPhysicsScene()->GetSolver();
-	Solver->RemovePostAdvanceCallback(OnPhysicsAdvancedDelegate);
 }
 
 void UClientPredictionComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	// Send states to the client
+	AccumulatedTime += DeltaTime;
+	while (AccumulatedTime >= kFixedDt) {
+		AccumulatedTime = FMath::Clamp(AccumulatedTime - kFixedDt, 0.0, AccumulatedTime);
+		Model->Tick(kFixedDt, UpdatedComponent, GetOwnerRole());
+	}
+
+	Model->Finalize(AccumulatedTime / kFixedDt, UpdatedComponent, GetOwnerRole());
+	
+	// Send states to the client(s)
 	while (!QueuedClientSendStates.IsEmpty()) {
 		FNetSerializationProxy Proxy;
 		QueuedClientSendStates.Dequeue(Proxy);
@@ -41,15 +45,14 @@ void UClientPredictionComponent::TickComponent(float DeltaTime, ELevelTick TickT
 		RecvServerState(Proxy);
 	}
 
-	// Send 
+	// Send input packets to the authority
 	while (!InputBufferSendQueue.IsEmpty()) {
 		FNetSerializationProxy Proxy;
 		InputBufferSendQueue.Dequeue(Proxy);
 		
 		RecvInputPacket(Proxy);
 	}
-
-	Model->GameThreadTick(DeltaTime, UpdatedComponent, GetOwnerRole());
+	
 }
 
 void UClientPredictionComponent::OnRegister() {
@@ -57,43 +60,6 @@ void UClientPredictionComponent::OnRegister() {
 
 	// TODO make this more sophisticated
 	UpdatedComponent = Cast<UPrimitiveComponent>(GetOwner()->GetRootComponent());
-}
-
-void UClientPredictionComponent::PrePhysicsAdvance(Chaos::FReal Dt) {
-	check(Model);
-	
-	if (!Timestep) {
-		Timestep = Dt;
-	} else {
-		// It's expected that the timestep is always constant
-		checkSlow(Timestep == Dt);
-	}
-
-	Model->PreTick(Dt, ForceSimulationFrames != 0, UpdatedComponent, GetOwnerRole());
-}
-
-void UClientPredictionComponent::OnPhysicsAdvanced(Chaos::FReal Dt) {
-	check(Model);
-
-	bool bIsForcedSimulation = ForceSimulationFrames > 0;
-	if (bIsForcedSimulation) {
-		GetWorld()->GetPhysicsScene()->GetSolver()->UpdateGameThreadStructures();
-		--ForceSimulationFrames;
-	}
-	
-	Model->PostTick(Dt, bIsForcedSimulation, UpdatedComponent, GetOwnerRole());
-}
-
-void UClientPredictionComponent::ForceSimulate(uint32 Frames) {
-	ForceSimulationFrames = Frames;
-	
-	auto Solver = GetWorld()->GetPhysicsScene()->GetSolver();
-	check(Solver);
-
-	// These will be enqueued to the physics thread, it won't be blocking.
-	for (uint32 i = 0; i < Frames; i++) {
-		Solver->AdvanceAndDispatch_External(Timestep);
-	}
 }
 
 void UClientPredictionComponent::RecvInputPacket_Implementation(FNetSerializationProxy Proxy) {

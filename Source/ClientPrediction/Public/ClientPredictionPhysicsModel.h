@@ -1,7 +1,11 @@
 ﻿#pragma once
 
+#include "Physics/ImmediatePhysics/ImmediatePhysicsDeclares.h"
+#include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsActorHandle_Chaos.h"
+
 #include "ClientPredictionModel.h"
-#include "ClientPredictionPhysics.h"
+#include "ClientPredictionPhysicsDeclares.h"
+#include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsSimulation_Chaos.h"
 
 template <typename ModelState>
 struct FPhysicsStateWrapper {
@@ -11,7 +15,8 @@ struct FPhysicsStateWrapper {
 
 	void NetSerialize(FArchive& Ar);
 
-	void Rewind(class UPrimitiveComponent* Component) const;
+	void Rewind(class UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) const;
+	void Interpolate(float Alpha, const FPhysicsStateWrapper& Other);
 
 	bool operator ==(const FPhysicsStateWrapper<ModelState>& Other) const;
 };
@@ -23,9 +28,15 @@ void FPhysicsStateWrapper<ModelState>::NetSerialize(FArchive& Ar) {
 }
 
 template <typename ModelState>
-void FPhysicsStateWrapper<ModelState>::Rewind(UPrimitiveComponent* Component) const {
-	PhysicsState.Rewind(Component);
+void FPhysicsStateWrapper<ModelState>::Rewind(UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) const {
+	PhysicsState.Rewind(Handle, Component);
 	State.Rewind(Component);
+}
+
+template <typename ModelState>
+void FPhysicsStateWrapper<ModelState>::Interpolate(float Alpha, const FPhysicsStateWrapper& Other) {
+	PhysicsState.Interpolate(Alpha, Other.PhysicsState);
+	State.Interpolate(Alpha, Other.State);
 }
 
 template <typename ModelState>
@@ -39,6 +50,7 @@ bool FPhysicsStateWrapper<ModelState>::operator==(const FPhysicsStateWrapper<Mod
 struct CLIENTPREDICTION_API FEmptyState {
 	void NetSerialize(FArchive& Ar) {}
 	void Rewind(class UPrimitiveComponent* Component) const {}
+	void Interpolate(float Alpha, const FEmptyState& Other) {}
 	bool operator ==(const FEmptyState& Other) const { return true; }
 };
 
@@ -49,58 +61,134 @@ using State = FPhysicsStateWrapper<ModelState>;
 
 public:
 
-	BaseClientPredictionPhysicsModel() = default;
-	virtual ~BaseClientPredictionPhysicsModel() override = default;
+	BaseClientPredictionPhysicsModel();
+	virtual ~BaseClientPredictionPhysicsModel() override;
 
-	virtual void Initialize(UPrimitiveComponent* Component, ENetRole Role) override;
+	virtual void Initialize(UPrimitiveComponent* Component, ENetRole Role) override final;
+	virtual void Initialize(UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, ENetRole Role);
 
 protected:
 	
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const State& PrevState, State& OutState, const InputPacket& Input) override final;
-	virtual void PostSimulate(Chaos::FReal Dt, UPrimitiveComponent* Component, State& OutState, const InputPacket& Input) override final;
+	virtual void Rewind(const FPhysicsStateWrapper<ModelState>& State, UPrimitiveComponent* Component) override final;
 
-	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input);
-	virtual void PostSimulate(Chaos::FReal Dt, UPrimitiveComponent* Component, ModelState& OutState, const InputPacket& Input);
+	// Should be implemented by child classes
+	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input);
+
+	virtual void ApplyState(UPrimitiveComponent* Component, const FPhysicsStateWrapper<ModelState>& State) override;
+
+private:
+
+	void UpdateWorld(UPrimitiveComponent* Component);
+	
+private:
+	
+	ImmediatePhysics::FActorHandle* SimulatedBodyHandle = nullptr;
+	ImmediatePhysics::FSimulation* PhysicsSimulation = nullptr;
+
+	struct FSimulationActor {
+
+		FSimulationActor(ImmediatePhysics::FActorHandle* Handle) : Handle(Handle) {}
+
+		/** Memory is managed by simulation */
+		ImmediatePhysics::FActorHandle* Handle = nullptr;
+
+		/** The number of ticks ago that this actor was last seen by an overlap cast */
+		uint32 TicksSinceLastSeen = 0;
+		
+	};
+
+	TMap<const UPrimitiveComponent*, FSimulationActor> StaticSimulationActors;
+	
 };
 
 template <typename InputPacket, typename ModelState>
+BaseClientPredictionPhysicsModel<InputPacket, ModelState>::BaseClientPredictionPhysicsModel() {
+	PhysicsSimulation = new ImmediatePhysics::FSimulation();
+}
+
+template <typename InputPacket, typename ModelState>
+BaseClientPredictionPhysicsModel<InputPacket, ModelState>::~BaseClientPredictionPhysicsModel() {
+	// SimulatedBodyHandle is managed by the physics simulation
+	delete PhysicsSimulation;
+}
+
+template <typename InputPacket, typename ModelState>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Initialize(UPrimitiveComponent* Component, ENetRole Role) {
-	// Disable physics on simulated proxies since they will just mirror the server
-	if (Role == ENetRole::ROLE_SimulatedProxy) {
-		Component->SetSimulatePhysics(false);
-	}
-}
+	SimulatedBodyHandle = PhysicsSimulation->CreateActor(ImmediatePhysics::EActorType::DynamicActor, &Component->BodyInstance, Component->GetComponentTransform());
+	check(SimulatedBodyHandle);
+	SimulatedBodyHandle->SetEnabled(true);
+	PhysicsSimulation->SetNumActiveBodies(1, {0});
 
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Simulate(Chaos::FReal Dt,
-UPrimitiveComponent* Component, const State& PrevState, State& OutState, const InputPacket& Input) {
-	Simulate(Dt, Component, PrevState.State, OutState.State, Input);
-}
-
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::PostSimulate(Chaos::FReal Dt,
-UPrimitiveComponent* Component, State& OutState, const InputPacket& Input) {
-	FBodyInstance* Body = Component->GetBodyInstance();
-	Chaos::FRigidBodyHandle_Internal* Handle = Body->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
-	if (!Handle) {
-		return;
-	}
+	PhysicsSimulation->SetSolverSettings(0.0166666f, -1.0, -1.0f, 5, 5, 5);
 	
-	check(Handle);
-	check(Handle->CanTreatAsKinematic());
-		
-	OutState.PhysicsState.Location = Handle->X();
-	OutState.PhysicsState.Rotation = Handle->R();
-	OutState.PhysicsState.LinearVelocity = Handle->V();
-	OutState.PhysicsState.AngularVelocity = Handle->W();
+	Initialize(Component, SimulatedBodyHandle, Role);
+}
 
-	PostSimulate(Dt, Component, OutState.State, Input);
+template <typename InputPacket, typename ModelState>
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Initialize(UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, ENetRole Role) {}
+
+template <typename InputPacket, typename ModelState>
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const State& PrevState, State& OutState, const InputPacket& Input) {
+	UpdateWorld(Component);
+
+	Simulate(Dt, Component, SimulatedBodyHandle, PrevState.State, OutState.State, Input);
+	
+	PhysicsSimulation->Simulate(Dt, 1.0, 1, FVector(0.0, 0.0, -980.0));
+
+	const FTransform WorldTransform = SimulatedBodyHandle->GetWorldTransform();
+	
+	OutState.PhysicsState.Location = WorldTransform.GetLocation();
+	OutState.PhysicsState.Rotation = WorldTransform.GetRotation();
+	OutState.PhysicsState.LinearVelocity = SimulatedBodyHandle->GetLinearVelocity();
+	OutState.PhysicsState.AngularVelocity = SimulatedBodyHandle->GetAngularVelocity();
+}
+
+template <typename InputPacket, typename ModelState>
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Rewind(const FPhysicsStateWrapper<ModelState>& State, UPrimitiveComponent* Component) {
+	State.Rewind(Component, SimulatedBodyHandle);
 }
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Simulate(Chaos::FReal Dt,
-	UPrimitiveComponent* Component, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input) {}
+	UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input) {}
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::PostSimulate(Chaos::FReal Dt,
-	UPrimitiveComponent* Component, ModelState& OutState, const InputPacket& Input) {}
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::ApplyState(UPrimitiveComponent* Component, const FPhysicsStateWrapper<ModelState>& State) {
+	Component->SetWorldLocation(State.PhysicsState.Location);
+	Component->SetWorldRotation(State.PhysicsState.Rotation);
+}
+
+template <typename InputPacket, typename ModelState>
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::UpdateWorld(UPrimitiveComponent* Component) {
+	UWorld* UnsafeWorld = Component->GetWorld();
+	FPhysScene* PhysScene = UnsafeWorld->GetPhysicsScene();
+	
+	if ((UnsafeWorld != nullptr) && (PhysScene != nullptr))
+	{
+		TArray<FOverlapResult> Overlaps;
+		AActor* Owner = Cast<AActor>(Component->GetOwner());
+		UnsafeWorld->OverlapMultiByChannel(Overlaps, Owner->GetActorLocation(), FQuat::Identity, ECollisionChannel::ECC_Visibility, FCollisionShape::MakeSphere(10000.0), FCollisionQueryParams::DefaultQueryParam, FCollisionResponseParams(ECR_Overlap));
+
+		for (const FOverlapResult& Overlap : Overlaps)
+		{
+			if (UPrimitiveComponent* OverlapComp = Overlap.GetComponent())
+			{
+				if (StaticSimulationActors.Find(OverlapComp) != nullptr) {
+					StaticSimulationActors[OverlapComp].TicksSinceLastSeen = 0;
+					continue;
+				}
+				
+				const bool bIsSelf = (Owner == OverlapComp->GetOwner());
+				if (!bIsSelf)
+				{
+					// Create a kinematic actor. Not using Static as world-static objects may move in the simulation's frame of reference
+					ImmediatePhysics::FActorHandle* ActorHandle = PhysicsSimulation->CreateActor(ImmediatePhysics::EActorType::KinematicActor, &OverlapComp->BodyInstance, OverlapComp->GetComponentTransform());
+					PhysicsSimulation->AddToCollidingPairs(ActorHandle);
+
+					StaticSimulationActors.Add(OverlapComp, FSimulationActor(ActorHandle));
+				}
+			}
+		}
+	}
+}
