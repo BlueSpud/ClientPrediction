@@ -31,6 +31,9 @@ public:
 	
 public:
 	
+	DECLARE_DELEGATE_OneParam(FInputProductionDelgate, InputPacket&)
+	FInputProductionDelgate InputDelegate;
+	
 	/** These are the functions to queue RPC sends. The proxies should use functions that capture by value */
 	TFunction<void(FNetSerializationProxy&)> EmitInputPackets;
 	TFunction<void(FNetSerializationProxy&)> EmitAuthorityState;

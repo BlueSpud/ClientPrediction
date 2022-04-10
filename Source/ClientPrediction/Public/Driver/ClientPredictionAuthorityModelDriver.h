@@ -6,6 +6,9 @@
 #include "../ClientPredictionNetSerialization.h"
 #include "../Input.h"
 
+static constexpr uint32 kSyncFrames = 5;
+static constexpr uint32 kAuthorityTargetInputBufferSize = 5;
+
 template <typename InputPacket, typename ModelState>
 class ClientPredictionAuthorityDriver : public IClientPredictionModelDriver<InputPacket, ModelState> {
 
@@ -25,14 +28,7 @@ public:
 
 private:
 	
-	static constexpr uint32 kSyncFrames = 5;
-	static constexpr uint32 kAuthorityTargetInputBufferSize = 3;
-	
-	/** The index of the next frame on both the remotes and authority */
-	uint32 NextLocalFrame = 0;
-
-	/** Autonomous proxy index for the next input packet number */
-	uint32 NextInputPacket = 0;
+	uint32 NextFrame = 0;
 
 	/** Input packet used for the current frame */
 	uint32 CurrentInputPacketIdx = kInvalidFrame;
@@ -60,12 +56,13 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState>::Tick(Chaos::FReal
 	}
 	
 	CurrentState = FModelStateWrapper<ModelState>();
-
+	CurrentState.FrameNumber = NextFrame++;
+	CurrentState.InputPacketNumber = CurrentInputPacketIdx;
+	
 	// Tick
 	Simulate(Dt, Component, LastState, CurrentState.State, CurrentInputPacket.Packet);
-
-	// Post-tick
-	if (NextLocalFrame % kSyncFrames) {
+	
+	if (NextFrame % kSyncFrames) {
 		EmitAuthorityState.CheckCallable();
 
 		// Capture by value here so that the proxy stores the state with it
