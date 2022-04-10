@@ -3,9 +3,13 @@
 #include "ClientPredictionNetSerialization.h"
 #include "Input.h"
 #include "Declares.h"
+#include "Driver/ClientPredictionAuthorityModelDriver.h"
 
-static constexpr uint32 kClientForwardPredictionFrames = 10;
-static constexpr uint32 kAuthorityTargetInputBufferSize = 25;
+#include "Driver/ClientPredictionModelDriver.h"
+#include "Driver/ClientPredictionModelTypes.h"
+
+static constexpr uint32 kClientForwardPredictionFrames = 5;
+static constexpr uint32 kAuthorityTargetInputBufferSize = 3;
 static constexpr uint32 kInputWindowSize = 3;
 static constexpr uint32 kSyncFrames = 5;
 
@@ -20,6 +24,7 @@ public:
 	IClientPredictionModel() = default;
 	virtual ~IClientPredictionModel() = default;
 
+	virtual void PreInitialize(ENetRole Role) = 0;
 	virtual void Initialize(UPrimitiveComponent* Component, ENetRole Role) = 0;
 
 // Simulation ticking
@@ -46,71 +51,6 @@ public:
 	
 };
 
-/**********************************************************************************************************************/
-
-/** Wraps a model state to include frame and input packet number */
-template <typename ModelState>
-struct FModelStateWrapper {
-
-	uint32 FrameNumber = kInvalidFrame;
-	uint32 InputPacketNumber = kInvalidFrame;
-	
-	ModelState State;
-
-	void NetSerialize(FArchive& Ar);
-
-	bool operator ==(const FModelStateWrapper<ModelState>& Other) const;
-};
-
-template <typename ModelState>
-void FModelStateWrapper<ModelState>::NetSerialize(FArchive& Ar)  {
-	Ar << FrameNumber;
-	Ar << InputPacketNumber;
-		
-	State.NetSerialize(Ar);
-}
-
-template <typename ModelState>
-bool FModelStateWrapper<ModelState>::operator==(const FModelStateWrapper<ModelState>& Other) const {
-	return InputPacketNumber == Other.InputPacketNumber
-		&& State == Other.State;
-}
-
-/**********************************************************************************************************************/
-
-template <typename InputPacket>
-struct FInputPacketWrapper {
-
-	/** 
-	 * Input frames have their own number independent of the frame number because they are not necessarily consumed in 
-	 * lockstep with the frames they're generated on due to latency. 
-	 */
-	uint32 PacketNumber = kInvalidFrame;
-
-	InputPacket Packet;
-
-	void NetSerialize(FArchive& Ar);
-
-	template <typename InputPacket_>
-	friend FArchive& operator<<(FArchive& Ar, FInputPacketWrapper<InputPacket_>& Wrapper);
-	
-};
-
-template <typename InputPacket>
-void FInputPacketWrapper<InputPacket>::NetSerialize(FArchive& Ar) {
-	Ar << PacketNumber;
-	
-	Packet.NetSerialize(Ar);
-}
-
-template <typename InputPacket>
-FArchive& operator<<(FArchive& Ar, FInputPacketWrapper<InputPacket>& Wrapper) {
-	Wrapper.NetSerialize(Ar);
-	return Ar;
-}
-
-/**********************************************************************************************************************/
-
 template <typename InputPacket, typename ModelState>
 class BaseClientPredictionModel : public IClientPredictionModel {
 	
@@ -118,6 +58,8 @@ public:
 
 	BaseClientPredictionModel();
 	virtual ~BaseClientPredictionModel() override = default;
+
+	virtual void PreInitialize(ENetRole Role) override final;
 
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component, ENetRole Role) override final;
 
@@ -142,12 +84,10 @@ protected:
 	
 private:
 	
-	void TickAuthority(Chaos::FReal Dt, UPrimitiveComponent* Component);
 	void TickAutoProxy(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component);
 	void TickSimProxy(Chaos::FReal Dt, UPrimitiveComponent* Component);
 	
 	void PostTick(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component, ENetRole Role);
-	void PostTickAuthority(Chaos::FReal Dt, UPrimitiveComponent* Component);
 	void PostTickAutoProxy(Chaos::FReal Dt, bool bIsForcedSimulation, UPrimitiveComponent* Component);
 
 	void Rewind_Internal(const FModelStateWrapper<ModelState>& State, UPrimitiveComponent* Component);
@@ -189,6 +129,8 @@ private:
 	/* We send each input with several previous inputs. In case a packet is dropped, the next send will also contain the new dropped input */
 	TArray<FInputPacketWrapper<InputPacket>> SlidingInputWindow;
 
+	TUniquePtr<IClientPredictionModelDriver<InputPacket, ModelState>> Driver;
+
 };
 
 template <typename InputPacket, typename ModelState>
@@ -198,15 +140,7 @@ BaseClientPredictionModel<InputPacket, ModelState>::BaseClientPredictionModel() 
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::ReceiveInputPackets(FNetSerializationProxy& Proxy) {
-	TArray<FInputPacketWrapper<InputPacket>> Packets;
-	Proxy.NetSerializeFunc = [&Packets](FArchive& Ar) {
-		Ar << Packets;
-	};
-
-	Proxy.Deserialize();
-	for (const FInputPacketWrapper<InputPacket>& Packet : Packets) {
-		InputBuffer.QueueInputAuthority(Packet);
-	}
+	Driver->ReceiveInputPackets(Proxy);
 }
 
 template <typename InputPacket, typename ModelState>
@@ -221,8 +155,27 @@ void BaseClientPredictionModel<InputPacket, ModelState>::ReceiveAuthorityState(F
 }
 
 template <typename InputPacket, typename ModelState>
+void BaseClientPredictionModel<InputPacket, ModelState>::PreInitialize(ENetRole Role) {
+	Driver = MakeUnique<ClientPredictionAuthorityDriver<InputPacket, ModelState>>();
+
+	Driver->EmitInputPackets = EmitInputPackets;
+	Driver->EmitAuthorityState = EmitAuthorityState;
+	Driver->Simulate = [&](Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input) {
+		Simulate(Dt, Component, PrevState, OutState, Input);
+	};
+	
+	Driver->Rewind = [&](const ModelState& State, UPrimitiveComponent* Component) {
+		Rewind(State, Component);
+	};
+}
+
+template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component, ENetRole Role) {
-	Tick(Dt, false, Component, Role);
+	if (Role == ENetRole::ROLE_Authority) {
+		Driver->Tick(Dt, Component);	
+	} else {
+		Tick(Dt, false, Component, Role);
+	}
 }
 
 template <typename InputPacket, typename ModelState>
@@ -230,9 +183,6 @@ void BaseClientPredictionModel<InputPacket, ModelState>::Tick(Chaos::FReal Dt, b
 	LastState = CurrentState.State;
 
 	switch (Role) {
-	case ENetRole::ROLE_Authority:
-		TickAuthority(Dt, Component);
-		break;
 	case ENetRole::ROLE_AutonomousProxy:
 		TickAutoProxy(Dt, bIsForcedSimulation, Component);
 		break;
@@ -244,17 +194,6 @@ void BaseClientPredictionModel<InputPacket, ModelState>::Tick(Chaos::FReal Dt, b
 	}
 	
 	PostTick(Dt, bIsForcedSimulation, Component, Role);
-}
-
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::TickAuthority(Chaos::FReal Dt, UPrimitiveComponent* Component) {
-	if (CurrentInputPacketIdx != kInvalidFrame || InputBuffer.AuthorityBufferSize() > InputBuffer.GetAuthorityTargetBufferSize()) {
-		check(InputBuffer.ConsumeInputAuthority(CurrentInputPacket));
-		CurrentInputPacketIdx = CurrentInputPacket.PacketNumber;
-	}
-	
-	CurrentState = FModelStateWrapper<ModelState>();
-	Simulate(Dt, Component, LastState, CurrentState.State, CurrentInputPacket.Packet);
 }
 
 template <typename InputPacket, typename ModelState>
@@ -301,28 +240,11 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PostTick(Chaos::FReal D
 	CurrentState.InputPacketNumber = CurrentInputPacketIdx;
 	
 	switch (Role) {
-	case ENetRole::ROLE_Authority:
-		PostTickAuthority(Dt, Component);
-		break;
 	case ENetRole::ROLE_AutonomousProxy:
 		PostTickAutoProxy(Dt, bIsForcedSimulation, Component);
 		break;
 	default:
 		return;
-	}
-}
-
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::PostTickAuthority(Chaos::FReal Dt, UPrimitiveComponent* Component) {
-	if (NextLocalFrame % kSyncFrames) {
-		EmitAuthorityState.CheckCallable();
-
-		// Capture by value here so that the proxy stores the state with it
-		FNetSerializationProxy Proxy([=](FArchive& Ar) mutable {
-			CurrentState.NetSerialize(Ar);
-		});
-		
-		EmitAuthorityState(Proxy);
 	}
 }
 
@@ -393,6 +315,12 @@ void BaseClientPredictionModel<InputPacket, ModelState>::ApplyState(UPrimitiveCo
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component, ENetRole Role) {
+	if (Role == ENetRole::ROLE_Authority) {
+		ModelState InterpolatedState = Driver->GenerateOutput(Alpha);
+		ApplyState(Component, InterpolatedState);
+		return;
+	}
+	
 	ModelState InterpolatedState = LastState;
 	InterpolatedState.Interpolate(Alpha, CurrentState.State);
 	ApplyState(Component, InterpolatedState);

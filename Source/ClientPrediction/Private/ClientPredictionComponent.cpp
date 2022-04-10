@@ -19,6 +19,7 @@ void UClientPredictionComponent::BeginPlay() {
 	Super::BeginPlay();
 
 	check(UpdatedComponent);
+	Model->PreInitialize(GetOwnerRole());
 	Model->Initialize(UpdatedComponent, GetOwnerRole());
 }
 

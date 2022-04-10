@@ -99,13 +99,9 @@ public:
 		++RemoteFrontBufferSize;
 	}
 	
-	bool ConsumeInputAuthority(InputPacket& OutPacket) {
+	void ConsumeInputAuthority(InputPacket& OutPacket) {
 		std::lock_guard<std::mutex> Lock(AuthorityMutex);
 		uint32 AuthorityBufferSize = AuthorityBuffer.Num();
-
-		if (AuthorityBufferSize == 0) {
-			return false;
-		}
 
 		// Attempt to keep the buffer reasonably close to the target size. This will cause minor client de-syncs
 		if (AuthorityBufferSize > 2 && AuthorityBufferSize > TargetAuthorityBufferSize * 1.75) {
@@ -127,8 +123,6 @@ public:
 		
 		AuthorityInputPacketNumber = OutPacket.PacketNumber;
 		LastAuthorityPacket = OutPacket;
-		
-		return true;
 	}
 	
 	bool ConsumeInputRemote(InputPacket& OutPacket) {
