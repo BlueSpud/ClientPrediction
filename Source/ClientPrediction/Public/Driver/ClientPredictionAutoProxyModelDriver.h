@@ -6,9 +6,6 @@
 #include "../ClientPredictionNetSerialization.h"
 #include "../Input.h"
 
-static constexpr uint32 kInputWindowSize = 3;
-static constexpr uint32 kClientForwardPredictionFrames = 5;
-
 template <typename InputPacket, typename ModelState>
 class ClientPredictionAutoProxyDriver : public IClientPredictionModelDriver<InputPacket, ModelState> {
 
@@ -175,7 +172,9 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState>::ReceiveAuthorityS
 	};
 
 	Proxy.Deserialize();
-	LastAuthorityState = State;
+	if (LastAuthorityState.FrameNumber == kInvalidFrame || State.FrameNumber > LastAuthorityState.FrameNumber) {
+		LastAuthorityState = State;
+	}
 }
 
 template <typename InputPacket, typename ModelState>

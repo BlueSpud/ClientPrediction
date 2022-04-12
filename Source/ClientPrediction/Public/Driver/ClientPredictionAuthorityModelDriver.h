@@ -6,9 +6,6 @@
 #include "../ClientPredictionNetSerialization.h"
 #include "../Input.h"
 
-static constexpr uint32 kSyncFrames = 5;
-static constexpr uint32 kAuthorityTargetInputBufferSize = 5;
-
 template <typename InputPacket, typename ModelState>
 class ClientPredictionAuthorityDriver : public IClientPredictionModelDriver<InputPacket, ModelState> {
 
@@ -62,7 +59,7 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState>::Tick(Chaos::FReal
 	// Tick
 	Simulate(Dt, Component, LastState, CurrentState.State, CurrentInputPacket.Packet);
 	
-	if (NextFrame % kSyncFrames) {
+	if (NextFrame % kSyncFrames == 0) {
 		EmitAuthorityState.CheckCallable();
 
 		// Capture by value here so that the proxy stores the state with it

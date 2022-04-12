@@ -10,7 +10,6 @@ class FInputBuffer {
 public:
 	
 	void Rewind(uint32 PacketNumber) {
-		std::lock_guard<std::mutex> Lock(RemoteMutex);
 
 		// TQueue deletes the move / copy constructor so copy the existing frot buffer
 		TQueue<InputPacket> BackupFrontBuffer;
@@ -44,7 +43,6 @@ public:
 	}
 	
 	void Ack(uint32 PacketNumber) {
-		std::lock_guard<std::mutex> Lock(RemoteMutex);
 		while (!BackBuffer.IsEmpty()) {
 			if (BackBuffer.Peek()->PacketNumber > PacketNumber) {
 				break;
@@ -55,19 +53,16 @@ public:
 		}
 	}
 
-	uint32 RemoteBufferSize() {
-		std::lock_guard<std::mutex> Lock(RemoteMutex);
+	uint32 RemoteBufferSize() const {
 		return RemoteFrontBufferSize;
 	}
 	
 	uint32 AuthorityBufferSize() {
-		std::lock_guard<std::mutex> Lock(AuthorityMutex);
 		return AuthorityBuffer.Num();
 	}
 
 	void QueueInputAuthority(const InputPacket& Packet) {
-		std::lock_guard<std::mutex> Lock(AuthorityMutex);
-
+		
 		// Ensure that the packet is not in the past
 		if (AuthorityInputPacketNumber != kInvalidFrame && Packet.PacketNumber <= AuthorityInputPacketNumber) {
 			return;
@@ -94,13 +89,11 @@ public:
 	}
 	
 	void QueueInputRemote(const InputPacket& Packet) {
-		std::lock_guard<std::mutex> Lock(RemoteMutex);
 		FrontBuffer.Enqueue(Packet);
 		++RemoteFrontBufferSize;
 	}
 	
 	void ConsumeInputAuthority(InputPacket& OutPacket) {
-		std::lock_guard<std::mutex> Lock(AuthorityMutex);
 		uint32 AuthorityBufferSize = AuthorityBuffer.Num();
 
 		// Attempt to keep the buffer reasonably close to the target size. This will cause minor client de-syncs
@@ -126,7 +119,6 @@ public:
 	}
 	
 	bool ConsumeInputRemote(InputPacket& OutPacket) {
-		std::lock_guard<std::mutex> Lock(RemoteMutex);
 		if (FrontBuffer.IsEmpty()) {
 			return false;
 		}
@@ -139,12 +131,10 @@ public:
 	}
 
 	void SetAuthorityTargetBufferSize(uint32 TargetSize) {
-		std::lock_guard<std::mutex> Lock(AuthorityMutex);
 		TargetAuthorityBufferSize = TargetSize;
 	}
 
-	uint32 GetAuthorityTargetBufferSize() {
-		std::lock_guard<std::mutex> Lock(AuthorityMutex);
+	uint32 GetAuthorityTargetBufferSize() const {
 		return TargetAuthorityBufferSize;
 	}
 	
@@ -169,9 +159,6 @@ private:
 
 	/** The last packet consumed by the authority */
 	InputPacket LastAuthorityPacket;
-	
-	std::mutex AuthorityMutex;
-	std::mutex RemoteMutex;
 
 };
 	

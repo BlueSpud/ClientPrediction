@@ -119,8 +119,6 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Initialize(UPrim
 	check(SimulatedBodyHandle);
 	SimulatedBodyHandle->SetEnabled(true);
 	PhysicsSimulation->SetNumActiveBodies(1, {0});
-
-	PhysicsSimulation->SetSolverSettings(0.0166666f, -1.0, -1.0f, 5, 5, 5);
 	
 	Initialize(Component, SimulatedBodyHandle, Role);
 }
@@ -133,7 +131,8 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Simulate(Chaos::
 	UpdateWorld(Component);
 
 	Simulate(Dt, Component, SimulatedBodyHandle, PrevState.State, OutState.State, Input);
-	
+
+	PhysicsSimulation->SetSolverSettings(Dt, -1.0, -1.0f, 5, 5, 5);
 	PhysicsSimulation->Simulate(Dt, 1.0, 1, FVector(0.0, 0.0, -980.0));
 
 	const FTransform WorldTransform = SimulatedBodyHandle->GetWorldTransform();
@@ -167,7 +166,7 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::UpdateWorld(UPri
 	{
 		TArray<FOverlapResult> Overlaps;
 		AActor* Owner = Cast<AActor>(Component->GetOwner());
-		UnsafeWorld->OverlapMultiByChannel(Overlaps, Owner->GetActorLocation(), FQuat::Identity, ECollisionChannel::ECC_Visibility, FCollisionShape::MakeSphere(10000.0), FCollisionQueryParams::DefaultQueryParam, FCollisionResponseParams(ECR_Overlap));
+		UnsafeWorld->OverlapMultiByChannel(Overlaps, Owner->GetActorLocation(), FQuat::Identity, ECollisionChannel::ECC_WorldStatic, FCollisionShape::MakeSphere(10000.0), FCollisionQueryParams::DefaultQueryParam, FCollisionResponseParams(ECR_Overlap));
 
 		for (const FOverlapResult& Overlap : Overlaps)
 		{

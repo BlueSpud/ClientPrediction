@@ -39,16 +39,6 @@ private:
 
 	UFUNCTION(Server, Unreliable)
 	void RecvInputPacket(FNetSerializationProxy Proxy);
-
-
-private:
-	
-
-	/** RPC's cannot be called on the physics thread. This is the queued states to send to the client from the game thread. */
-	TQueue<FNetSerializationProxy> QueuedClientSendStates;
-	
-	/** The inputs to send to the server (sending must be called from the game thread). */
-	TQueue<FNetSerializationProxy> InputBufferSendQueue;
 	
 	UPROPERTY()
 	class UPrimitiveComponent* UpdatedComponent;
@@ -62,11 +52,11 @@ ModelType* UClientPredictionComponent::CreateModel() {
 	Model = MakeUnique<ModelType>();
 
 	Model->EmitInputPackets = [&](FNetSerializationProxy& Proxy) {
-		InputBufferSendQueue.Enqueue(Proxy);
+		RecvInputPacket(Proxy);
 	};
 
 	Model->EmitAuthorityState = [&](FNetSerializationProxy& Proxy) {
-		QueuedClientSendStates.Enqueue(Proxy);
+		RecvServerState(Proxy);
 	};
 
 	return static_cast<ModelType*>(Model.Get());

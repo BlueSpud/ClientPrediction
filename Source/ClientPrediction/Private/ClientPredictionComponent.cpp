@@ -1,12 +1,11 @@
 ﻿#include "ClientPredictionComponent.h"
 
-#include "ClientPredictionPhysicsModel.h"
 #include "PBDRigidsSolver.h"
 
 #include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsActorHandle_Chaos.h"
 #include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsSimulation_Chaos.h"
 
-static constexpr Chaos::FReal kFixedDt = 0.0166666;
+#include "Declares.h"
 
 UClientPredictionComponent::UClientPredictionComponent() {
 	SetIsReplicatedByDefault(true);
@@ -29,7 +28,7 @@ void UClientPredictionComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
 
 void UClientPredictionComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
+	
 	AccumulatedTime += DeltaTime;
 	while (AccumulatedTime >= kFixedDt) {
 		AccumulatedTime = FMath::Clamp(AccumulatedTime - kFixedDt, 0.0, AccumulatedTime);
@@ -37,23 +36,6 @@ void UClientPredictionComponent::TickComponent(float DeltaTime, ELevelTick TickT
 	}
 
 	Model->Finalize(AccumulatedTime / kFixedDt, UpdatedComponent, GetOwnerRole());
-	
-	// Send states to the client(s)
-	while (!QueuedClientSendStates.IsEmpty()) {
-		FNetSerializationProxy Proxy;
-		QueuedClientSendStates.Dequeue(Proxy);
-		
-		RecvServerState(Proxy);
-	}
-
-	// Send input packets to the authority
-	while (!InputBufferSendQueue.IsEmpty()) {
-		FNetSerializationProxy Proxy;
-		InputBufferSendQueue.Dequeue(Proxy);
-		
-		RecvInputPacket(Proxy);
-	}
-	
 }
 
 void UClientPredictionComponent::OnRegister() {
