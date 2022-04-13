@@ -2,10 +2,11 @@
 
 #include "Physics/ImmediatePhysics/ImmediatePhysicsDeclares.h"
 #include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsActorHandle_Chaos.h"
-
-#include "ClientPredictionModel.h"
-#include "ClientPredictionPhysicsDeclares.h"
 #include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsSimulation_Chaos.h"
+
+#include "../ClientPredictionModel.h"
+#include "ClientPredictionPhysicsDeclares.h"
+#include "ClientPredictionPhysicsContext.h"
 
 template <typename ModelState>
 struct FPhysicsStateWrapper {
@@ -55,9 +56,9 @@ struct CLIENTPREDICTION_API FEmptyState {
 };
 
 template <typename InputPacket, typename ModelState>
-class BaseClientPredictionPhysicsModel : public BaseClientPredictionModel<InputPacket, FPhysicsStateWrapper<ModelState>> {
+class BaseClientPredictionPhysicsModel : public BaseClientPredictionModel<InputPacket, FPhysicsStateWrapper<ModelState>, ModelState> {
 	
-using State = FPhysicsStateWrapper<ModelState>;
+using WrappedModelState = FPhysicsStateWrapper<ModelState>;
 
 public:
 
@@ -69,13 +70,14 @@ public:
 
 protected:
 	
-	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const State& PrevState, State& OutState, const InputPacket& Input) override final;
-	virtual void Rewind(const FPhysicsStateWrapper<ModelState>& State, UPrimitiveComponent* Component) override final;
+	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const WrappedModelState& PrevState, WrappedModelState& OutState, const InputPacket& Input) override final;
+	virtual void Rewind(const WrappedModelState& State, UPrimitiveComponent* Component) override final;
 
 	// Should be implemented by child classes
-	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input);
+	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const FPhysicsContext& Context, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input);
 
-	virtual void ApplyState(UPrimitiveComponent* Component, const FPhysicsStateWrapper<ModelState>& State) override;
+	virtual void ApplyState(UPrimitiveComponent* Component, const WrappedModelState& State) override;
+	virtual void CallOnFinalized(const FPhysicsStateWrapper<ModelState>& State) override;
 
 private:
 
@@ -127,10 +129,11 @@ template <typename InputPacket, typename ModelState>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Initialize(UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, ENetRole Role) {}
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const State& PrevState, State& OutState, const InputPacket& Input) {
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const WrappedModelState& PrevState, WrappedModelState& OutState, const InputPacket& Input) {
 	UpdateWorld(Component);
 
-	Simulate(Dt, Component, SimulatedBodyHandle, PrevState.State, OutState.State, Input);
+	FPhysicsContext Context(SimulatedBodyHandle, Component);
+	Simulate(Dt, Component, Context, PrevState.State, OutState.State, Input);
 
 	PhysicsSimulation->SetSolverSettings(Dt, -1.0, -1.0f, 5, 5, 5);
 	PhysicsSimulation->Simulate(Dt, 1.0, 1, FVector(0.0, 0.0, -980.0));
@@ -144,17 +147,22 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Simulate(Chaos::
 }
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Rewind(const FPhysicsStateWrapper<ModelState>& State, UPrimitiveComponent* Component) {
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Rewind(const WrappedModelState& State, UPrimitiveComponent* Component) {
 	State.Rewind(Component, SimulatedBodyHandle);
 }
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input) {}
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const FPhysicsContext& Context, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input) {}
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::ApplyState(UPrimitiveComponent* Component, const FPhysicsStateWrapper<ModelState>& State) {
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::ApplyState(UPrimitiveComponent* Component, const WrappedModelState& State) {
 	Component->SetWorldLocation(State.PhysicsState.Location);
 	Component->SetWorldRotation(State.PhysicsState.Rotation);
+}
+
+template <typename InputPacket, typename ModelState>
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::CallOnFinalized( const FPhysicsStateWrapper<ModelState>& State) {
+	OnFinalized.ExecuteIfBound(State.State);
 }
 
 template <typename InputPacket, typename ModelState>
@@ -166,7 +174,9 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::UpdateWorld(UPri
 	{
 		TArray<FOverlapResult> Overlaps;
 		AActor* Owner = Cast<AActor>(Component->GetOwner());
-		UnsafeWorld->OverlapMultiByChannel(Overlaps, Owner->GetActorLocation(), FQuat::Identity, ECollisionChannel::ECC_WorldStatic, FCollisionShape::MakeSphere(10000.0), FCollisionQueryParams::DefaultQueryParam, FCollisionResponseParams(ECR_Overlap));
+
+		// For now, only support static objects for simplicity
+		UnsafeWorld->OverlapMultiByObjectType(Overlaps, Owner->GetActorLocation(), FQuat::Identity, FCollisionObjectQueryParams::AllStaticObjects, FCollisionShape::MakeSphere(10000.0));
 
 		for (const FOverlapResult& Overlap : Overlaps)
 		{

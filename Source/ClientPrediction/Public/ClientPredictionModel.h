@@ -45,7 +45,7 @@ public:
 	
 };
 
-template <typename InputPacket, typename ModelState>
+template <typename InputPacket, typename ModelState, typename ModelStateOutput>
 class BaseClientPredictionModel : public IClientPredictionModel {
 	
 public:
@@ -67,11 +67,23 @@ public:
 	DECLARE_DELEGATE_OneParam(FInputProductionDelgate, InputPacket&)
 	FInputProductionDelgate InputDelegate;
 	
+	DECLARE_DELEGATE_OneParam(FSimulationOutputDelegate, const ModelStateOutput&)
+	FSimulationOutputDelegate OnFinalized;
+	
 protected:
 
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input) = 0;
 	virtual void Rewind(const ModelState& State, UPrimitiveComponent* Component) = 0;
+
+	/** Perform any internal logic for output of a state to be done on finalization */
 	virtual void ApplyState(UPrimitiveComponent* Component, const ModelState& State);
+
+	/**
+	 * Calls the OnFinalized delegate with the state. This methods is purely virtual because if some mapping
+	 * needs to be performed, there isn't a base class implementation that will compile.
+	 * @param State The state to emit.
+	 */ 
+	virtual void CallOnFinalized(const ModelState& State) = 0;
 	
 private:
 
@@ -79,22 +91,22 @@ private:
 
 };
 
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::ReceiveInputPackets(FNetSerializationProxy& Proxy) {
+template <typename InputPacket, typename ModelState, typename ModelStateOutput>
+void BaseClientPredictionModel<InputPacket, ModelState, ModelStateOutput>::ReceiveInputPackets(FNetSerializationProxy& Proxy) {
 	if (Driver != nullptr) {
 		Driver->ReceiveInputPackets(Proxy);
 	}
 }
 
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::ReceiveAuthorityState(FNetSerializationProxy& Proxy) {
+template <typename InputPacket, typename ModelState, typename ModelStateOutput>
+void BaseClientPredictionModel<InputPacket, ModelState, ModelStateOutput>::ReceiveAuthorityState(FNetSerializationProxy& Proxy) {
 	if (Driver != nullptr) {
 		Driver->ReceiveAuthorityState(Proxy);
 	}
 }
 
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::PreInitialize(ENetRole Role) {
+template <typename InputPacket, typename ModelState, typename ModelStateOutput>
+void BaseClientPredictionModel<InputPacket, ModelState, ModelStateOutput>::PreInitialize(ENetRole Role) {
 	switch (Role) {
 	case ROLE_Authority:
 		Driver = MakeUnique<ClientPredictionAuthorityDriver<InputPacket, ModelState>>();
@@ -122,16 +134,18 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PreInitialize(ENetRole 
 	Driver->InputDelegate = InputDelegate;
 }
 
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component, ENetRole Role) {
+template <typename InputPacket, typename ModelState, typename ModelStateOutput>
+void BaseClientPredictionModel<InputPacket, ModelState, ModelStateOutput>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component, ENetRole Role) {
 	Driver->Tick(Dt, Component);	
 }
 
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::ApplyState(UPrimitiveComponent* Component, const ModelState& State) {}
+template <typename InputPacket, typename ModelState, typename ModelStateOutput>
+void BaseClientPredictionModel<InputPacket, ModelState, ModelStateOutput>::ApplyState(UPrimitiveComponent* Component, const ModelState& State) {}
 
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component, ENetRole Role) {
+template <typename InputPacket, typename ModelState, typename ModelStateOutput>
+void BaseClientPredictionModel<InputPacket, ModelState, ModelStateOutput>::Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component, ENetRole Role) {
 	ModelState InterpolatedState = Driver->GenerateOutput(Alpha);
 	ApplyState(Component, InterpolatedState);
+
+	CallOnFinalized(InterpolatedState);
 }
