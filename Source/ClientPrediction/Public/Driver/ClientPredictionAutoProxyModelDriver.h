@@ -181,6 +181,7 @@ template <typename InputPacket, typename ModelState>
 void ClientPredictionAutoProxyDriver<InputPacket, ModelState>::Rewind_Internal(const FModelStateWrapper<ModelState>& State, UPrimitiveComponent* Component) {
 	History.Empty();
 	AckedFrame = State.FrameNumber;
+	CurrentState = State;
 	
 	// Add here because the body is at State.FrameNumber so the next frame will be State.FrameNumber + 1
 	NextFrame = State.FrameNumber + 1;
