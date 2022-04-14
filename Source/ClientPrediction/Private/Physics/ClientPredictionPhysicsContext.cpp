@@ -3,7 +3,11 @@
 #include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsActorHandle_Chaos.h"
 
 void FPhysicsContext::AddForce(const FVector& Force) const { DynamicHandle->AddForce(Force); }
-void FPhysicsContext::AddTorque(const FVector& Torque) const { DynamicHandle->AddTorque(Torque); }
+void FPhysicsContext::AddTorqueInRadians(const FVector& Torque) const {
+
+	// The immediate mode simulation does torque in degrees, not radians so it needs to be converted
+	DynamicHandle->AddTorque(FMath::DegreesToRadians(Torque));
+}
 void FPhysicsContext::AddImpulseAtLocation(FVector Impulse, FVector Location) const { DynamicHandle->AddImpulseAtLocation(Impulse, Location); }
 
 Chaos::FReal FPhysicsContext::GetMass() const { return DynamicHandle->GetMass(); }

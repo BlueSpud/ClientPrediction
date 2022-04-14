@@ -117,7 +117,7 @@ BaseClientPredictionPhysicsModel<InputPacket, ModelState>::~BaseClientPrediction
 
 template <typename InputPacket, typename ModelState>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Initialize(UPrimitiveComponent* Component, ENetRole Role) {
-	SimulatedBodyHandle = PhysicsSimulation->CreateActor(ImmediatePhysics::EActorType::DynamicActor, &Component->BodyInstance, Component->GetComponentTransform());
+	SimulatedBodyHandle = PhysicsSimulation->CreateActor(ImmediatePhysics::EActorType::DynamicActor, Component->GetBodyInstance(), Component->GetComponentTransform());
 	check(SimulatedBodyHandle);
 	SimulatedBodyHandle->SetEnabled(true);
 	PhysicsSimulation->SetNumActiveBodies(1, {0});
