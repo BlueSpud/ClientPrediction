@@ -8,46 +8,6 @@
 #include "ClientPredictionPhysicsDeclares.h"
 #include "ClientPredictionPhysicsContext.h"
 
-template <typename ModelState>
-struct FPhysicsStateWrapper {
-	
-	ModelState State;
-	FPhysicsState PhysicsState;
-
-	void NetSerialize(FArchive& Ar);
-
-	void Rewind(class UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) const;
-	void Interpolate(float Alpha, const FPhysicsStateWrapper& Other);
-
-	bool operator ==(const FPhysicsStateWrapper<ModelState>& Other) const;
-};
-
-template <typename ModelState>
-void FPhysicsStateWrapper<ModelState>::NetSerialize(FArchive& Ar) {
-	State.NetSerialize(Ar);
-	PhysicsState.NetSerialize(Ar);
-}
-
-template <typename ModelState>
-void FPhysicsStateWrapper<ModelState>::Rewind(UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) const {
-	PhysicsState.Rewind(Handle, Component);
-	State.Rewind(Component);
-}
-
-template <typename ModelState>
-void FPhysicsStateWrapper<ModelState>::Interpolate(float Alpha, const FPhysicsStateWrapper& Other) {
-	PhysicsState.Interpolate(Alpha, Other.PhysicsState);
-	State.Interpolate(Alpha, Other.State);
-}
-
-template <typename ModelState>
-bool FPhysicsStateWrapper<ModelState>::operator==(const FPhysicsStateWrapper<ModelState>& Other) const {
-	return State == Other.State
-		&& PhysicsState == Other.PhysicsState;
-}
-
-/**********************************************************************************************************************/
-
 struct CLIENTPREDICTION_API FEmptyState {
 	void NetSerialize(FArchive& Ar) {}
 	void Rewind(class UPrimitiveComponent* Component) const {}
@@ -56,7 +16,7 @@ struct CLIENTPREDICTION_API FEmptyState {
 };
 
 template <typename InputPacket, typename ModelState>
-class BaseClientPredictionPhysicsModel : public BaseClientPredictionModel<InputPacket, FPhysicsStateWrapper<ModelState>, ModelState> {
+class BaseClientPredictionPhysicsModel : public BaseClientPredictionModel<InputPacket, FPhysicsStateWrapper<ModelState>> {
 	
 using WrappedModelState = FPhysicsStateWrapper<ModelState>;
 
@@ -77,7 +37,6 @@ protected:
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const FPhysicsContext& Context, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input);
 
 	virtual void ApplyState(UPrimitiveComponent* Component, const WrappedModelState& State) override;
-	virtual void CallOnFinalized(const FPhysicsStateWrapper<ModelState>& State) override;
 
 private:
 
@@ -158,11 +117,6 @@ template <typename InputPacket, typename ModelState>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::ApplyState(UPrimitiveComponent* Component, const WrappedModelState& State) {
 	Component->SetWorldLocation(State.PhysicsState.Location);
 	Component->SetWorldRotation(State.PhysicsState.Rotation);
-}
-
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::CallOnFinalized( const FPhysicsStateWrapper<ModelState>& State) {
-	OnFinalized.ExecuteIfBound(State.State);
 }
 
 template <typename InputPacket, typename ModelState>

@@ -6,10 +6,10 @@
 
 struct FPhysicsState {
 	
-	Chaos::FVec3 Location;
-	Chaos::FRotation3 Rotation;
-	Chaos::FVec3 LinearVelocity;
-	Chaos::FVec3 AngularVelocity;
+	Chaos::FVec3 Location = Chaos::FVec3::Zero();
+	Chaos::FRotation3 Rotation = Chaos::FRotation3::Identity;
+	Chaos::FVec3 LinearVelocity = Chaos::FVec3::Zero();
+	Chaos::FVec3 AngularVelocity = Chaos::FVec3::Zero();
 
 	void Rewind(ImmediatePhysics::FActorHandle* Handle, UPrimitiveComponent* Component) const {
 		FTransform RewindTransform;
@@ -43,3 +43,43 @@ struct FPhysicsState {
 	}
 	
 };
+
+/**********************************************************************************************************************/
+
+template <typename ModelState>
+struct FPhysicsStateWrapper {
+	
+	ModelState State;
+	FPhysicsState PhysicsState;
+
+	void NetSerialize(FArchive& Ar);
+
+	void Rewind(class UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) const;
+	void Interpolate(float Alpha, const FPhysicsStateWrapper& Other);
+
+	bool operator ==(const FPhysicsStateWrapper<ModelState>& Other) const;
+};
+
+template <typename ModelState>
+void FPhysicsStateWrapper<ModelState>::NetSerialize(FArchive& Ar) {
+	State.NetSerialize(Ar);
+	PhysicsState.NetSerialize(Ar);
+}
+
+template <typename ModelState>
+void FPhysicsStateWrapper<ModelState>::Rewind(UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) const {
+	PhysicsState.Rewind(Handle, Component);
+	State.Rewind(Component);
+}
+
+template <typename ModelState>
+void FPhysicsStateWrapper<ModelState>::Interpolate(float Alpha, const FPhysicsStateWrapper& Other) {
+	PhysicsState.Interpolate(Alpha, Other.PhysicsState);
+	State.Interpolate(Alpha, Other.State);
+}
+
+template <typename ModelState>
+bool FPhysicsStateWrapper<ModelState>::operator==(const FPhysicsStateWrapper<ModelState>& Other) const {
+	return State == Other.State
+		&& PhysicsState == Other.PhysicsState;
+}

@@ -15,12 +15,13 @@ public:
 		  Component(Component) {}
 
 // Dynamic actor methods
-	void AddForce(const FVector& Force) const;
-	void AddTorqueInRadians(const FVector& Torque) const;
+	void AddForce(const FVector& Force, bool bAccelerateChange = false) const;
+	void AddTorqueInRadians(const FVector& Torque, bool bAccelerateChange = false) const;
 	void AddImpulseAtLocation(FVector Impulse, FVector Location) const;
 
 	Chaos::FReal GetMass() const;
 	FVector GetInertia() const;
+	FVector ScaleByMomentOfInertia(const FVector& InputVector) const;
 
 	FTransform GetTransform() const;
 	FVector GetLinearVelocity() const;
