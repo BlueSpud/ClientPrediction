@@ -1,4 +1,7 @@
 ﻿#pragma once
+#include "Serialization/ArchiveLoadCompressedProxy.h"
+#include "Serialization/ArchiveSaveCompressedProxy.h"
+#include "Serialization/BufferArchive.h"
 
 #include "ClientPredictionNetSerialization.generated.h"
 
@@ -19,19 +22,30 @@ struct FNetSerializationProxy {
 
 	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess) {
 		if (Ar.IsLoading()) {
-			FNetBitReader& BitReader = static_cast<FNetBitReader&>(Ar);
-			NumberOfBits = BitReader.GetBitsLeft();
 			PackageMap = Map;
 
-			const int64 BytesLeft = BitReader.GetBytesLeft();
-			SerializedBits.Reset(BytesLeft);
-			SerializedBits.SetNumUninitialized(BytesLeft);
-			SerializedBits.Last() = 0;
-
-			BitReader.SerializeBits(SerializedBits.GetData(), NumberOfBits);
+			TArray<uint8> CompressedBuffer;
+			Ar << NumberOfBits;
+			Ar << CompressedBuffer;
+			
+			FArchiveLoadCompressedProxy Decompressor(CompressedBuffer, NAME_Zlib);
+			Decompressor << SerializedBits;
 		} else {
 			checkSlow(NetSerializeFunc());
-			NetSerializeFunc(Ar);
+			
+			FNetBitWriter Writer(nullptr, 32768);
+			NetSerializeFunc(Writer);
+			
+			TArray<uint8> UncompressedBuffer = *Writer.GetBuffer();
+
+			TArray<uint8> CompressedBuffer;
+			FArchiveSaveCompressedProxy Compressor(CompressedBuffer, NAME_Zlib);
+			Compressor << UncompressedBuffer;
+			Compressor.Flush();
+
+			int64 NumBits = Writer.GetNumBits();
+			Ar << NumBits;
+			Ar << CompressedBuffer;
 		}
 		
 		bOutSuccess = true;
