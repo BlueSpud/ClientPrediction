@@ -29,7 +29,7 @@ public:
 	virtual void Initialize(UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, ENetRole Role);
 
 protected:
-	
+	virtual void BeginTick(Chaos::FReal Dt, FPhysicsStateWrapper<ModelState>& State, UPrimitiveComponent* Component) override;
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const WrappedModelState& PrevState, WrappedModelState& OutState, const InputPacket& Input) override final;
 	virtual void Rewind(const WrappedModelState& State, UPrimitiveComponent* Component) override final;
 
@@ -88,21 +88,24 @@ template <typename InputPacket, typename ModelState>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Initialize(UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, ENetRole Role) {}
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const WrappedModelState& PrevState, WrappedModelState& OutState, const InputPacket& Input) {
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::BeginTick(Chaos::FReal Dt, FPhysicsStateWrapper<ModelState>& State, UPrimitiveComponent* Component) {
 	UpdateWorld(Component);
-
-	FPhysicsContext Context(SimulatedBodyHandle, Component);
-	Simulate(Dt, Component, Context, PrevState.State, OutState.State, Input);
 
 	PhysicsSimulation->SetSolverSettings(Dt, -1.0, -1.0f, 5, 5, 5);
 	PhysicsSimulation->Simulate(Dt, 1.0, 1, FVector(0.0, 0.0, -980.0));
 
 	const FTransform WorldTransform = SimulatedBodyHandle->GetWorldTransform();
 	
-	OutState.PhysicsState.Location = WorldTransform.GetLocation();
-	OutState.PhysicsState.Rotation = WorldTransform.GetRotation();
-	OutState.PhysicsState.LinearVelocity = SimulatedBodyHandle->GetLinearVelocity();
-	OutState.PhysicsState.AngularVelocity = SimulatedBodyHandle->GetAngularVelocity();
+	State.PhysicsState.Location = WorldTransform.GetLocation();
+	State.PhysicsState.Rotation = WorldTransform.GetRotation();
+	State.PhysicsState.LinearVelocity = SimulatedBodyHandle->GetLinearVelocity();
+	State.PhysicsState.AngularVelocity = SimulatedBodyHandle->GetAngularVelocity();
+}
+
+template <typename InputPacket, typename ModelState>
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState>::Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const WrappedModelState& PrevState, WrappedModelState& OutState, const InputPacket& Input) {
+	FPhysicsContext Context(SimulatedBodyHandle, Component);
+	Simulate(Dt, Component, Context, PrevState.State, OutState.State, Input);
 }
 
 template <typename InputPacket, typename ModelState>

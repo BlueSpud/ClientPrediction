@@ -47,13 +47,14 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState>::Tick(Chaos::FReal
 	LastState = CurrentState.State;
 
 	// Pre-tick
+	CurrentState.FrameNumber = NextFrame++;
+	BeginTick(Dt, CurrentState.State, Component);
+	
 	if (CurrentInputPacketIdx != kInvalidFrame || InputBuffer.AuthorityBufferSize() > InputBuffer.GetAuthorityTargetBufferSize()) {
 		InputBuffer.ConsumeInputAuthority(CurrentInputPacket);
 		CurrentInputPacketIdx = CurrentInputPacket.PacketNumber;
 	}
 	
-	CurrentState = FModelStateWrapper<ModelState>();
-	CurrentState.FrameNumber = NextFrame++;
 	CurrentState.InputPacketNumber = CurrentInputPacketIdx;
 	
 	// Tick

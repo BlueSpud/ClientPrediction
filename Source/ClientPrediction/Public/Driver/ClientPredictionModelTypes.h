@@ -13,6 +13,7 @@ struct FModelStateWrapper {
 	void NetSerialize(FArchive& Ar);
 
 	bool operator ==(const FModelStateWrapper<ModelState>& Other) const;
+	void Print(FAnsiStringBuilderBase& Builder) const;
 };
 
 template <typename ModelState>
@@ -27,6 +28,12 @@ template <typename ModelState>
 bool FModelStateWrapper<ModelState>::operator==(const FModelStateWrapper<ModelState>& Other) const {
 	return InputPacketNumber == Other.InputPacketNumber
 		&& State == Other.State;
+}
+
+template <typename ModelState>
+void FModelStateWrapper<ModelState>::Print(FAnsiStringBuilderBase& Builder) const {
+	Builder.Appendf("InputPacketNumber %d\n", InputPacketNumber);
+	State.Print(Builder);
 }
 
 /**********************************************************************************************************************/

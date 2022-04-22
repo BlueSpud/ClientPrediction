@@ -61,6 +61,9 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState>::Tick(Chaos::FReal
 	LastState = CurrentState.State;
 	
 	// Pre-tick
+	CurrentState.FrameNumber = NextFrame++;
+	BeginTick(Dt, CurrentState.State, Component);
+	
 	if (!bIsForcedSimulation || InputBuffer.RemoteBufferSize() == 0) {
 		FInputPacketWrapper<InputPacket> Packet;
 		Packet.PacketNumber = NextInputPacket++;
@@ -84,8 +87,6 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState>::Tick(Chaos::FReal
 	}
 	
 	check(InputBuffer.ConsumeInputRemote(CurrentInputPacket));
-	CurrentState = FModelStateWrapper<ModelState>();
-	CurrentState.FrameNumber = NextFrame++;
 	CurrentState.InputPacketNumber = CurrentInputPacket.PacketNumber;
 	
 	// Tick
@@ -143,8 +144,16 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState>::Tick(Chaos::FReal
 			UE_LOG(LogTemp, Verbose, TEXT("Acked up to %i, input packet %i. Input buffer had %i elements"), AckedFrame, LastAuthorityState.InputPacketNumber, InputBuffer.RemoteBufferSize());
 		} else {
 			// Server/client mismatch. Resimulate the client
-			UE_LOG(LogTemp, Error, TEXT("Rewinding and resimulating from frame %i which used input packet %i"), LastAuthorityState.FrameNumber, LastAuthorityState.InputPacketNumber);
+			FAnsiStringBuilderBase HistoricBuilder;
+			HistoricState.Print(HistoricBuilder);
+			FString HistoricString = StringCast<TCHAR>(HistoricBuilder.ToString()).Get();
 
+			FAnsiStringBuilderBase AuthorityBuilder;
+			LastAuthorityState.Print(AuthorityBuilder);
+			FString AuthorityString = StringCast<TCHAR>(AuthorityBuilder.ToString()).Get();
+
+			UE_LOG(LogTemp, Error, TEXT("======\nRewinding and resimulating from frame %i.\nClient\n%s\nAuthority\n%s\n======"), LastAuthorityState.FrameNumber, *HistoricString, *AuthorityString);
+			
 			Rewind_Internal(LastAuthorityState, Component);
 			ForceSimulate(FMath::Max(kClientForwardPredictionFrames, InputBuffer.RemoteBufferSize()), Dt, Component);
 		}

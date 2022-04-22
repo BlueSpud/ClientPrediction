@@ -23,14 +23,14 @@ public:
 
 // Simulation ticking
 
-	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component, ENetRole Role) = 0;
+	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) = 0;
 
 	/**
 	 * To be called after ticks have been performed and finalizes the output from the model.
 	 * @param Alpha the percentage that time is between the current tick and the next tick.
 	 * @param Component The component that should be updated.
 	 * @param Role The network role to finalize the output for */
-	virtual void Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component, ENetRole Role) = 0;
+	virtual void Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component) = 0;
 
 // Input packet / state receiving
 
@@ -54,10 +54,10 @@ public:
 	virtual ~BaseClientPredictionModel() override = default;
 
 	virtual void PreInitialize(ENetRole Role) override final;
+	
+	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override final;
 
-	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component, ENetRole Role) override final;
-
-	virtual void Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component, ENetRole Role) override final;
+	virtual void Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component) override final;
 	
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override final;
 	virtual void ReceiveAuthorityState(FNetSerializationProxy& Proxy) override final;
@@ -72,6 +72,7 @@ public:
 	
 protected:
 
+	virtual void BeginTick(Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component);
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input) = 0;
 	virtual void Rewind(const ModelState& State, UPrimitiveComponent* Component) = 0;
 
@@ -119,6 +120,10 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PreInitialize(ENetRole 
 	Driver->Simulate = [&](Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input) {
 		Simulate(Dt, Component, PrevState, OutState, Input);
 	};
+
+	Driver->BeginTick = [&](Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component) {
+		BeginTick(Dt, State, Component);
+	};
 	
 	Driver->Rewind = [&](const ModelState& State, UPrimitiveComponent* Component) {
 		Rewind(State, Component);
@@ -127,7 +132,10 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PreInitialize(ENetRole 
 }
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component, ENetRole Role) {
+void BaseClientPredictionModel<InputPacket, ModelState>::BeginTick(Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component) {}
+
+template <typename InputPacket, typename ModelState>
+void BaseClientPredictionModel<InputPacket, ModelState>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
 	Driver->Tick(Dt, Component);	
 }
 
@@ -135,7 +143,7 @@ template <typename InputPacket, typename ModelState>
 void BaseClientPredictionModel<InputPacket, ModelState>::ApplyState(UPrimitiveComponent* Component, const ModelState& State) {}
 
 template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component, ENetRole Role) {
+void BaseClientPredictionModel<InputPacket, ModelState>::Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component) {
 	ModelState InterpolatedState = Driver->GenerateOutput(Alpha);
 	ApplyState(Component, InterpolatedState);
 

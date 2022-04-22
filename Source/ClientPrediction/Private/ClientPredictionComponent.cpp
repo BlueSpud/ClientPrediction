@@ -12,6 +12,7 @@ UClientPredictionComponent::UClientPredictionComponent() {
 
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = true;
+	PrimaryComponentTick.TickGroup = ETickingGroup::TG_PrePhysics;
 }
 
 void UClientPredictionComponent::BeginPlay() {
@@ -32,10 +33,10 @@ void UClientPredictionComponent::TickComponent(float DeltaTime, ELevelTick TickT
 	AccumulatedTime += DeltaTime;
 	while (AccumulatedTime >= kFixedDt) {
 		AccumulatedTime = FMath::Clamp(AccumulatedTime - kFixedDt, 0.0, AccumulatedTime);
-		Model->Tick(kFixedDt, UpdatedComponent, GetOwnerRole());
+		Model->Tick(kFixedDt, UpdatedComponent);
 	}
 
-	Model->Finalize(AccumulatedTime / kFixedDt, UpdatedComponent, GetOwnerRole());
+	Model->Finalize(AccumulatedTime / kFixedDt, UpdatedComponent);
 }
 
 void UClientPredictionComponent::OnRegister() {

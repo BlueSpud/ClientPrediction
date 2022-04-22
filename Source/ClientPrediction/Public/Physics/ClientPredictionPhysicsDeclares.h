@@ -36,10 +36,17 @@ struct FPhysicsState {
 	}
 	
 	bool operator ==(const FPhysicsState& Other) const {
-		return Location.Equals(Other.Location, 0.2)
+		return Location.Equals(Other.Location, 2.0)
 			&& Rotation.Equals(Other.Rotation, 0.2)
-			&& LinearVelocity.Equals(Other.LinearVelocity, 0.2)
-			&& AngularVelocity.Equals(Other.AngularVelocity, 0.2);
+			&& LinearVelocity.Equals(Other.LinearVelocity, 2.0)
+			&& AngularVelocity.Equals(Other.AngularVelocity, 2.0);
+	}
+
+	void Print(FAnsiStringBuilderBase& Builder) const {
+		Builder.Appendf("Location %f %f %f\n", Location.X, Location.Y, Location.Z);
+		Builder.Appendf("Rotation %f %f %f\n", Rotation.X, Rotation.Y, Rotation.Z);
+		Builder.Appendf("LinearVelocity %f %f %f\n", LinearVelocity.X, LinearVelocity.Y, LinearVelocity.Z);
+		Builder.Appendf("AngularVelocity %f %f %f\n", AngularVelocity.X, AngularVelocity.Y, AngularVelocity.Z);
 	}
 	
 };
@@ -58,6 +65,7 @@ struct FPhysicsStateWrapper {
 	void Interpolate(float Alpha, const FPhysicsStateWrapper& Other);
 
 	bool operator ==(const FPhysicsStateWrapper<ModelState>& Other) const;
+	void Print(FAnsiStringBuilderBase& Builder) const;
 };
 
 template <typename ModelState>
@@ -82,4 +90,10 @@ template <typename ModelState>
 bool FPhysicsStateWrapper<ModelState>::operator==(const FPhysicsStateWrapper<ModelState>& Other) const {
 	return State == Other.State
 		&& PhysicsState == Other.PhysicsState;
+}
+
+template <typename ModelState>
+void FPhysicsStateWrapper<ModelState>::Print(FAnsiStringBuilderBase& Builder) const {
+	State.Print(Builder);
+	PhysicsState.Print(Builder);
 }

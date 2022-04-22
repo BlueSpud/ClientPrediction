@@ -41,4 +41,5 @@ public:
 	/** Simulation based functions */
 	TFunction<void(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input)> Simulate;
 	TFunction<void(const ModelState& State, UPrimitiveComponent* Component)> Rewind;
+	TFunction<void(Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component)> BeginTick;
 };
