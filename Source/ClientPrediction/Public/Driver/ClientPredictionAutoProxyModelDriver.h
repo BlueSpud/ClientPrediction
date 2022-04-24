@@ -68,7 +68,7 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState>::Tick(Chaos::FReal
 		FInputPacketWrapper<InputPacket> Packet;
 		Packet.PacketNumber = NextInputPacket++;
 		
-		InputDelegate.ExecuteIfBound(Packet.Packet, CurrentState.State);
+		InputDelegate.ExecuteIfBound(Packet.Packet, CurrentState.State, Dt);
 		InputBuffer.QueueInputRemote(Packet);
 
 		EmitInputPackets.CheckCallable();

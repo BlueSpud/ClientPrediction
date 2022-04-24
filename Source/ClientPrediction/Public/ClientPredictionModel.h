@@ -64,7 +64,7 @@ public:
 
 public:
 	
-	DECLARE_DELEGATE_TwoParams(FInputProductionDelgate, InputPacket&, const ModelState& State)
+	DECLARE_DELEGATE_ThreeParams(FInputProductionDelgate, InputPacket&, const ModelState& State, Chaos::FReal Dt)
 	FInputProductionDelgate InputDelegate;
 	
 	DECLARE_DELEGATE_OneParam(FSimulationOutputDelegate, const ModelState&)

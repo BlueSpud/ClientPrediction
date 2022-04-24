@@ -31,7 +31,7 @@ public:
 	
 public:
 	
-	DECLARE_DELEGATE_TwoParams(FInputProductionDelgate, InputPacket&, const ModelState& State)
+	DECLARE_DELEGATE_ThreeParams(FInputProductionDelgate, InputPacket&, const ModelState& State, Chaos::FReal Dt)
 	FInputProductionDelgate InputDelegate;
 	
 	/** These are the functions to queue RPC sends. The proxies should use functions that capture by value */
