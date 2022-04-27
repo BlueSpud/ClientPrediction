@@ -4,6 +4,8 @@
 #include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsActorHandle_Chaos.h"
 #include "PhysicsProxy/SingleParticlePhysicsProxy.h"
 
+#include "Driver/ClientPredictionModelTypes.h"
+
 struct FPhysicsState {
 	
 	Chaos::FVec3 Location = Chaos::FVec3::Zero();
@@ -96,4 +98,32 @@ template <typename ModelState>
 void FPhysicsStateWrapper<ModelState>::Print(FAnsiStringBuilderBase& Builder) const {
 	State.Print(Builder);
 	PhysicsState.Print(Builder);
+}
+
+/**********************************************************************************************************************/
+
+template <typename ModelState, typename CueSet>
+struct FPhysicsSimulationOutput {
+
+	explicit FPhysicsSimulationOutput(const FSimulationOutput<FPhysicsStateWrapper<ModelState>, CueSet>& Proxy);
+	ModelState& State() const;
+	void DispatchQueue(CueSet Cue);
+	
+	private:
+		FSimulationOutput<FPhysicsStateWrapper<ModelState>, CueSet> Proxy;
+	
+};
+
+template <typename ModelState, typename CueSet>
+FPhysicsSimulationOutput<ModelState, CueSet>::FPhysicsSimulationOutput(const FSimulationOutput<FPhysicsStateWrapper<ModelState>, CueSet>& Proxy)
+	: Proxy(Proxy) {}
+
+template <typename ModelState, typename CueSet>
+ModelState& FPhysicsSimulationOutput<ModelState, CueSet>::State() const {
+	return Proxy.State().State;
+}
+
+template <typename ModelState, typename CueSet>
+void FPhysicsSimulationOutput<ModelState, CueSet>::DispatchQueue(CueSet Cue) {
+	Proxy.DispatchQueue(Cue);
 }

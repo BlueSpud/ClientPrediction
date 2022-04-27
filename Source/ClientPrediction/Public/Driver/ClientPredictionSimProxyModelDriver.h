@@ -7,9 +7,10 @@
 
 #include "../ClientPredictionNetSerialization.h"
 
-template <typename InputPacket, typename ModelState>
-class ClientPredictionSimProxyDriver : public IClientPredictionModelDriver<InputPacket, ModelState> {
-
+template <typename InputPacket, typename ModelState, typename CueSet>
+class ClientPredictionSimProxyDriver : public IClientPredictionModelDriver<InputPacket, ModelState, CueSet> {
+	using WrappedState = FModelStateWrapper<ModelState>;
+	
 public:
 
 	ClientPredictionSimProxyDriver() = default;
@@ -34,7 +35,7 @@ private:
 	 */
 	uint32 LastPoppedFrame = kInvalidFrame;
 	
-	TArray<FModelStateWrapper<ModelState>> States;
+	TArray<WrappedState> States;
 	ModelState LastFinalizedState;
 
 	/** The number of states to store before starting the interpolation */
@@ -44,8 +45,8 @@ private:
 	uint32 EndInterpolationIndex = -1;
 };
 
-template <typename InputPacket, typename ModelState>
-void ClientPredictionSimProxyDriver<InputPacket, ModelState>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
+template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
 	if (CurrentFrame == kInvalidFrame) {
 		if (static_cast<uint32>(States.Num()) < kTargetBufferSize) {
 			return;
@@ -57,6 +58,15 @@ void ClientPredictionSimProxyDriver<InputPacket, ModelState>::Tick(Chaos::FReal 
 
 		if (!States.IsEmpty()) {
 			uint32 BufferSize = static_cast<uint32>(States.Num());
+
+			// Dispatch cues if there are any
+			for (uint32 i = 0; i < BufferSize; i++) {
+				if (States[i].FrameNumber == CurrentFrame) {
+					for (int Cue = 0; Cue < States[i].Cues.Num(); i++) {
+						HandleCue(States[i].State, static_cast<CueSet>(States[i].Cues[Cue]));
+					}
+				}
+			}
 			
 			// Find which two states to interpolate between.
 			// If both indexes are the last element that means there was nothing to interpolate between and the latest
@@ -90,8 +100,8 @@ void ClientPredictionSimProxyDriver<InputPacket, ModelState>::Tick(Chaos::FReal 
 	}
 }
 
-template <typename InputPacket, typename ModelState>
-ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState>::GenerateOutput(Chaos::FReal Alpha) {
+template <typename InputPacket, typename ModelState, typename CueSet>
+ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::GenerateOutput(Chaos::FReal Alpha) {
 	if (States.IsEmpty() || StartInterpolationIndex == kInvalidFrame || EndInterpolationIndex == kInvalidFrame) {
 		return LastFinalizedState;
 	}
@@ -99,8 +109,8 @@ ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState>::GenerateOutp
 	if (StartInterpolationIndex == EndInterpolationIndex) {
 		LastFinalizedState = States[StartInterpolationIndex].State;
 	} else {
-		const FModelStateWrapper<ModelState> Start = States[StartInterpolationIndex];
-		const FModelStateWrapper<ModelState> End   = States[EndInterpolationIndex];
+		const WrappedState Start = States[StartInterpolationIndex];
+		const WrappedState End   = States[EndInterpolationIndex];
 
 		float FrameDelta = static_cast<float>(End.FrameNumber - Start.FrameNumber);
 		float FrameAlpha = static_cast<float>(CurrentFrame - Start.FrameNumber) / FrameDelta;
@@ -113,14 +123,14 @@ ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState>::GenerateOutp
 	return LastFinalizedState;
 }
 
-template <typename InputPacket, typename ModelState>
-void ClientPredictionSimProxyDriver<InputPacket, ModelState>::ReceiveInputPackets(FNetSerializationProxy& Proxy) {
+template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::ReceiveInputPackets(FNetSerializationProxy& Proxy) {
 	// No-op, sim proxy should never get input
 }
 
-template <typename InputPacket, typename ModelState>
-void ClientPredictionSimProxyDriver<InputPacket, ModelState>::ReceiveAuthorityState(FNetSerializationProxy& Proxy) {
-	FModelStateWrapper<ModelState> State;
+template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::ReceiveAuthorityState(FNetSerializationProxy& Proxy) {
+	WrappedState State;
 	Proxy.NetSerializeFunc = [&State](FArchive& Ar) {
 		State.NetSerialize(Ar);	
 	};
@@ -128,7 +138,7 @@ void ClientPredictionSimProxyDriver<InputPacket, ModelState>::ReceiveAuthoritySt
 	Proxy.Deserialize();
 
 	// Check if the state already exists in the buffer
-	bool bIsDuplicate = States.ContainsByPredicate([&](const FModelStateWrapper<ModelState>& Candidate) {
+	bool bIsDuplicate = States.ContainsByPredicate([&](const WrappedState& Candidate) {
 		return Candidate.FrameNumber == State.FrameNumber;
 	});
 	
@@ -144,7 +154,7 @@ void ClientPredictionSimProxyDriver<InputPacket, ModelState>::ReceiveAuthoritySt
 	States.Add(State);
 	
 	// States aren't guaranteed to come in order so they need to be sorted every time.
-	States.Sort([](const FModelStateWrapper<ModelState>& A, const FModelStateWrapper<ModelState>& B) {
+	States.Sort([](const WrappedState& A, const WrappedState& B) {
 		return A.FrameNumber < B.FrameNumber;
 	});
 }

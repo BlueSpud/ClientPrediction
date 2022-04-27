@@ -6,9 +6,10 @@
 #include "../ClientPredictionNetSerialization.h"
 #include "../Input.h"
 
-template <typename InputPacket, typename ModelState>
-class ClientPredictionAutoProxyDriver : public IClientPredictionModelDriver<InputPacket, ModelState> {
-
+template <typename InputPacket, typename ModelState, typename CueSet>
+class ClientPredictionAutoProxyDriver : public IClientPredictionModelDriver<InputPacket, ModelState, CueSet> {
+	using WrappedState = FModelStateWrapper<ModelState>;
+	
 public:
 
 	ClientPredictionAutoProxyDriver() = default;
@@ -27,7 +28,7 @@ private:
 
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component, bool bIsForcedSimulation);
 	
-	void Rewind_Internal(const FModelStateWrapper<ModelState>& State, UPrimitiveComponent* Component);
+	void Rewind_Internal(const WrappedState& State, UPrimitiveComponent* Component);
 	void ForceSimulate(uint32 Ticks, Chaos::FReal TickDt, UPrimitiveComponent* Component);
 	
 private:
@@ -36,14 +37,14 @@ private:
 	uint32 AckedFrame = kInvalidFrame;
 	uint32 NextFrame = 0;
 	uint32 NextInputPacket = 0;
-
+	
 	/** All of the frames that have not been reconciled with the authority. */
-	TQueue<FModelStateWrapper<ModelState>> History;
+	TQueue<WrappedState> History;
 	
 	FInputPacketWrapper<InputPacket> CurrentInputPacket;
 
-	FModelStateWrapper<ModelState> LastAuthorityState;
-	FModelStateWrapper<ModelState> CurrentState;
+	WrappedState LastAuthorityState;
+	WrappedState CurrentState;
 	ModelState LastState;
 
 	/* We send each input with several previous inputs. In case a packet is dropped, the next send will also contain the new dropped input */
@@ -51,17 +52,18 @@ private:
 	FInputBuffer<FInputPacketWrapper<InputPacket>> InputBuffer;
 };
 
-template <typename InputPacket, typename ModelState>
-void ClientPredictionAutoProxyDriver<InputPacket, ModelState>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
+template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
 	Tick(Dt, Component, false);
 }
 
-template <typename InputPacket, typename ModelState>
-void ClientPredictionAutoProxyDriver<InputPacket, ModelState>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component, bool bIsForcedSimulation) {
+template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component, bool bIsForcedSimulation) {
 	LastState = CurrentState.State;
 	
 	// Pre-tick
 	CurrentState.FrameNumber = NextFrame++;
+	CurrentState.Cues.Empty();
 	BeginTick(Dt, CurrentState.State, Component);
 	
 	if (!bIsForcedSimulation || InputBuffer.RemoteBufferSize() == 0) {
@@ -90,7 +92,12 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState>::Tick(Chaos::FReal
 	CurrentState.InputPacketNumber = CurrentInputPacket.PacketNumber;
 	
 	// Tick
-	Simulate(Dt, Component, LastState, CurrentState.State, CurrentInputPacket.Packet);
+	FSimulationOutput<ModelState, CueSet> Output(CurrentState);
+	Simulate(Dt, Component, LastState, Output, CurrentInputPacket.Packet);
+
+	for (int i = 0; i < CurrentState.Cues.Num(); i++) {
+		HandleCue(CurrentState.State, static_cast<CueSet>(CurrentState.Cues[i]));
+	}
 
 	// Post-tick
 	History.Enqueue(CurrentState);
@@ -124,7 +131,7 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState>::Tick(Chaos::FReal
 		ForceSimulate(FMath::Max(kClientForwardPredictionFrames, InputBuffer.RemoteBufferSize()), Dt, Component);
 	} else {
 		// Check history against the server state
-		FModelStateWrapper<ModelState> HistoricState;
+		WrappedState HistoricState;
 		bool bFound = false;
 		
 		while (!History.IsEmpty()) {
@@ -161,21 +168,21 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState>::Tick(Chaos::FReal
 	}
 }
 
-template <typename InputPacket, typename ModelState>
-ModelState ClientPredictionAutoProxyDriver<InputPacket, ModelState>::GenerateOutput(Chaos::FReal Alpha) {
+template <typename InputPacket, typename ModelState, typename CueSet>
+ModelState ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::GenerateOutput(Chaos::FReal Alpha) {
 	ModelState InterpolatedState = LastState;
 	InterpolatedState.Interpolate(Alpha, CurrentState.State);
 	return InterpolatedState;
 }
 
-template <typename InputPacket, typename ModelState>
-void ClientPredictionAutoProxyDriver<InputPacket, ModelState>::ReceiveInputPackets(FNetSerializationProxy& Proxy) {
+template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::ReceiveInputPackets(FNetSerializationProxy& Proxy) {
 	// No-op since the client is the one sending the packets
 }
 
-template <typename InputPacket, typename ModelState>
-void ClientPredictionAutoProxyDriver<InputPacket, ModelState>::ReceiveAuthorityState(FNetSerializationProxy& Proxy) {
-	FModelStateWrapper<ModelState> State;
+template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::ReceiveAuthorityState(FNetSerializationProxy& Proxy) {
+	WrappedState State;
 	Proxy.NetSerializeFunc = [&State](FArchive& Ar) {
 		State.NetSerialize(Ar);	
 	};
@@ -186,8 +193,8 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState>::ReceiveAuthorityS
 	}
 }
 
-template <typename InputPacket, typename ModelState>
-void ClientPredictionAutoProxyDriver<InputPacket, ModelState>::Rewind_Internal(const FModelStateWrapper<ModelState>& State, UPrimitiveComponent* Component) {
+template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Rewind_Internal(const WrappedState& State, UPrimitiveComponent* Component) {
 	History.Empty();
 	AckedFrame = State.FrameNumber;
 	CurrentState = State;
@@ -199,8 +206,8 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState>::Rewind_Internal(c
 	Rewind(State.State, Component);
 }
 
-template <typename InputPacket, typename ModelState>
-void ClientPredictionAutoProxyDriver<InputPacket, ModelState>::ForceSimulate(uint32 Ticks, Chaos::FReal TickDt, UPrimitiveComponent* Component) {
+template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::ForceSimulate(uint32 Ticks, Chaos::FReal TickDt, UPrimitiveComponent* Component) {
 	for (uint32 i = 0; i < Ticks; i++) {
 		Tick(TickDt, Component, true);
 	}

@@ -1,12 +1,13 @@
 ﻿#pragma once
 
+#include "ClientPredictionModelTypes.h"
 #include "ClientPredictionNetSerialization.h"
 
 /**
  * The interface for the client prediction model driver. This has different implementations based on the net role
  * of the owner of a model.
  */
-template <typename InputPacket, typename ModelState>
+template <typename InputPacket, typename ModelState, typename CueSet>
 class IClientPredictionModelDriver {
 	
 public:
@@ -39,7 +40,8 @@ public:
 	TFunction<void(FNetSerializationProxy&)> EmitAuthorityState;
 
 	/** Simulation based functions */
-	TFunction<void(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input)> Simulate;
+	TFunction<void(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, FSimulationOutput<ModelState, CueSet>& Output, const InputPacket& Input)> Simulate;
 	TFunction<void(const ModelState& State, UPrimitiveComponent* Component)> Rewind;
 	TFunction<void(Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component)> BeginTick;
+	TFunction<void(const ModelState& State, CueSet Cue)> HandleCue;
 };

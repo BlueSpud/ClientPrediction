@@ -45,8 +45,13 @@ public:
 	
 };
 
-template <typename InputPacket, typename ModelState>
+/**********************************************************************************************************************/
+
+enum EEmptyCueSet: uint8 {};
+
+template <typename InputPacket, typename ModelState, typename CueSet = EEmptyCueSet>
 class BaseClientPredictionModel : public IClientPredictionModel {
+	using SimOutput = FSimulationOutput<ModelState, CueSet>;
 	
 public:
 
@@ -66,6 +71,9 @@ public:
 	
 	DECLARE_DELEGATE_ThreeParams(FInputProductionDelgate, InputPacket&, const ModelState& State, Chaos::FReal Dt)
 	FInputProductionDelgate InputDelegate;
+
+	DECLARE_DELEGATE_TwoParams(FCueDelegate, const ModelState& CurrentState, CueSet Cue);
+	FCueDelegate HandleCue;
 	
 	DECLARE_DELEGATE_OneParam(FSimulationOutputDelegate, const ModelState&)
 	FSimulationOutputDelegate OnFinalized;
@@ -73,7 +81,7 @@ public:
 protected:
 
 	virtual void BeginTick(Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component);
-	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input) = 0;
+	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, SimOutput& Output, const InputPacket& Input) = 0;
 	virtual void Rewind(const ModelState& State, UPrimitiveComponent* Component) = 0;
 
 	/** Perform any internal logic for output of a state to be done on finalization */
@@ -81,35 +89,35 @@ protected:
 	
 private:
 
-	TUniquePtr<IClientPredictionModelDriver<InputPacket, ModelState>> Driver;
+	TUniquePtr<IClientPredictionModelDriver<InputPacket, ModelState, CueSet>> Driver;
 
 };
 
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::ReceiveInputPackets(FNetSerializationProxy& Proxy) {
+template <typename InputPacket, typename ModelState, typename CueSet>
+void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::ReceiveInputPackets(FNetSerializationProxy& Proxy) {
 	if (Driver != nullptr) {
 		Driver->ReceiveInputPackets(Proxy);
 	}
 }
 
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::ReceiveAuthorityState(FNetSerializationProxy& Proxy) {
+template <typename InputPacket, typename ModelState, typename CueSet>
+void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::ReceiveAuthorityState(FNetSerializationProxy& Proxy) {
 	if (Driver != nullptr) {
 		Driver->ReceiveAuthorityState(Proxy);
 	}
 }
 
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::PreInitialize(ENetRole Role) {
+template <typename InputPacket, typename ModelState, typename CueSet>
+void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::PreInitialize(ENetRole Role) {
 	switch (Role) {
 	case ROLE_Authority:
-		Driver = MakeUnique<ClientPredictionAuthorityDriver<InputPacket, ModelState>>();
+		Driver = MakeUnique<ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>>();
 		break;
 	case ROLE_AutonomousProxy:
-		Driver = MakeUnique<ClientPredictionAutoProxyDriver<InputPacket, ModelState>>();
+		Driver = MakeUnique<ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>>();
 		break;
 	case ROLE_SimulatedProxy:
-		Driver = MakeUnique<ClientPredictionSimProxyDriver<InputPacket, ModelState>>();
+		Driver = MakeUnique<ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>>();
 		break;
 	default:
 		break;
@@ -117,8 +125,9 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PreInitialize(ENetRole 
 
 	Driver->EmitInputPackets = EmitInputPackets;
 	Driver->EmitAuthorityState = EmitAuthorityState;
-	Driver->Simulate = [&](Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, ModelState& OutState, const InputPacket& Input) {
-		Simulate(Dt, Component, PrevState, OutState, Input);
+	Driver->InputDelegate = InputDelegate;
+	Driver->Simulate = [&](Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, FSimulationOutput<ModelState, CueSet>& Output, const InputPacket& Input) {
+		Simulate(Dt, Component, PrevState, Output, Input);
 	};
 
 	Driver->BeginTick = [&](Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component) {
@@ -128,22 +137,25 @@ void BaseClientPredictionModel<InputPacket, ModelState>::PreInitialize(ENetRole 
 	Driver->Rewind = [&](const ModelState& State, UPrimitiveComponent* Component) {
 		Rewind(State, Component);
 	};
-	Driver->InputDelegate = InputDelegate;
+
+	Driver->HandleCue = [&](const ModelState& State, CueSet Cue) {
+		HandleCue.ExecuteIfBound(State, Cue);
+	};
 }
 
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::BeginTick(Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component) {}
+template <typename InputPacket, typename ModelState, typename CueSet>
+void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::BeginTick(Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component) {}
 
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
+template <typename InputPacket, typename ModelState, typename CueSet>
+void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
 	Driver->Tick(Dt, Component);	
 }
 
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::ApplyState(UPrimitiveComponent* Component, const ModelState& State) {}
+template <typename InputPacket, typename ModelState, typename CueSet>
+void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::ApplyState(UPrimitiveComponent* Component, const ModelState& State) {}
 
-template <typename InputPacket, typename ModelState>
-void BaseClientPredictionModel<InputPacket, ModelState>::Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component) {
+template <typename InputPacket, typename ModelState, typename CueSet>
+void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component) {
 	ModelState InterpolatedState = Driver->GenerateOutput(Alpha);
 	ApplyState(Component, InterpolatedState);
 

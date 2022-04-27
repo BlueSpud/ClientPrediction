@@ -6,9 +6,10 @@
 #include "../ClientPredictionNetSerialization.h"
 #include "../Input.h"
 
-template <typename InputPacket, typename ModelState>
-class ClientPredictionAuthorityDriver : public IClientPredictionModelDriver<InputPacket, ModelState> {
-
+template <typename InputPacket, typename ModelState, typename CueSet>
+class ClientPredictionAuthorityDriver : public IClientPredictionModelDriver<InputPacket, ModelState, CueSet> {
+	using WrappedState = FModelStateWrapper<ModelState>;
+	
 public:
 
 	ClientPredictionAuthorityDriver();
@@ -30,24 +31,25 @@ private:
 	/** Input packet used for the current frame */
 	uint32 CurrentInputPacketIdx = kInvalidFrame;
 	FInputPacketWrapper<InputPacket> CurrentInputPacket;
-
-	FModelStateWrapper<ModelState> CurrentState;
+	
+	WrappedState CurrentState;
 	ModelState LastState;
 
 	FInputBuffer<FInputPacketWrapper<InputPacket>> InputBuffer;
 };
 
-template <typename InputPacket, typename ModelState>
-ClientPredictionAuthorityDriver<InputPacket, ModelState>::ClientPredictionAuthorityDriver() {
+template <typename InputPacket, typename ModelState, typename CueSet>
+ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ClientPredictionAuthorityDriver() {
 	InputBuffer.SetAuthorityTargetBufferSize(kAuthorityTargetInputBufferSize);
 }
 
-template <typename InputPacket, typename ModelState>
-void ClientPredictionAuthorityDriver<InputPacket, ModelState>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
+template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
 	LastState = CurrentState.State;
 
 	// Pre-tick
 	CurrentState.FrameNumber = NextFrame++;
+	CurrentState.Cues.Empty();
 	BeginTick(Dt, CurrentState.State, Component);
 	
 	if (CurrentInputPacketIdx != kInvalidFrame || InputBuffer.AuthorityBufferSize() > InputBuffer.GetAuthorityTargetBufferSize()) {
@@ -58,7 +60,12 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState>::Tick(Chaos::FReal
 	CurrentState.InputPacketNumber = CurrentInputPacketIdx;
 	
 	// Tick
-	Simulate(Dt, Component, LastState, CurrentState.State, CurrentInputPacket.Packet);
+	FSimulationOutput<ModelState, CueSet> Output(CurrentState);
+	Simulate(Dt, Component, LastState, Output, CurrentInputPacket.Packet);
+
+	for (int i = 0; i < CurrentState.Cues.Num(); i++) {
+		HandleCue(CurrentState.State, static_cast<CueSet>(CurrentState.Cues[i]));
+	}
 	
 	if (NextFrame % kSyncFrames == 0) {
 		EmitAuthorityState.CheckCallable();
@@ -73,15 +80,15 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState>::Tick(Chaos::FReal
 	
 }
 
-template <typename InputPacket, typename ModelState>
-ModelState ClientPredictionAuthorityDriver<InputPacket, ModelState>::GenerateOutput(Chaos::FReal Alpha) {
+template <typename InputPacket, typename ModelState, typename CueSet>
+ModelState ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::GenerateOutput(Chaos::FReal Alpha) {
 	ModelState InterpolatedState = LastState;
 	InterpolatedState.Interpolate(Alpha, CurrentState.State);
 	return InterpolatedState;
 }
 
-template <typename InputPacket, typename ModelState>
-void ClientPredictionAuthorityDriver<InputPacket, ModelState>::ReceiveInputPackets(FNetSerializationProxy& Proxy) {
+template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ReceiveInputPackets(FNetSerializationProxy& Proxy) {
 	TArray<FInputPacketWrapper<InputPacket>> Packets;
 	Proxy.NetSerializeFunc = [&Packets](FArchive& Ar) {
 		Ar << Packets;
@@ -93,7 +100,7 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState>::ReceiveInputPacke
 	}
 }
 
-template <typename InputPacket, typename ModelState>
-void ClientPredictionAuthorityDriver<InputPacket, ModelState>::ReceiveAuthorityState(FNetSerializationProxy& Proxy) {
+template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ReceiveAuthorityState(FNetSerializationProxy& Proxy) {
 	// No-op, since the authority should never receive a state from the authority 
 }
