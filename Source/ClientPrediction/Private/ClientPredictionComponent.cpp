@@ -6,6 +6,7 @@
 #include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsSimulation_Chaos.h"
 
 #include "Declares.h"
+#include "Animation/AnimSubsystem_NodeRelevancy.h"
 
 UClientPredictionComponent::UClientPredictionComponent() {
 	SetIsReplicatedByDefault(true);
@@ -17,9 +18,15 @@ UClientPredictionComponent::UClientPredictionComponent() {
 
 void UClientPredictionComponent::BeginPlay() {
 	Super::BeginPlay();
-
 	check(UpdatedComponent);
-	Model->PreInitialize(GetOwnerRole());
+	
+	bool bSimulationOwnedByAuthority = false;
+	APawn* Pawn = Cast<APawn>(UpdatedComponent->GetOwner());
+	if (Pawn != nullptr && Pawn->GetLocalRole() == ENetRole::ROLE_Authority) {
+		bSimulationOwnedByAuthority = Pawn->IsLocallyControlled();
+	}
+	
+	Model->PreInitialize(GetOwnerRole(), bSimulationOwnedByAuthority);
 	Model->Initialize(UpdatedComponent, GetOwnerRole());
 }
 

@@ -18,7 +18,7 @@ public:
 	IClientPredictionModel() = default;
 	virtual ~IClientPredictionModel() = default;
 
-	virtual void PreInitialize(ENetRole Role) = 0;
+	virtual void PreInitialize(ENetRole Role, bool bAuthorityOwnsSimulation) = 0;
 	virtual void Initialize(UPrimitiveComponent* Component, ENetRole Role) = 0;
 
 // Simulation ticking
@@ -58,7 +58,7 @@ public:
 	BaseClientPredictionModel() = default;
 	virtual ~BaseClientPredictionModel() override = default;
 
-	virtual void PreInitialize(ENetRole Role) override final;
+	virtual void PreInitialize(ENetRole Role, bool bAuthorityOwnsSimulation) override final;
 	
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override final;
 
@@ -108,10 +108,10 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::ReceiveAuthorit
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::PreInitialize(ENetRole Role) {
+void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::PreInitialize(ENetRole Role, bool bAuthorityOwnsSimulation) {
 	switch (Role) {
 	case ROLE_Authority:
-		Driver = MakeUnique<ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>>();
+		Driver = MakeUnique<ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>>(bAuthorityOwnsSimulation);
 		break;
 	case ROLE_AutonomousProxy:
 		Driver = MakeUnique<ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>>();

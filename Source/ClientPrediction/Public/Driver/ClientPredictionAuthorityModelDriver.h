@@ -12,7 +12,7 @@ class ClientPredictionAuthorityDriver : public IClientPredictionModelDriver<Inpu
 	
 public:
 
-	ClientPredictionAuthorityDriver();
+	ClientPredictionAuthorityDriver(bool bTakesInput);
 
 	// Simulation ticking
 	
@@ -35,11 +35,12 @@ private:
 	WrappedState CurrentState;
 	ModelState LastState;
 
+	bool bTakesInput = false;
 	FInputBuffer<FInputPacketWrapper<InputPacket>> InputBuffer;
 };
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ClientPredictionAuthorityDriver() {
+ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ClientPredictionAuthorityDriver(bool bTakesInput) : bTakesInput(bTakesInput) {
 	InputBuffer.SetAuthorityTargetBufferSize(kAuthorityTargetInputBufferSize);
 }
 
@@ -52,12 +53,17 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 	CurrentState.Cues.Empty();
 	BeginTick(Dt, CurrentState.State, Component);
 	
-	if (CurrentInputPacketIdx != kInvalidFrame || InputBuffer.AuthorityBufferSize() > InputBuffer.GetAuthorityTargetBufferSize()) {
-		InputBuffer.ConsumeInputAuthority(CurrentInputPacket);
-		CurrentInputPacketIdx = CurrentInputPacket.PacketNumber;
-	}
+	if (!bTakesInput) {
+		if (CurrentInputPacketIdx != kInvalidFrame || InputBuffer.AuthorityBufferSize() > InputBuffer.GetAuthorityTargetBufferSize()) {
+			InputBuffer.ConsumeInputAuthority(CurrentInputPacket);
+			CurrentInputPacketIdx = CurrentInputPacket.PacketNumber;
+		}
 	
-	CurrentState.InputPacketNumber = CurrentInputPacketIdx;
+		CurrentState.InputPacketNumber = CurrentInputPacketIdx;
+	} else {
+		CurrentInputPacket = FInputPacketWrapper<InputPacket>();
+		InputDelegate.ExecuteIfBound(CurrentInputPacket.Packet, CurrentState.State, Dt);
+	}
 	
 	// Tick
 	FSimulationOutput<ModelState, CueSet> Output(CurrentState);
@@ -67,7 +73,7 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 		HandleCue(CurrentState.State, static_cast<CueSet>(CurrentState.Cues[i]));
 	}
 	
-	if (NextFrame % kSyncFrames == 0) {
+	if (NextFrame % kSyncFrames == 0 || CurrentState.Cues.Num() > 0) {
 		EmitAuthorityState.CheckCallable();
 
 		// Capture by value here so that the proxy stores the state with it
