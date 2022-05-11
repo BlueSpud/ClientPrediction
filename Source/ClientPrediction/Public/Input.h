@@ -101,8 +101,10 @@ public:
 			// Consume two packets because there are too many in the buffer
 			OutPacket = AuthorityBuffer.Pop();
 			OutPacket = AuthorityBuffer.Pop();
+			UE_LOG(LogTemp, Error, TEXT("Consuming two packets because the buffer was too full"));
 		} else if (AuthorityBufferSize <= TargetAuthorityBufferSize * 0.25) {
 			// Consume no packets because there are not enough in the buffer
+			UE_LOG(LogTemp, Error, TEXT("Not consuming a packet because the buffer was not full enough"));
 			OutPacket = LastAuthorityPacket;
 		} else if (AuthorityInputPacketNumber + 1 != AuthorityBuffer[AuthorityBufferSize - 1].PacketNumber) {
 			// If the next packet was not the next packet in the sequence, just assume that the missing packet was the same as the last one.

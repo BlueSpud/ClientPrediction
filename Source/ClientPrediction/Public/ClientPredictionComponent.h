@@ -3,6 +3,7 @@
 #include "ClientPredictionNetSerialization.h"
 #include "ClientPredictionModel.h"
 #include "Input.h"
+#include "Driver/ClientPredictionRepProxy.h"
 
 #include "ClientPredictionComponent.generated.h"
 
@@ -16,6 +17,10 @@ public:
 	UClientPredictionComponent();
 	virtual ~UClientPredictionComponent() override = default;
 
+	virtual void InitializeComponent() override;
+	virtual void PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) override;
+	virtual void PreNetReceive() override;
+	
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -23,27 +28,32 @@ public:
 
 	template <typename ModelType>
 	ModelType* CreateModel();
-	
+
+private:
+
+	UFUNCTION(Server, Unreliable)
+	void RecvInputPacket(FNetSerializationProxy Proxy);
+
+	void CheckOwnerRoleChanged();
+
 public:
 
 	TUniquePtr<IClientPredictionModel> Model;
 	
-protected:
-	
-	virtual void OnRegister() override;
-
 private:
-	
-	UFUNCTION(NetMulticast, Unreliable)
-	void RecvServerState(FNetSerializationProxy Proxy);
 
-	UFUNCTION(Server, Unreliable)
-	void RecvInputPacket(FNetSerializationProxy Proxy);
+	UPROPERTY(Replicated)
+	FClientPredictionRepProxy AutoProxyRep;
+
+	UPROPERTY(Replicated)
+	FClientPredictionRepProxy SimProxyRep;
+
 	
 	UPROPERTY()
 	class UPrimitiveComponent* UpdatedComponent;
 
 	float AccumulatedTime = 0.0;
+	ENetRole CachedRole = ENetRole::ROLE_None;
 	
 };
 
@@ -53,10 +63,6 @@ ModelType* UClientPredictionComponent::CreateModel() {
 
 	Model->EmitInputPackets = [&](FNetSerializationProxy& Proxy) {
 		RecvInputPacket(Proxy);
-	};
-
-	Model->EmitAuthorityState = [&](FNetSerializationProxy& Proxy) {
-		RecvServerState(Proxy);
 	};
 
 	return static_cast<ModelType*>(Model.Get());

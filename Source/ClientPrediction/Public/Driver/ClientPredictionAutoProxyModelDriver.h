@@ -22,7 +22,7 @@ public:
 	// Input packet / state receiving
 	
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override;
-	virtual void ReceiveAuthorityState(FNetSerializationProxy& Proxy) override;
+	virtual void BindToRepProxies(FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) override;
 	
 private:
 
@@ -159,7 +159,7 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 			LastAuthorityState.Print(AuthorityBuilder);
 			FString AuthorityString = StringCast<TCHAR>(AuthorityBuilder.ToString()).Get();
 
-			UE_LOG(LogTemp, Error, TEXT("======\nRewinding and resimulating from frame %i.\nClient\n%s\nAuthority\n%s\n======"), LastAuthorityState.FrameNumber, *HistoricString, *AuthorityString);
+			UE_LOG(LogTemp, Warning, TEXT("======\nRewinding and resimulating from frame %i.\nClient\n%s\nAuthority\n%s\n======"), LastAuthorityState.FrameNumber, *HistoricString, *AuthorityString);
 			
 			Rewind_Internal(LastAuthorityState, Component);
 			ForceSimulate(FMath::Max(kClientForwardPredictionFrames, InputBuffer.RemoteBufferSize()), Dt, Component);
@@ -181,16 +181,15 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::ReceiveIn
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::ReceiveAuthorityState(FNetSerializationProxy& Proxy) {
-	WrappedState State;
-	Proxy.NetSerializeFunc = [&State](FArchive& Ar) {
-		State.NetSerialize(Ar);	
+void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::BindToRepProxies(FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) {
+	AutoProxyRep.SerializeFunc = [&](FArchive& Ar) {
+		WrappedState State;
+		State.NetSerialize(Ar);
+		
+		if (LastAuthorityState.FrameNumber == kInvalidFrame || State.FrameNumber > LastAuthorityState.FrameNumber) {
+			LastAuthorityState = State;
+		}
 	};
-
-	Proxy.Deserialize();
-	if (LastAuthorityState.FrameNumber == kInvalidFrame || State.FrameNumber > LastAuthorityState.FrameNumber) {
-		LastAuthorityState = State;
-	}
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>

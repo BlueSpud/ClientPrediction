@@ -23,7 +23,7 @@ public:
 	// Input packet / state receiving
 	
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override;
-	virtual void ReceiveAuthorityState(FNetSerializationProxy& Proxy) override;
+	virtual void BindToRepProxies(FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) override;
 
 private:
 
@@ -62,7 +62,7 @@ void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chaos
 			// Dispatch cues if there are any
 			for (uint32 i = 0; i < BufferSize; i++) {
 				if (States[i].FrameNumber == CurrentFrame) {
-					for (int Cue = 0; Cue < States[i].Cues.Num(); i++) {
+					for (int Cue = 0; Cue < States[i].Cues.Num(); Cue++) {
 						HandleCue(States[i].State, static_cast<CueSet>(States[i].Cues[Cue]));
 					}
 				}
@@ -129,32 +129,17 @@ void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::ReceiveInp
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::ReceiveAuthorityState(FNetSerializationProxy& Proxy) {
-	WrappedState State;
-	Proxy.NetSerializeFunc = [&State](FArchive& Ar) {
-		State.NetSerialize(Ar);	
+void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::BindToRepProxies(FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) {
+	SimProxyRep.SerializeFunc = [&](FArchive& Ar) {
+		WrappedState State;
+		State.NetSerialize(Ar);
+
+		// Don't add any states that are "in the past"
+		if (LastPoppedFrame != kInvalidFrame && State.FrameNumber <= LastPoppedFrame) {
+			UE_LOG(LogTemp, Log, TEXT("Ignoring state that was in the past"));
+			return;
+		}
+
+		States.Add(State);
 	};
-
-	Proxy.Deserialize();
-
-	// Check if the state already exists in the buffer
-	bool bIsDuplicate = States.ContainsByPredicate([&](const WrappedState& Candidate) {
-		return Candidate.FrameNumber == State.FrameNumber;
-	});
-	
-	if (bIsDuplicate) {
-		return;
-	}
-
-	// Don't add any states that are "in the past"
-	if (LastPoppedFrame != kInvalidFrame && State.FrameNumber <= LastPoppedFrame) {
-		return;
-	}
-
-	States.Add(State);
-	
-	// States aren't guaranteed to come in order so they need to be sorted every time.
-	States.Sort([](const WrappedState& A, const WrappedState& B) {
-		return A.FrameNumber < B.FrameNumber;
-	});
 }

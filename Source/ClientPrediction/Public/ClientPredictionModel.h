@@ -18,7 +18,7 @@ public:
 	IClientPredictionModel() = default;
 	virtual ~IClientPredictionModel() = default;
 
-	virtual void PreInitialize(ENetRole Role, bool bAuthorityOwnsSimulation) = 0;
+	virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) = 0;
 	virtual void Initialize(UPrimitiveComponent* Component, ENetRole Role) = 0;
 
 // Simulation ticking
@@ -29,19 +29,17 @@ public:
 	 * To be called after ticks have been performed and finalizes the output from the model.
 	 * @param Alpha the percentage that time is between the current tick and the next tick.
 	 * @param Component The component that should be updated.
-	 * @param Role The network role to finalize the output for */
+	 */
 	virtual void Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component) = 0;
 
 // Input packet / state receiving
 
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) = 0;
-	virtual void ReceiveAuthorityState(FNetSerializationProxy& Proxy) = 0;
 	
 public:
 
 	/** These are the functions to queue RPC sends. The proxies should use functions that capture by value */
 	TFunction<void(FNetSerializationProxy&)> EmitInputPackets;
-	TFunction<void(FNetSerializationProxy&)> EmitAuthorityState;
 	
 };
 
@@ -58,14 +56,13 @@ public:
 	BaseClientPredictionModel() = default;
 	virtual ~BaseClientPredictionModel() override = default;
 
-	virtual void PreInitialize(ENetRole Role, bool bAuthorityOwnsSimulation) override final;
+	virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) override final;
 	
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override final;
 
 	virtual void Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component) override final;
 	
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override final;
-	virtual void ReceiveAuthorityState(FNetSerializationProxy& Proxy) override final;
 
 public:
 	
@@ -101,17 +98,10 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::ReceiveInputPac
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::ReceiveAuthorityState(FNetSerializationProxy& Proxy) {
-	if (Driver != nullptr) {
-		Driver->ReceiveAuthorityState(Proxy);
-	}
-}
-
-template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::PreInitialize(ENetRole Role, bool bAuthorityOwnsSimulation) {
+void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) {
 	switch (Role) {
 	case ROLE_Authority:
-		Driver = MakeUnique<ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>>(bAuthorityOwnsSimulation);
+		Driver = MakeUnique<ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>>(bShouldTakeInput);
 		break;
 	case ROLE_AutonomousProxy:
 		Driver = MakeUnique<ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>>();
@@ -124,8 +114,8 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::PreInitialize(E
 	}
 
 	Driver->EmitInputPackets = EmitInputPackets;
-	Driver->EmitAuthorityState = EmitAuthorityState;
 	Driver->InputDelegate = InputDelegate;
+	Driver->BindToRepProxies(AutoProxyRep, SimProxyRep);
 	Driver->Simulate = [&](Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, FSimulationOutput<ModelState, CueSet>& Output, const InputPacket& Input) {
 		Simulate(Dt, Component, PrevState, Output, Input);
 	};
@@ -148,6 +138,7 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::BeginTick(Chaos
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
+	if (Driver == nullptr) { return; }
 	Driver->Tick(Dt, Component);	
 }
 
@@ -156,6 +147,8 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::ApplyState(UPri
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component) {
+	if (Driver == nullptr) { return; }
+	
 	ModelState InterpolatedState = Driver->GenerateOutput(Alpha);
 	ApplyState(Component, InterpolatedState);
 

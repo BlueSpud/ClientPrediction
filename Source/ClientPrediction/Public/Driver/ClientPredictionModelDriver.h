@@ -2,6 +2,7 @@
 
 #include "ClientPredictionModelTypes.h"
 #include "ClientPredictionNetSerialization.h"
+#include "ClientPredictionRepProxy.h"
 
 /**
  * The interface for the client prediction model driver. This has different implementations based on the net role
@@ -28,7 +29,7 @@ public:
 	// Input packet / state receiving
 
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) = 0;
-	virtual void ReceiveAuthorityState(FNetSerializationProxy& Proxy) = 0;
+	virtual void BindToRepProxies(FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) = 0;
 	
 public:
 	
@@ -37,7 +38,6 @@ public:
 	
 	/** These are the functions to queue RPC sends. The proxies should use functions that capture by value */
 	TFunction<void(FNetSerializationProxy&)> EmitInputPackets;
-	TFunction<void(FNetSerializationProxy&)> EmitAuthorityState;
 
 	/** Simulation based functions */
 	TFunction<void(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, FSimulationOutput<ModelState, CueSet>& Output, const InputPacket& Input)> Simulate;

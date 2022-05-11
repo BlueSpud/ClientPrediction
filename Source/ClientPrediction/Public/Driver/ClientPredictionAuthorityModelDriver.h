@@ -22,7 +22,7 @@ public:
 	// Input packet / state receiving
 	
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override;
-	virtual void ReceiveAuthorityState(FNetSerializationProxy& Proxy) override;
+	virtual void BindToRepProxies(FClientPredictionRepProxy& NewAutoProxyRep, FClientPredictionRepProxy& NewSimProxyRep) override;
 
 private:
 	
@@ -37,6 +37,9 @@ private:
 
 	bool bTakesInput = false;
 	FInputBuffer<FInputPacketWrapper<InputPacket>> InputBuffer;
+
+	FClientPredictionRepProxy* AutoProxyRep = nullptr;
+	FClientPredictionRepProxy* SimProxyRep = nullptr;
 };
 
 template <typename InputPacket, typename ModelState, typename CueSet>
@@ -72,18 +75,9 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 	for (int i = 0; i < CurrentState.Cues.Num(); i++) {
 		HandleCue(CurrentState.State, static_cast<CueSet>(CurrentState.Cues[i]));
 	}
-	
-	if (NextFrame % kSyncFrames == 0 || CurrentState.Cues.Num() > 0) {
-		EmitAuthorityState.CheckCallable();
 
-		// Capture by value here so that the proxy stores the state with it
-		FNetSerializationProxy Proxy([=](FArchive& Ar) mutable {
-			CurrentState.NetSerialize(Ar);
-		});
-		
-		EmitAuthorityState(Proxy);
-	}
-	
+	if (AutoProxyRep != nullptr) { AutoProxyRep->Dispatch(); }
+	if (SimProxyRep != nullptr) { SimProxyRep->Dispatch(); }
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
@@ -107,6 +101,15 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ReceiveIn
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ReceiveAuthorityState(FNetSerializationProxy& Proxy) {
-	// No-op, since the authority should never receive a state from the authority 
+void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::BindToRepProxies(FClientPredictionRepProxy& NewAutoProxyRep, FClientPredictionRepProxy& NewSimProxyRep) {
+	AutoProxyRep = &NewAutoProxyRep;
+	SimProxyRep = &NewSimProxyRep;
+
+	AutoProxyRep->SerializeFunc = [&](FArchive& Ar) {
+		CurrentState.NetSerialize(Ar);
+	};
+
+	SimProxyRep->SerializeFunc = [&](FArchive& Ar) {
+		CurrentState.NetSerialize(Ar);
+	};
 }
