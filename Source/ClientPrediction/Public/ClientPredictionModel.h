@@ -35,11 +35,13 @@ public:
 // Input packet / state receiving
 
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) = 0;
+	virtual void ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) = 0;
 	
 public:
 
 	/** These are the functions to queue RPC sends. The proxies should use functions that capture by value */
 	TFunction<void(FNetSerializationProxy&)> EmitInputPackets;
+	TFunction<void(FNetSerializationProxy&)> EmitReliableAuthorityState;
 	
 };
 
@@ -63,6 +65,7 @@ public:
 	virtual void Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component) override final;
 	
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override final;
+	virtual void ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) override final;
 
 public:
 	
@@ -98,6 +101,13 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::ReceiveInputPac
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
+void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) {
+	if (Driver != nullptr) {
+		Driver->ReceiveReliableAuthorityState(Proxy);
+	}
+}
+
+template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) {
 	switch (Role) {
 	case ROLE_Authority:
@@ -114,6 +124,7 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::SetNetRole(ENet
 	}
 
 	Driver->EmitInputPackets = EmitInputPackets;
+	Driver->EmitReliableAuthorityState = EmitReliableAuthorityState;
 	Driver->InputDelegate = InputDelegate;
 	Driver->BindToRepProxies(AutoProxyRep, SimProxyRep);
 	Driver->Simulate = [&](Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, FSimulationOutput<ModelState, CueSet>& Output, const InputPacket& Input) {

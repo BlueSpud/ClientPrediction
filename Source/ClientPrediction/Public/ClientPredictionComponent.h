@@ -33,6 +33,9 @@ private:
 
 	UFUNCTION(Server, Unreliable)
 	void RecvInputPacket(FNetSerializationProxy Proxy);
+	
+	UFUNCTION(NetMulticast, Reliable)
+	void RecvReliableAuthorityState(FNetSerializationProxy Proxy);
 
 	void CheckOwnerRoleChanged();
 
@@ -47,7 +50,6 @@ private:
 
 	UPROPERTY(Replicated)
 	FClientPredictionRepProxy SimProxyRep;
-
 	
 	UPROPERTY()
 	class UPrimitiveComponent* UpdatedComponent;
@@ -63,6 +65,10 @@ ModelType* UClientPredictionComponent::CreateModel() {
 
 	Model->EmitInputPackets = [&](FNetSerializationProxy& Proxy) {
 		RecvInputPacket(Proxy);
+	};
+
+	Model->EmitReliableAuthorityState = [&](FNetSerializationProxy& Proxy) {
+		RecvReliableAuthorityState(Proxy);
 	};
 
 	return static_cast<ModelType*>(Model.Get());

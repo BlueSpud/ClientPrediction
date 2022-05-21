@@ -62,6 +62,10 @@ void UClientPredictionComponent::TickComponent(float DeltaTime, ELevelTick TickT
 	Model->Finalize(AccumulatedTime / kFixedDt, UpdatedComponent);
 }
 
+void UClientPredictionComponent::RecvReliableAuthorityState_Implementation(FNetSerializationProxy Proxy) {
+	Model->ReceiveReliableAuthorityState(Proxy);
+}
+
 void UClientPredictionComponent::CheckOwnerRoleChanged() {
 	if (CachedRole == GetOwnerRole()) { return; }
 	CachedRole = GetOwnerRole();

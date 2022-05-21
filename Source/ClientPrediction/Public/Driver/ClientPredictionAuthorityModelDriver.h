@@ -76,8 +76,19 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 		HandleCue(CurrentState.State, static_cast<CueSet>(CurrentState.Cues[i]));
 	}
 
-	if (AutoProxyRep != nullptr) { AutoProxyRep->Dispatch(); }
-	if (SimProxyRep != nullptr) { SimProxyRep->Dispatch(); }
+	if (CurrentState.Cues.IsEmpty() || !EmitReliableAuthorityState) {
+		if (AutoProxyRep != nullptr) { AutoProxyRep->Dispatch(); }
+		if (SimProxyRep != nullptr) { SimProxyRep->Dispatch(); }
+	} else {
+		
+		// Reliably dispatch the state
+		FNetSerializationProxy Proxy;
+		Proxy.NetSerializeFunc = [=](FArchive& Ar) {
+			CurrentState.NetSerialize(Ar);
+		};
+
+		EmitReliableAuthorityState(Proxy);
+	}
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>

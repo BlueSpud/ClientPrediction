@@ -23,6 +23,8 @@ public:
 	// Input packet / state receiving
 	
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override;
+	virtual void ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) override;
+
 	virtual void BindToRepProxies(FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) override;
 
 private:
@@ -126,6 +128,31 @@ ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::Gene
 template <typename InputPacket, typename ModelState, typename CueSet>
 void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::ReceiveInputPackets(FNetSerializationProxy& Proxy) {
 	// No-op, sim proxy should never get input
+}
+
+template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) {
+	WrappedState State;
+
+	Proxy.NetSerializeFunc = [&](FArchive& Ar) {
+		State.NetSerialize(Ar);
+	};
+
+	Proxy.Deserialize();
+	if (LastPoppedFrame != kInvalidFrame && State.FrameNumber <= LastPoppedFrame) {
+		if (!State.Cues.IsEmpty()) {
+			for (int Cue = 0; Cue < State.Cues.Num(); Cue++) {
+				HandleCue(State.State, static_cast<CueSet>(State.Cues[Cue]));
+			}
+		}
+	}
+
+	// This could potentially come out of order in relation to what comes out of the replication proxy,
+	// so we sort it.
+	States.Add(State);
+	States.Sort([](const WrappedState& A, const WrappedState& B) {
+		return A.FrameNumber < B.FrameNumber;
+	});
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
