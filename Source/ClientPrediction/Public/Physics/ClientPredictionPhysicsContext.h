@@ -10,9 +10,10 @@ struct CLIENTPREDICTION_API FPhysicsContext {
 
 public:
 	
-	FPhysicsContext(ImmediatePhysics::FActorHandle* DynamicHandle, UPrimitiveComponent* Component)
+	FPhysicsContext(ImmediatePhysics::FActorHandle* DynamicHandle, UPrimitiveComponent* Component, FTransform PreviousTransform = FTransform::Identity)
 		: DynamicHandle(DynamicHandle),
-		  Component(Component) {}
+		  Component(Component),
+	      PreviousTransform(PreviousTransform) {}
 
 // Dynamic actor methods
 	void AddForce(const FVector& Force, bool bAccelerateChange = false) const;
@@ -24,6 +25,8 @@ public:
 	FVector ScaleByMomentOfInertia(const FVector& InputVector) const;
 
 	FTransform GetTransform() const;
+	FTransform GetPreviousTransform() const;
+	
 	FVector GetLinearVelocity() const;
 	FVector GetAngularVelocity() const;
 
@@ -39,5 +42,7 @@ private:
 
 	/** The component that the immediate mode simulation is simulating dynamically. */
 	class UPrimitiveComponent* Component;
+
+	FTransform PreviousTransform;
 	
 };

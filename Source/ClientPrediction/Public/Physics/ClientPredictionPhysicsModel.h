@@ -105,7 +105,7 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::BeginTic
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const WrappedModelState& PrevState, SimOutput& Output, const InputPacket& Input) {
-	FPhysicsContext Context(SimulatedBodyHandle, Component);
+	FPhysicsContext Context(SimulatedBodyHandle, Component, FTransform(PrevState.PhysicsState.Rotation, PrevState.PhysicsState.Location));
 	FPhysicsSimulationOutput<ModelState, CueSet> PhysicsOutput(Output);
 	
 	Simulate(Dt, Component, Context, PrevState.State, PhysicsOutput, Input);
@@ -148,10 +148,8 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::UpdateWo
 				}
 				
 				const bool bIsSelf = (Owner == OverlapComp->GetOwner());
-				if (!bIsSelf)
-				{
-					// Create a kinematic actor. Not using Static as world-static objects may move in the simulation's frame of reference
-					ImmediatePhysics::FActorHandle* ActorHandle = PhysicsSimulation->CreateActor(ImmediatePhysics::EActorType::KinematicActor, &OverlapComp->BodyInstance, OverlapComp->GetComponentTransform());
+				if (!bIsSelf) {
+					ImmediatePhysics::FActorHandle* ActorHandle = PhysicsSimulation->CreateActor(ImmediatePhysics::EActorType::StaticActor, &OverlapComp->BodyInstance, OverlapComp->GetComponentTransform());
 					PhysicsSimulation->AddToCollidingPairs(ActorHandle);
 
 					StaticSimulationActors.Add(OverlapComp, FSimulationActor(ActorHandle));

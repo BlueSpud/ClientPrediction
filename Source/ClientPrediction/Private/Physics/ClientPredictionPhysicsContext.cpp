@@ -30,6 +30,7 @@ FVector FPhysicsContext::ScaleByMomentOfInertia(const FVector& InputVector) cons
 }
 
 FTransform FPhysicsContext::GetTransform() const { return DynamicHandle->GetWorldTransform(); }
+FTransform FPhysicsContext::GetPreviousTransform() const { return PreviousTransform; }
 FVector FPhysicsContext::GetLinearVelocity() const { return DynamicHandle->GetLinearVelocity(); }
 FVector FPhysicsContext::GetAngularVelocity() const { return DynamicHandle->GetAngularVelocity(); }
 
