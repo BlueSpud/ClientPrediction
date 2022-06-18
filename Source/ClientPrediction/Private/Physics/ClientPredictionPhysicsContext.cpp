@@ -13,7 +13,7 @@ void FPhysicsContext::AddForce(const FVector& Force, bool bAccelerateChange) con
 void FPhysicsContext::AddTorqueInRadians(const FVector& Torque, bool bAccelerateChange) const {
 	if (bAccelerateChange) {
 		if (Chaos::FPBDRigidParticleHandle* Rigid = DynamicHandle->GetParticle()->CastToRigidParticle()) {
-			DynamicHandle->AddTorque(Chaos::FParticleUtilitiesXR::GetWorldInertia(Rigid) * Torque);	
+			DynamicHandle->AddTorque(Chaos::FParticleUtilitiesXR::GetWorldInertia(Rigid) * Torque);
 		}
 	} else {
 		DynamicHandle->AddTorque(Torque);
@@ -42,6 +42,6 @@ bool FPhysicsContext::LineTraceSingle(FHitResult& OutHit, const FVector& Start, 
 
 	FCollisionQueryParams Params = FCollisionQueryParams::DefaultQueryParam;
 	Params.AddIgnoredActor(Component->GetOwner());
-	
+
 	return UnsafeWorld->LineTraceSingleByObjectType(OutHit, Start, End, FCollisionObjectQueryParams::AllStaticObjects, Params);
 }

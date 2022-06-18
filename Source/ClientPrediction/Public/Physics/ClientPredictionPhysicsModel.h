@@ -42,9 +42,9 @@ protected:
 private:
 
 	void UpdateWorld(UPrimitiveComponent* Component);
-	
+
 private:
-	
+
 	ImmediatePhysics::FActorHandle* SimulatedBodyHandle = nullptr;
 	ImmediatePhysics::FSimulation* PhysicsSimulation = nullptr;
 
@@ -57,11 +57,11 @@ private:
 
 		/** The number of ticks ago that this actor was last seen by an overlap cast */
 		uint32 TicksSinceLastSeen = 0;
-		
+
 	};
 
 	TMap<const UPrimitiveComponent*, FSimulationActor> StaticSimulationActors;
-	
+
 };
 
 template <typename InputPacket, typename ModelState, typename CueSet>
@@ -81,7 +81,7 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Initiali
 	check(SimulatedBodyHandle);
 	SimulatedBodyHandle->SetEnabled(true);
 	PhysicsSimulation->SetNumActiveBodies(1, {0});
-	
+
 	Initialize(Component, SimulatedBodyHandle, Role);
 }
 
@@ -96,7 +96,7 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::BeginTic
 	PhysicsSimulation->Simulate(Dt, 1.0, 1, FVector(0.0, 0.0, -980.0));
 
 	const FTransform WorldTransform = SimulatedBodyHandle->GetWorldTransform();
-	
+
 	State.PhysicsState.Location = WorldTransform.GetLocation();
 	State.PhysicsState.Rotation = WorldTransform.GetRotation();
 	State.PhysicsState.LinearVelocity = SimulatedBodyHandle->GetLinearVelocity();
@@ -107,7 +107,7 @@ template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const WrappedModelState& PrevState, SimOutput& Output, const InputPacket& Input) {
 	FPhysicsContext Context(SimulatedBodyHandle, Component, FTransform(PrevState.PhysicsState.Rotation, PrevState.PhysicsState.Location));
 	FPhysicsSimulationOutput<ModelState, CueSet> PhysicsOutput(Output);
-	
+
 	Simulate(Dt, Component, Context, PrevState.State, PhysicsOutput, Input);
 }
 
@@ -129,7 +129,7 @@ template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::UpdateWorld(UPrimitiveComponent* Component) {
 	UWorld* UnsafeWorld = Component->GetWorld();
 	FPhysScene* PhysScene = UnsafeWorld->GetPhysicsScene();
-	
+
 	if ((UnsafeWorld != nullptr) && (PhysScene != nullptr))
 	{
 		TArray<FOverlapResult> Overlaps;
@@ -146,7 +146,7 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::UpdateWo
 					StaticSimulationActors[OverlapComp].TicksSinceLastSeen = 0;
 					continue;
 				}
-				
+
 				const bool bIsSelf = (Owner == OverlapComp->GetOwner());
 				if (!bIsSelf) {
 					ImmediatePhysics::FActorHandle* ActorHandle = PhysicsSimulation->CreateActor(ImmediatePhysics::EActorType::StaticActor, &OverlapComp->BodyInstance, OverlapComp->GetComponentTransform());

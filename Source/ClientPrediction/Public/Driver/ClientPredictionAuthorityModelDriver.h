@@ -9,29 +9,29 @@
 template <typename InputPacket, typename ModelState, typename CueSet>
 class ClientPredictionAuthorityDriver : public IClientPredictionModelDriver<InputPacket, ModelState, CueSet> {
 	using WrappedState = FModelStateWrapper<ModelState>;
-	
+
 public:
 
 	ClientPredictionAuthorityDriver(bool bTakesInput);
 
 	// Simulation ticking
-	
+
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override;
 	virtual ModelState GenerateOutput(Chaos::FReal Alpha) override;
 
 	// Input packet / state receiving
-	
+
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override;
 	virtual void BindToRepProxies(FClientPredictionRepProxy& NewAutoProxyRep, FClientPredictionRepProxy& NewSimProxyRep) override;
 
 private:
-	
+
 	uint32 NextFrame = 0;
 
 	/** Input packet used for the current frame */
 	uint32 CurrentInputPacketIdx = kInvalidFrame;
 	FInputPacketWrapper<InputPacket> CurrentInputPacket;
-	
+
 	WrappedState CurrentState;
 	ModelState LastState;
 
@@ -55,19 +55,19 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 	CurrentState.FrameNumber = NextFrame++;
 	CurrentState.Cues.Empty();
 	BeginTick(Dt, CurrentState.State, Component);
-	
+
 	if (!bTakesInput) {
 		if (CurrentInputPacketIdx != kInvalidFrame || InputBuffer.AuthorityBufferSize() > InputBuffer.GetAuthorityTargetBufferSize()) {
 			InputBuffer.ConsumeInputAuthority(CurrentInputPacket);
 			CurrentInputPacketIdx = CurrentInputPacket.PacketNumber;
 		}
-	
+
 		CurrentState.InputPacketNumber = CurrentInputPacketIdx;
 	} else {
 		CurrentInputPacket = FInputPacketWrapper<InputPacket>();
 		InputDelegate.ExecuteIfBound(CurrentInputPacket.Packet, CurrentState.State, Dt);
 	}
-	
+
 	// Tick
 	FSimulationOutput<ModelState, CueSet> Output(CurrentState);
 	Simulate(Dt, Component, LastState, Output, CurrentInputPacket.Packet);
@@ -80,7 +80,7 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 		if (AutoProxyRep != nullptr) { AutoProxyRep->Dispatch(); }
 		if (SimProxyRep != nullptr) { SimProxyRep->Dispatch(); }
 	} else {
-		
+
 		// Reliably dispatch the state
 		FNetSerializationProxy Proxy;
 		Proxy.NetSerializeFunc = [=](FArchive& Ar) {

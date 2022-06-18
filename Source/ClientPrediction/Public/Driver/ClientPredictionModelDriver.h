@@ -10,7 +10,7 @@
  */
 template <typename InputPacket, typename ModelState, typename CueSet>
 class IClientPredictionModelDriver {
-	
+
 public:
 
 	IClientPredictionModelDriver() = default;
@@ -31,12 +31,12 @@ public:
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) = 0;
 	virtual void ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) {};
 	virtual void BindToRepProxies(FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) = 0;
-	
+
 public:
-	
+
 	DECLARE_DELEGATE_ThreeParams(FInputProductionDelgate, InputPacket&, const ModelState& State, Chaos::FReal Dt)
 	FInputProductionDelgate InputDelegate;
-	
+
 	/** These are the functions to queue RPC sends. The proxies should use functions that capture by value */
 	TFunction<void(FNetSerializationProxy&)> EmitInputPackets;
 	TFunction<void(FNetSerializationProxy&)> EmitReliableAuthorityState;

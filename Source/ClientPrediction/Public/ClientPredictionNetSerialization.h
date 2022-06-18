@@ -9,7 +9,7 @@
  * In order to send different kind of input packets / states, we need to be able to have one RPC
  * handle several structs. In order to do this, we use a proxy to call a serialization function
  * of some unknown struct.
- */ 
+ */
 USTRUCT()
 struct FNetSerializationProxy {
 
@@ -27,15 +27,15 @@ struct FNetSerializationProxy {
 			TArray<uint8> CompressedBuffer;
 			Ar << NumberOfBits;
 			Ar << CompressedBuffer;
-			
+
 			FArchiveLoadCompressedProxy Decompressor(CompressedBuffer, NAME_Zlib);
 			Decompressor << SerializedBits;
 		} else {
 			checkSlow(NetSerializeFunc());
-			
+
 			FNetBitWriter Writer(nullptr, 32768);
 			NetSerializeFunc(Writer);
-			
+
 			TArray<uint8> UncompressedBuffer = *Writer.GetBuffer();
 
 			TArray<uint8> CompressedBuffer;
@@ -47,7 +47,7 @@ struct FNetSerializationProxy {
 			Ar << NumBits;
 			Ar << CompressedBuffer;
 		}
-		
+
 		bOutSuccess = true;
 		return true;
 	}
@@ -71,7 +71,7 @@ struct FNetSerializationProxy {
 	UPackageMap* PackageMap = nullptr;
 	TArray<uint8> SerializedBits;
 	int64 NumberOfBits = -1;
-	
+
 };
 
 template<>

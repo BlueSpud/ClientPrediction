@@ -18,7 +18,7 @@ UClientPredictionComponent::UClientPredictionComponent() {
 
 void UClientPredictionComponent::GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifetimeProps) const {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	
+
 	DOREPLIFETIME_CONDITION(UClientPredictionComponent, AutoProxyRep, COND_AutonomousOnly);
 	DOREPLIFETIME_CONDITION(UClientPredictionComponent, SimProxyRep, COND_SimulatedOnly);
 }
@@ -26,7 +26,7 @@ void UClientPredictionComponent::GetLifetimeReplicatedProps(TArray< FLifetimePro
 void UClientPredictionComponent::InitializeComponent() {
 	Super::InitializeComponent();
 	CheckOwnerRoleChanged();
-	
+
 	UpdatedComponent = Cast<UPrimitiveComponent>(GetOwner()->GetRootComponent());
 	check(UpdatedComponent);
 }
@@ -52,7 +52,7 @@ void UClientPredictionComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
 
 void UClientPredictionComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-	
+
 	AccumulatedTime += DeltaTime;
 	while (AccumulatedTime >= kFixedDt) {
 		AccumulatedTime = FMath::Clamp(AccumulatedTime - kFixedDt, 0.0, AccumulatedTime);

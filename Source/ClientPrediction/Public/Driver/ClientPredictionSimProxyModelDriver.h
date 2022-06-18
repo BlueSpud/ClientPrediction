@@ -10,18 +10,18 @@
 template <typename InputPacket, typename ModelState, typename CueSet>
 class ClientPredictionSimProxyDriver : public IClientPredictionModelDriver<InputPacket, ModelState, CueSet> {
 	using WrappedState = FModelStateWrapper<ModelState>;
-	
+
 public:
 
 	ClientPredictionSimProxyDriver() = default;
 
 	// Simulation ticking
-	
+
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override;
 	virtual ModelState GenerateOutput(Chaos::FReal Alpha) override;
 
 	// Input packet / state receiving
-	
+
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override;
 	virtual void ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) override;
 
@@ -36,13 +36,13 @@ private:
 	 * Anything before this is considered "in the past"
 	 */
 	uint32 LastPoppedFrame = kInvalidFrame;
-	
+
 	TArray<WrappedState> States;
 	ModelState LastFinalizedState;
 
 	/** The number of states to store before starting the interpolation */
 	uint32 kTargetBufferSize = FMath::CeilToInt32(kDesiredInterpolationBufferMs / (kFixedDt * 1000.0) / kSyncFrames);
-	
+
 	uint32 StartInterpolationIndex = -1;
 	uint32 EndInterpolationIndex = -1;
 };
@@ -53,7 +53,7 @@ void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chaos
 		if (static_cast<uint32>(States.Num()) < kTargetBufferSize) {
 			return;
 		}
-		
+
 		CurrentFrame = States[0].FrameNumber;
 	} else {
 		CurrentFrame++;
@@ -69,12 +69,12 @@ void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chaos
 					}
 				}
 			}
-			
+
 			// Find which two states to interpolate between.
 			// If both indexes are the last element that means there was nothing to interpolate between and the latest
 			// state should just be shown.
 			StartInterpolationIndex = EndInterpolationIndex = BufferSize - 1;
-		
+
 			for (uint32 i = 0; i < BufferSize - 1; i++) {
 				if (States[i].FrameNumber <= CurrentFrame
 				 && i + 1 < BufferSize
@@ -95,7 +95,7 @@ void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chaos
 
 			StartInterpolationIndex = 0;
 			EndInterpolationIndex = 1;
-			
+
 		} else {
 			StartInterpolationIndex = EndInterpolationIndex = kInvalidFrame;
 		}
@@ -117,11 +117,11 @@ ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::Gene
 		float FrameDelta = static_cast<float>(End.FrameNumber - Start.FrameNumber);
 		float FrameAlpha = static_cast<float>(CurrentFrame - Start.FrameNumber) / FrameDelta;
 		float TrueAlpha  = FrameAlpha + Alpha / FrameDelta;
-	
+
 		LastFinalizedState = Start.State;
 		LastFinalizedState.Interpolate(TrueAlpha, End.State);
 	}
-	
+
 	return LastFinalizedState;
 }
 

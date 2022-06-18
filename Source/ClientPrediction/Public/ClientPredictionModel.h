@@ -12,7 +12,7 @@
  * reference to a templated model.
  */
 class IClientPredictionModel {
-	
+
 public:
 
 	IClientPredictionModel() = default;
@@ -36,13 +36,13 @@ public:
 
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) = 0;
 	virtual void ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) = 0;
-	
+
 public:
 
 	/** These are the functions to queue RPC sends. The proxies should use functions that capture by value */
 	TFunction<void(FNetSerializationProxy&)> EmitInputPackets;
 	TFunction<void(FNetSerializationProxy&)> EmitReliableAuthorityState;
-	
+
 };
 
 /**********************************************************************************************************************/
@@ -52,32 +52,32 @@ enum EEmptyCueSet: uint8 {};
 template <typename InputPacket, typename ModelState, typename CueSet = EEmptyCueSet>
 class BaseClientPredictionModel : public IClientPredictionModel {
 	using SimOutput = FSimulationOutput<ModelState, CueSet>;
-	
+
 public:
 
 	BaseClientPredictionModel() = default;
 	virtual ~BaseClientPredictionModel() override = default;
 
 	virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) override final;
-	
+
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override final;
 
 	virtual void Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component) override final;
-	
+
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override final;
 	virtual void ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) override final;
 
 public:
-	
+
 	DECLARE_DELEGATE_ThreeParams(FInputProductionDelgate, InputPacket&, const ModelState& State, Chaos::FReal Dt)
 	FInputProductionDelgate InputDelegate;
 
 	DECLARE_DELEGATE_TwoParams(FCueDelegate, const ModelState& CurrentState, CueSet Cue);
 	FCueDelegate HandleCue;
-	
+
 	DECLARE_DELEGATE_OneParam(FSimulationOutputDelegate, const ModelState&)
 	FSimulationOutputDelegate OnFinalized;
-	
+
 protected:
 
 	virtual void BeginTick(Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component);
@@ -86,7 +86,7 @@ protected:
 
 	/** Perform any internal logic for output of a state to be done on finalization */
 	virtual void ApplyState(UPrimitiveComponent* Component, const ModelState& State);
-	
+
 private:
 
 	TUniquePtr<IClientPredictionModelDriver<InputPacket, ModelState, CueSet>> Driver;
@@ -134,7 +134,7 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::SetNetRole(ENet
 	Driver->BeginTick = [&](Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component) {
 		BeginTick(Dt, State, Component);
 	};
-	
+
 	Driver->Rewind = [&](const ModelState& State, UPrimitiveComponent* Component) {
 		Rewind(State, Component);
 	};
@@ -150,7 +150,7 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::BeginTick(Chaos
 template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
 	if (Driver == nullptr) { return; }
-	Driver->Tick(Dt, Component);	
+	Driver->Tick(Dt, Component);
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
@@ -159,7 +159,7 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::ApplyState(UPri
 template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component) {
 	if (Driver == nullptr) { return; }
-	
+
 	ModelState InterpolatedState = Driver->GenerateOutput(Alpha);
 	ApplyState(Component, InterpolatedState);
 

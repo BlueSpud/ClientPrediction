@@ -7,7 +7,7 @@ struct FModelStateWrapper {
 
 	uint32 FrameNumber = kInvalidFrame;
 	uint32 InputPacketNumber = kInvalidFrame;
-	
+
 	ModelState State;
 	TArray<uint8> Cues;
 
@@ -22,7 +22,7 @@ void FModelStateWrapper<ModelState>::NetSerialize(FArchive& Ar)  {
 	Ar << FrameNumber;
 	Ar << InputPacketNumber;
 	Ar << Cues;
-		
+
 	State.NetSerialize(Ar);
 }
 
@@ -37,7 +37,7 @@ bool FModelStateWrapper<ModelState>::operator==(const FModelStateWrapper<ModelSt
 			return false;
 		}
 	}
-	
+
 	return InputPacketNumber == Other.InputPacketNumber
 		&& State == Other.State;
 }
@@ -67,13 +67,13 @@ struct FInputPacketWrapper {
 
 	template <typename InputPacket_>
 	friend FArchive& operator<<(FArchive& Ar, FInputPacketWrapper<InputPacket_>& Wrapper);
-	
+
 };
 
 template <typename InputPacket>
 void FInputPacketWrapper<InputPacket>::NetSerialize(FArchive& Ar) {
 	Ar << PacketNumber;
-	
+
 	Packet.NetSerialize(Ar);
 }
 

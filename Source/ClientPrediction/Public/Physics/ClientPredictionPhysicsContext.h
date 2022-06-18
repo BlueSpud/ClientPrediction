@@ -9,7 +9,7 @@
 struct CLIENTPREDICTION_API FPhysicsContext {
 
 public:
-	
+
 	FPhysicsContext(ImmediatePhysics::FActorHandle* DynamicHandle, UPrimitiveComponent* Component, FTransform PreviousTransform = FTransform::Identity)
 		: DynamicHandle(DynamicHandle),
 		  Component(Component),
@@ -26,17 +26,17 @@ public:
 
 	FTransform GetTransform() const;
 	FTransform GetPreviousTransform() const;
-	
+
 	FVector GetLinearVelocity() const;
 	FVector GetAngularVelocity() const;
 
-	
+
 	// World query methods
 	// TODO add more
 	bool LineTraceSingle(struct FHitResult& OutHit, const FVector& Start, const FVector& End) const;
-	
+
 private:
-    
+
     /** The handle to the dynamic actor in the simulation. */
     ImmediatePhysics::FActorHandle* DynamicHandle;
 
@@ -44,5 +44,5 @@ private:
 	class UPrimitiveComponent* Component;
 
 	FTransform PreviousTransform;
-	
+
 };

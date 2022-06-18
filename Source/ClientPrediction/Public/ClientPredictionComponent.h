@@ -20,7 +20,7 @@ public:
 	virtual void InitializeComponent() override;
 	virtual void PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) override;
 	virtual void PreNetReceive() override;
-	
+
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -33,7 +33,7 @@ private:
 
 	UFUNCTION(Server, Unreliable)
 	void RecvInputPacket(FNetSerializationProxy Proxy);
-	
+
 	UFUNCTION(NetMulticast, Reliable)
 	void RecvReliableAuthorityState(FNetSerializationProxy Proxy);
 
@@ -42,7 +42,7 @@ private:
 public:
 
 	TUniquePtr<IClientPredictionModel> Model;
-	
+
 private:
 
 	UPROPERTY(Replicated)
@@ -50,13 +50,13 @@ private:
 
 	UPROPERTY(Replicated)
 	FClientPredictionRepProxy SimProxyRep;
-	
+
 	UPROPERTY()
 	class UPrimitiveComponent* UpdatedComponent;
 
 	float AccumulatedTime = 0.0;
 	ENetRole CachedRole = ENetRole::ROLE_None;
-	
+
 };
 
 template <typename ModelType>

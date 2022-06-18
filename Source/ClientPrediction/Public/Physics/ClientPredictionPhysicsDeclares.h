@@ -7,7 +7,7 @@
 #include "Driver/ClientPredictionModelTypes.h"
 
 struct FPhysicsState {
-	
+
 	Chaos::FVec3 Location = Chaos::FVec3::Zero();
 	Chaos::FRotation3 Rotation = Chaos::FRotation3::Identity;
 	Chaos::FVec3 LinearVelocity = Chaos::FVec3::Zero();
@@ -17,7 +17,7 @@ struct FPhysicsState {
 		FTransform RewindTransform;
 		RewindTransform.SetLocation(Location);
 		RewindTransform.SetRotation(Rotation);
-		
+
 		Handle->SetWorldTransform(RewindTransform);
 		Handle->SetLinearVelocity(LinearVelocity);
 		Handle->SetAngularVelocity(AngularVelocity);
@@ -36,7 +36,7 @@ struct FPhysicsState {
 		Ar << LinearVelocity;
 		Ar << AngularVelocity;
 	}
-	
+
 	bool operator ==(const FPhysicsState& Other) const {
 		return Location.Equals(Other.Location, 2.0)
 			&& Rotation.Equals(Other.Rotation, 0.2)
@@ -50,14 +50,14 @@ struct FPhysicsState {
 		Builder.Appendf("LinearVelocity %f %f %f\n", LinearVelocity.X, LinearVelocity.Y, LinearVelocity.Z);
 		Builder.Appendf("AngularVelocity %f %f %f\n", AngularVelocity.X, AngularVelocity.Y, AngularVelocity.Z);
 	}
-	
+
 };
 
 /**********************************************************************************************************************/
 
 template <typename ModelState>
 struct FPhysicsStateWrapper {
-	
+
 	ModelState State;
 	FPhysicsState PhysicsState;
 
@@ -108,10 +108,10 @@ struct FPhysicsSimulationOutput {
 	explicit FPhysicsSimulationOutput(const FSimulationOutput<FPhysicsStateWrapper<ModelState>, CueSet>& Proxy);
 	ModelState& State() const;
 	void DispatchQueue(CueSet Cue);
-	
+
 	private:
 		FSimulationOutput<FPhysicsStateWrapper<ModelState>, CueSet> Proxy;
-	
+
 };
 
 template <typename ModelState, typename CueSet>

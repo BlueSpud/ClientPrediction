@@ -8,7 +8,7 @@ template <typename InputPacket>
 class FInputBuffer {
 
 public:
-	
+
 	void Rewind(uint32 PacketNumber) {
 
 		// TQueue deletes the move / copy constructor so copy the existing frot buffer
@@ -20,7 +20,7 @@ public:
 		}
 
 		RemoteFrontBufferSize = 0;
-	
+
 		// Add all the un-acked packets to the front buffer to be reused
 		while (!BackBuffer.IsEmpty()) {
 			InputPacket Packet;
@@ -36,12 +36,12 @@ public:
 		while (!BackupFrontBuffer.IsEmpty()) {
 			InputPacket Packet;
 			BackupFrontBuffer.Dequeue(Packet);
-		
+
 			FrontBuffer.Enqueue(Packet);
 			++RemoteFrontBufferSize;
 		}
 	}
-	
+
 	void Ack(uint32 PacketNumber) {
 		while (!BackBuffer.IsEmpty()) {
 			if (BackBuffer.Peek()->PacketNumber > PacketNumber) {
@@ -56,13 +56,13 @@ public:
 	uint32 RemoteBufferSize() const {
 		return RemoteFrontBufferSize;
 	}
-	
+
 	uint32 AuthorityBufferSize() {
 		return AuthorityBuffer.Num();
 	}
 
 	void QueueInputAuthority(const InputPacket& Packet) {
-		
+
 		// Ensure that the packet is not in the past
 		if (AuthorityInputPacketNumber != kInvalidFrame && Packet.PacketNumber <= AuthorityInputPacketNumber) {
 			return;
@@ -76,7 +76,7 @@ public:
 		if (ExistingPacket != nullptr) {
 			return;
 		}
-		
+
 		AuthorityBuffer.Add(Packet);
 
 		// Sort the input buffer in case packets have come in out of order
@@ -87,12 +87,12 @@ public:
 			return First.PacketNumber > Second.PacketNumber;
 		});
 	}
-	
+
 	void QueueInputRemote(const InputPacket& Packet) {
 		FrontBuffer.Enqueue(Packet);
 		++RemoteFrontBufferSize;
 	}
-	
+
 	void ConsumeInputAuthority(InputPacket& OutPacket) {
 		uint32 AuthorityBufferSize = AuthorityBuffer.Num();
 
@@ -115,11 +115,11 @@ public:
 		} else {
 			OutPacket = AuthorityBuffer.Pop();
 		}
-		
+
 		AuthorityInputPacketNumber = OutPacket.PacketNumber;
 		LastAuthorityPacket = OutPacket;
 	}
-	
+
 	bool ConsumeInputRemote(InputPacket& OutPacket) {
 		if (FrontBuffer.IsEmpty()) {
 			return false;
@@ -127,7 +127,7 @@ public:
 
 		FrontBuffer.Dequeue(OutPacket);
 		--RemoteFrontBufferSize;
-	
+
 		BackBuffer.Enqueue(OutPacket);
 		return true;
 	}
@@ -139,7 +139,7 @@ public:
 	uint32 GetAuthorityTargetBufferSize() const {
 		return TargetAuthorityBufferSize;
 	}
-	
+
 private:
 
 	/** On the remote the queued inputs. When rewinding the back buffer is swapped into the front buffer. */
@@ -154,7 +154,7 @@ private:
 	uint32 RemoteFrontBufferSize = 0;
 
 	/** The frame number of the last input packet consumed on the authority */
-	uint32 AuthorityInputPacketNumber = kInvalidFrame; 
+	uint32 AuthorityInputPacketNumber = kInvalidFrame;
 
 	/** The target size for the remote buffer */
 	uint32 TargetAuthorityBufferSize = 1;
@@ -163,4 +163,4 @@ private:
 	InputPacket LastAuthorityPacket;
 
 };
-	
+
