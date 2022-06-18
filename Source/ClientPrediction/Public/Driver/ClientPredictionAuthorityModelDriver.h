@@ -16,6 +16,7 @@ public:
 
 	// Simulation ticking
 
+	virtual void Initialize() override;
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override;
 	virtual ModelState GenerateOutput(Chaos::FReal Alpha) override;
 
@@ -45,6 +46,11 @@ private:
 template <typename InputPacket, typename ModelState, typename CueSet>
 ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ClientPredictionAuthorityDriver(bool bTakesInput) : bTakesInput(bTakesInput) {
 	InputBuffer.SetAuthorityTargetBufferSize(kAuthorityTargetInputBufferSize);
+}
+
+template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Initialize() {
+	GenerateInitialState(CurrentState.State);
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>

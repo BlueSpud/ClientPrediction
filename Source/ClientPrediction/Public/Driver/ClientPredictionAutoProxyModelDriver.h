@@ -16,6 +16,7 @@ public:
 
 	// Simulation ticking
 
+	virtual void Initialize() override;
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override;
 	virtual ModelState GenerateOutput(Chaos::FReal Alpha) override;
 
@@ -51,6 +52,11 @@ private:
 	TArray<FInputPacketWrapper<InputPacket>> SlidingInputWindow;
 	FInputBuffer<FInputPacketWrapper<InputPacket>> InputBuffer;
 };
+
+template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Initialize() {
+	GenerateInitialState(CurrentState.State);
+}
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
@@ -153,18 +159,18 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 			// Server/client mismatch. Resimulate the client
 			FAnsiStringBuilderBase HistoricBuilder;
 			HistoricState.Print(HistoricBuilder);
-			FString HistoricString = StringCast<TCHAR>(HistoricBuilder.ToString()).Get();
+			const FString HistoricString = StringCast<TCHAR>(HistoricBuilder.ToString()).Get();
 
 			FAnsiStringBuilderBase AuthorityBuilder;
 			LastAuthorityState.Print(AuthorityBuilder);
-			FString AuthorityString = StringCast<TCHAR>(AuthorityBuilder.ToString()).Get();
+			const FString AuthorityString = StringCast<TCHAR>(AuthorityBuilder.ToString()).Get();
 
-			UE_LOG(LogTemp, Warning, TEXT("======\nRewinding and resimulating from frame %i.\nClient\n%s\nAuthority\n%s\n======"), LastAuthorityState.FrameNumber, *HistoricString, *AuthorityString);
+			UE_LOG(LogTemp, Warning, TEXT("\nRewinding and resimulating from frame %i."), LastAuthorityState.FrameNumber);
+			UE_LOG(LogTemp, Log, TEXT("Client\n%s\nAuthority\n%s\n"), *HistoricString, *AuthorityString);
 
 			Rewind_Internal(LastAuthorityState, Component);
 			ForceSimulate(FMath::Max(kClientForwardPredictionFrames, InputBuffer.RemoteBufferSize()), Dt, Component);
 		}
-
 	}
 }
 

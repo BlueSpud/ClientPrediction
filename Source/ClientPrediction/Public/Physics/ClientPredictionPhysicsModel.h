@@ -26,10 +26,12 @@ public:
 	BaseClientPredictionPhysicsModel();
 	virtual ~BaseClientPredictionPhysicsModel() override;
 
-	virtual void Initialize(UPrimitiveComponent* Component, ENetRole Role) override final;
-	virtual void Initialize(UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, ENetRole Role);
-
 protected:
+	virtual void Initialize(UPrimitiveComponent* Component) override final;
+	virtual void InitializeModel(UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle);
+
+	virtual void GenerateInitialState(FPhysicsStateWrapper<ModelState>& State) override;
+
 	virtual void BeginTick(Chaos::FReal Dt, FPhysicsStateWrapper<ModelState>& State, UPrimitiveComponent* Component) override;
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const WrappedModelState& PrevState, SimOutput& Output, const InputPacket& Input) override final;
 	virtual void Rewind(const WrappedModelState& State, UPrimitiveComponent* Component) override final;
@@ -41,6 +43,7 @@ protected:
 
 private:
 
+	void FillPhysicsState(FPhysicsStateWrapper<ModelState>& State);
 	void UpdateWorld(UPrimitiveComponent* Component);
 
 private:
@@ -76,17 +79,22 @@ BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::~BaseClientPr
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Initialize(UPrimitiveComponent* Component, ENetRole Role) {
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Initialize(UPrimitiveComponent* Component) {
 	SimulatedBodyHandle = PhysicsSimulation->CreateActor(ImmediatePhysics::EActorType::DynamicActor, Component->GetBodyInstance(), Component->GetComponentTransform());
 	check(SimulatedBodyHandle);
 	SimulatedBodyHandle->SetEnabled(true);
 	PhysicsSimulation->SetNumActiveBodies(1, {0});
 
-	Initialize(Component, SimulatedBodyHandle, Role);
+	InitializeModel(Component, SimulatedBodyHandle);
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Initialize(UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle, ENetRole Role) {}
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::InitializeModel(UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) {}
+
+template <typename InputPacket, typename ModelState, typename CueSet>
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::GenerateInitialState(FPhysicsStateWrapper<ModelState>& State) {
+	FillPhysicsState(State);
+}
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::BeginTick(Chaos::FReal Dt, FPhysicsStateWrapper<ModelState>& State, UPrimitiveComponent* Component) {
@@ -95,12 +103,7 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::BeginTic
 	PhysicsSimulation->SetSolverSettings(Dt, -1.0, -1.0f, 5, 5, 5);
 	PhysicsSimulation->Simulate(Dt, 1.0, 1, FVector(0.0, 0.0, -980.0));
 
-	const FTransform WorldTransform = SimulatedBodyHandle->GetWorldTransform();
-
-	State.PhysicsState.Location = WorldTransform.GetLocation();
-	State.PhysicsState.Rotation = WorldTransform.GetRotation();
-	State.PhysicsState.LinearVelocity = SimulatedBodyHandle->GetLinearVelocity();
-	State.PhysicsState.AngularVelocity = SimulatedBodyHandle->GetAngularVelocity();
+	FillPhysicsState(State);
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
@@ -123,6 +126,16 @@ template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::ApplyState(UPrimitiveComponent* Component, const WrappedModelState& State) {
 	Component->SetWorldLocation(State.PhysicsState.Location);
 	Component->SetWorldRotation(State.PhysicsState.Rotation);
+}
+
+template <typename InputPacket, typename ModelState, typename CueSet>
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::FillPhysicsState(FPhysicsStateWrapper<ModelState>& State) {
+	const FTransform WorldTransform = SimulatedBodyHandle->GetWorldTransform();
+
+	State.PhysicsState.Location = WorldTransform.GetLocation();
+	State.PhysicsState.Rotation = WorldTransform.GetRotation();
+	State.PhysicsState.LinearVelocity = SimulatedBodyHandle->GetLinearVelocity();
+	State.PhysicsState.AngularVelocity = SimulatedBodyHandle->GetAngularVelocity();
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>

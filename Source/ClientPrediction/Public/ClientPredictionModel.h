@@ -59,6 +59,7 @@ public:
 	virtual ~BaseClientPredictionModel() override = default;
 
 	virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) override final;
+	virtual void Initialize(UPrimitiveComponent* Component, ENetRole Role) override final;
 
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override final;
 
@@ -79,6 +80,9 @@ public:
 	FSimulationOutputDelegate OnFinalized;
 
 protected:
+
+	virtual void Initialize(UPrimitiveComponent* Component) = 0;
+	virtual void GenerateInitialState(ModelState& State) = 0;
 
 	virtual void BeginTick(Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component);
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, SimOutput& Output, const InputPacket& Input) = 0;
@@ -127,6 +131,10 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::SetNetRole(ENet
 	Driver->EmitReliableAuthorityState = EmitReliableAuthorityState;
 	Driver->InputDelegate = InputDelegate;
 	Driver->BindToRepProxies(AutoProxyRep, SimProxyRep);
+	Driver->GenerateInitialState = [&](ModelState& State) {
+		GenerateInitialState(State);
+	};
+
 	Driver->Simulate = [&](Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, FSimulationOutput<ModelState, CueSet>& Output, const InputPacket& Input) {
 		Simulate(Dt, Component, PrevState, Output, Input);
 	};
@@ -142,6 +150,12 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::SetNetRole(ENet
 	Driver->HandleCue = [&](const ModelState& State, CueSet Cue) {
 		HandleCue.ExecuteIfBound(State, Cue);
 	};
+}
+
+template <typename InputPacket, typename ModelState, typename CueSet>
+void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Initialize(UPrimitiveComponent* Component, ENetRole Role) {
+	Initialize(Component);
+	Driver->Initialize();
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
