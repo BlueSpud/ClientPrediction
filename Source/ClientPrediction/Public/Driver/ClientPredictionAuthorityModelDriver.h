@@ -51,6 +51,7 @@ ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ClientPredicti
 template <typename InputPacket, typename ModelState, typename CueSet>
 void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Initialize() {
 	GenerateInitialState(CurrentState.State);
+	LastState = CurrentState.State;
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>

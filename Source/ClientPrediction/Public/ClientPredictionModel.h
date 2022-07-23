@@ -94,6 +94,7 @@ protected:
 private:
 
 	TUniquePtr<IClientPredictionModelDriver<InputPacket, ModelState, CueSet>> Driver;
+	bool bIsInitialized = false;
 
 };
 
@@ -150,12 +151,18 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::SetNetRole(ENet
 	Driver->HandleCue = [&](const ModelState& State, CueSet Cue) {
 		HandleCue.ExecuteIfBound(State, Cue);
 	};
+
+	if (bIsInitialized) {
+		Driver->Initialize();
+	}
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Initialize(UPrimitiveComponent* Component, ENetRole Role) {
 	Initialize(Component);
 	Driver->Initialize();
+
+	bIsInitialized = true;
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>

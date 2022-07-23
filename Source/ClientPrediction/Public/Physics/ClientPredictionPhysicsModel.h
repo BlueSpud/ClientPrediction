@@ -30,7 +30,8 @@ protected:
 	virtual void Initialize(UPrimitiveComponent* Component) override final;
 	virtual void InitializeModel(UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle);
 
-	virtual void GenerateInitialState(FPhysicsStateWrapper<ModelState>& State) override;
+	virtual void GenerateInitialState(FPhysicsStateWrapper<ModelState>& State) override final;
+	virtual void GenerateInitialModelState(ModelState& State);
 
 	virtual void BeginTick(Chaos::FReal Dt, FPhysicsStateWrapper<ModelState>& State, UPrimitiveComponent* Component) override;
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const WrappedModelState& PrevState, SimOutput& Output, const InputPacket& Input) override final;
@@ -94,7 +95,11 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Initiali
 template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::GenerateInitialState(FPhysicsStateWrapper<ModelState>& State) {
 	FillPhysicsState(State);
+	GenerateInitialModelState(State.State);
 }
+
+template <typename InputPacket, typename ModelState, typename CueSet>
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::GenerateInitialModelState(ModelState& State) {}
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::BeginTick(Chaos::FReal Dt, FPhysicsStateWrapper<ModelState>& State, UPrimitiveComponent* Component) {

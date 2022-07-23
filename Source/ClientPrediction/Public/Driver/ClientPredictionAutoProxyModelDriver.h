@@ -56,6 +56,7 @@ private:
 template <typename InputPacket, typename ModelState, typename CueSet>
 void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Initialize() {
 	GenerateInitialState(CurrentState.State);
+	LastState = CurrentState.State;
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
