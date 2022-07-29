@@ -8,6 +8,12 @@
 #include "ClientPredictionPhysicsDeclares.h"
 #include "ClientPredictionPhysicsContext.h"
 
+/** The number of ticks an actor is allowed to not have been seen in the overlap before being removed from the simulation. */
+static constexpr uint32 kActorLifetime = 30;
+
+/** The radius of the sphere used to find and add components into the simulation */
+static constexpr float kSimulationQueryRange = 10000.0;
+
 struct CLIENTPREDICTION_API FEmptyState {
 	void NetSerialize(FArchive& Ar) {}
 	void Rewind(class UPrimitiveComponent* Component) const {}
@@ -46,6 +52,7 @@ private:
 
 	void FillPhysicsState(FPhysicsStateWrapper<ModelState>& State);
 	void UpdateWorld(UPrimitiveComponent* Component);
+	void RemoveOldActors();
 
 private:
 
@@ -145,21 +152,23 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::FillPhys
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::UpdateWorld(UPrimitiveComponent* Component) {
-	UWorld* UnsafeWorld = Component->GetWorld();
-	FPhysScene* PhysScene = UnsafeWorld->GetPhysicsScene();
+	const UWorld* UnsafeWorld = Component->GetWorld();
+	const FPhysScene* PhysScene = UnsafeWorld->GetPhysicsScene();
+
+	for (auto& Entry : StaticSimulationActors) {
+		++Entry.Value.TicksSinceLastSeen;
+	}
 
 	if ((UnsafeWorld != nullptr) && (PhysScene != nullptr))
 	{
 		TArray<FOverlapResult> Overlaps;
-		AActor* Owner = Cast<AActor>(Component->GetOwner());
+		const AActor* Owner = Cast<AActor>(Component->GetOwner());
 
 		// For now, only support static objects for simplicity
-		UnsafeWorld->OverlapMultiByObjectType(Overlaps, Owner->GetActorLocation(), FQuat::Identity, FCollisionObjectQueryParams::AllStaticObjects, FCollisionShape::MakeSphere(10000.0));
+		UnsafeWorld->OverlapMultiByObjectType(Overlaps, Owner->GetActorLocation(), FQuat::Identity, FCollisionObjectQueryParams::AllStaticObjects, FCollisionShape::MakeSphere(kSimulationQueryRange));
 
-		for (const FOverlapResult& Overlap : Overlaps)
-		{
-			if (UPrimitiveComponent* OverlapComp = Overlap.GetComponent())
-			{
+		for (const FOverlapResult& Overlap : Overlaps) {
+			if (UPrimitiveComponent* OverlapComp = Overlap.GetComponent()) {
 				if (StaticSimulationActors.Find(OverlapComp) != nullptr) {
 					StaticSimulationActors[OverlapComp].TicksSinceLastSeen = 0;
 					continue;
@@ -174,5 +183,26 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::UpdateWo
 				}
 			}
 		}
+	}
+
+	RemoveOldActors();
+}
+
+template <typename InputPacket, typename ModelState, typename CueSet>
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::RemoveOldActors() {
+	TArray<const UPrimitiveComponent*> RemovedComponents;
+	for (const auto& Entry : StaticSimulationActors) {
+		const FSimulationActor& Actor = Entry.Value;
+
+		if (Actor.TicksSinceLastSeen >= kActorLifetime) {
+			PhysicsSimulation->DestroyActor(Actor.Handle);
+			RemovedComponents.Add(Entry.Key);
+		}
+	}
+
+	// Remove all the unused actors in a second loop so that the map is not being modified as it is being
+	// iterated through.
+	for (const UPrimitiveComponent* PurgedEntry : RemovedComponents) {
+		StaticSimulationActors.Remove(PurgedEntry);
 	}
 }
