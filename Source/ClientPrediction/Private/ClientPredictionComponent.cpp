@@ -25,10 +25,11 @@ void UClientPredictionComponent::GetLifetimeReplicatedProps(TArray< FLifetimePro
 
 void UClientPredictionComponent::InitializeComponent() {
 	Super::InitializeComponent();
-	CheckOwnerRoleChanged();
 
 	UpdatedComponent = Cast<UPrimitiveComponent>(GetOwner()->GetRootComponent());
 	check(UpdatedComponent);
+
+	CheckOwnerRoleChanged();
 }
 
 void UClientPredictionComponent::PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) {
@@ -59,7 +60,7 @@ void UClientPredictionComponent::TickComponent(float DeltaTime, ELevelTick TickT
 		Model->Tick(kFixedDt, UpdatedComponent);
 	}
 
-	Model->Finalize(AccumulatedTime / kFixedDt, UpdatedComponent);
+	Model->Finalize(AccumulatedTime / kFixedDt, DeltaTime, UpdatedComponent);
 }
 
 void UClientPredictionComponent::RecvReliableAuthorityState_Implementation(FNetSerializationProxy Proxy) {
@@ -67,11 +68,14 @@ void UClientPredictionComponent::RecvReliableAuthorityState_Implementation(FNetS
 }
 
 void UClientPredictionComponent::CheckOwnerRoleChanged() {
-	if (CachedRole == GetOwnerRole()) { return; }
-	CachedRole = GetOwnerRole();
+	const AActor* OwnerActor = GetOwner();
+	const ENetRole CurrentRole = OwnerActor->GetLocalRole();
+	const bool bHasNetConnection = OwnerActor->GetNetConnection() != nullptr;
 
-	// TODO fix the take input, it broke with the check owner role changed
-	Model->SetNetRole(CachedRole, false, AutoProxyRep, SimProxyRep);
+	if (CachedRole == CurrentRole) { return; }
+	CachedRole = CurrentRole;
+
+	Model->SetNetRole(CachedRole, !bHasNetConnection, AutoProxyRep, SimProxyRep);
 }
 
 void UClientPredictionComponent::RecvInputPacket_Implementation(FNetSerializationProxy Proxy) {

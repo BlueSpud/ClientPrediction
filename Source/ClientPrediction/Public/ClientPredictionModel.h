@@ -28,9 +28,10 @@ public:
 	/**
 	 * To be called after ticks have been performed and finalizes the output from the model.
 	 * @param Alpha the percentage that time is between the current tick and the next tick.
+	 * @param DeltaTime The time between the last finalized tick.
 	 * @param Component The component that should be updated.
 	 */
-	virtual void Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component) = 0;
+	virtual void Finalize(Chaos::FReal Alpha, const float DeltaTime, UPrimitiveComponent* Component) = 0;
 
 // Input packet / state receiving
 
@@ -63,7 +64,7 @@ public:
 
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override final;
 
-	virtual void Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component) override final;
+	virtual void Finalize(Chaos::FReal Alpha, const float DeltaTime, UPrimitiveComponent* Component) override final;
 
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override final;
 	virtual void ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) override final;
@@ -76,7 +77,7 @@ public:
 	DECLARE_DELEGATE_TwoParams(FCueDelegate, const ModelState& CurrentState, CueSet Cue);
 	FCueDelegate HandleCue;
 
-	DECLARE_DELEGATE_OneParam(FSimulationOutputDelegate, const ModelState&)
+	DECLARE_DELEGATE_TwoParams(FSimulationOutputDelegate, const ModelState&, const float)
 	FSimulationOutputDelegate OnFinalized;
 
 protected:
@@ -178,11 +179,11 @@ template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::ApplyState(UPrimitiveComponent* Component, const ModelState& State) {}
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Finalize(Chaos::FReal Alpha, UPrimitiveComponent* Component) {
+void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Finalize(Chaos::FReal Alpha, const float DeltaTime, UPrimitiveComponent* Component) {
 	if (Driver == nullptr) { return; }
 
 	ModelState InterpolatedState = Driver->GenerateOutput(Alpha);
 	ApplyState(Component, InterpolatedState);
 
-	OnFinalized.ExecuteIfBound(InterpolatedState);
+	OnFinalized.ExecuteIfBound(InterpolatedState, DeltaTime);
 }
