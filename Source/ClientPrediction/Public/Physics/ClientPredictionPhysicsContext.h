@@ -34,6 +34,7 @@ public:
 	// World query methods
 	// TODO add more
 	bool LineTraceSingle(struct FHitResult& OutHit, const FVector& Start, const FVector& End) const;
+	bool SweepSingle(struct FHitResult& OutHit, const FVector& Start, const FVector& End, const FCollisionShape& CollisionShape, const FQuat& Rotation) const;
 
 private:
 

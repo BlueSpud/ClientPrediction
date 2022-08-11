@@ -45,3 +45,15 @@ bool FPhysicsContext::LineTraceSingle(FHitResult& OutHit, const FVector& Start, 
 
 	return UnsafeWorld->LineTraceSingleByObjectType(OutHit, Start, End, FCollisionObjectQueryParams::AllStaticObjects, Params);
 }
+
+bool FPhysicsContext::SweepSingle(FHitResult& OutHit, const FVector& Start, const FVector& End, const FCollisionShape& CollisionShape, const FQuat& Rotation) const {
+	UWorld* UnsafeWorld = Component->GetWorld();
+	if (UnsafeWorld == nullptr) {
+		return false;
+	}
+
+	FCollisionQueryParams Params = FCollisionQueryParams::DefaultQueryParam;
+	Params.AddIgnoredActor(Component->GetOwner());
+
+	return UnsafeWorld->SweepSingleByObjectType(OutHit, Start, End, Rotation, FCollisionObjectQueryParams::AllStaticObjects, CollisionShape, Params);
+}
