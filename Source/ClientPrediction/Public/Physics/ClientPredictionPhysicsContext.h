@@ -30,6 +30,7 @@ public:
 	FVector GetLinearVelocity() const;
 	FVector GetAngularVelocity() const;
 
+	void SetBodySleeping(const bool Sleeping) const;
 
 	// World query methods
 	// TODO add more
@@ -45,5 +46,4 @@ private:
 	class UPrimitiveComponent* Component;
 
 	FTransform PreviousTransform;
-
 };

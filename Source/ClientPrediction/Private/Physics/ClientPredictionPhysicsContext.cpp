@@ -9,7 +9,10 @@ void FPhysicsContext::AddForce(const FVector& Force, bool bAccelerateChange) con
 	} else {
 		DynamicHandle->AddForce(Force);
 	}
+
+	SetBodySleeping(false);
 }
+
 void FPhysicsContext::AddTorqueInRadians(const FVector& Torque, bool bAccelerateChange) const {
 	if (bAccelerateChange) {
 		if (Chaos::FPBDRigidParticleHandle* Rigid = DynamicHandle->GetParticle()->CastToRigidParticle()) {
@@ -18,8 +21,14 @@ void FPhysicsContext::AddTorqueInRadians(const FVector& Torque, bool bAccelerate
 	} else {
 		DynamicHandle->AddTorque(Torque);
 	}
+
+	SetBodySleeping(false);
 }
-void FPhysicsContext::AddImpulseAtLocation(FVector Impulse, FVector Location) const { DynamicHandle->AddImpulseAtLocation(Impulse, Location); }
+
+void FPhysicsContext::AddImpulseAtLocation(FVector Impulse, FVector Location) const {
+	DynamicHandle->AddImpulseAtLocation(Impulse, Location);
+	SetBodySleeping(false);
+}
 
 Chaos::FReal FPhysicsContext::GetMass() const { return DynamicHandle->GetMass(); }
 FVector FPhysicsContext::GetInertia() const { return DynamicHandle->GetInertia(); }
@@ -34,8 +43,26 @@ FTransform FPhysicsContext::GetPreviousTransform() const { return PreviousTransf
 FVector FPhysicsContext::GetLinearVelocity() const { return DynamicHandle->GetLinearVelocity(); }
 FVector FPhysicsContext::GetAngularVelocity() const { return DynamicHandle->GetAngularVelocity(); }
 
+void FPhysicsContext::SetBodySleeping(const bool Sleeping) const {
+	const auto RigidParticle = DynamicHandle->GetParticle()->CastToRigidParticle();
+
+	// Check for pending forces
+	if (Sleeping) {
+		if (!RigidParticle->Acceleration().IsNearlyZero() ||
+			!RigidParticle->AngularAcceleration().IsNearlyZero() ||
+			!RigidParticle->AngularImpulseVelocity().IsNearlyZero() ||
+			!RigidParticle->LinearImpulseVelocity().IsNearlyZero()) {
+			return;
+		}
+	}
+
+	if (RigidParticle != nullptr) {
+		RigidParticle->SetSleeping(Sleeping);
+	}
+}
+
 bool FPhysicsContext::LineTraceSingle(FHitResult& OutHit, const FVector& Start, const FVector& End) const {
-	UWorld* UnsafeWorld = Component->GetWorld();
+	const UWorld* UnsafeWorld = Component->GetWorld();
 	if (UnsafeWorld == nullptr) {
 		return false;
 	}
@@ -47,7 +74,7 @@ bool FPhysicsContext::LineTraceSingle(FHitResult& OutHit, const FVector& Start, 
 }
 
 bool FPhysicsContext::SweepSingle(FHitResult& OutHit, const FVector& Start, const FVector& End, const FCollisionShape& CollisionShape, const FQuat& Rotation) const {
-	UWorld* UnsafeWorld = Component->GetWorld();
+	const UWorld* UnsafeWorld = Component->GetWorld();
 	if (UnsafeWorld == nullptr) {
 		return false;
 	}
