@@ -17,8 +17,14 @@ public:
 
 	// Simulation ticking
 
-	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override;
-	virtual ModelState GenerateOutput(Chaos::FReal Alpha) override;
+	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override {};
+	virtual ModelState GenerateOutputGameDt(Chaos::FReal GameDt) override;
+
+	// This should never be called, since GenerateOutputGame
+	virtual ModelState GenerateOutput(Chaos::FReal Alpha) override {
+		check(false);
+		return {};
+	};
 
 	// Input packet / state receiving
 
@@ -28,8 +34,19 @@ public:
 	virtual void BindToRepProxies(FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) override;
 
 private:
+	/** The number of seconds of interpolation data that is desired to be stored in the buffer. */
+	static constexpr float kDesiredInterpolationBufferTime = kDesiredInterpolationBufferMs / 1000.0;
+	static constexpr float kDesiredInterpolationTooMuchTime = kDesiredInterpolationBufferTime * 1.5;
+	static constexpr float kDesiredInterpolationTooLittleTime = kDesiredInterpolationBufferTime * 0.75;
 
+	/** If for some reason the buffer is far in the future, we will fast forward. */
+	static constexpr float kFastForwardTime = kDesiredInterpolationBufferMs * 3.0;
+
+	/** This is how much time is sped up or slowed down to compensate for a buffer being to large or too small */
+	static constexpr float kTimeDilation = 0.2;
+	
 	uint32 CurrentFrame = kInvalidFrame;
+	float AccumulatedGameTime = 0.0;
 
 	/**
 	 *The frame number of the last state that was popped off the interpolation buffer.
@@ -38,91 +55,77 @@ private:
 	uint32 LastPoppedFrame = kInvalidFrame;
 
 	TArray<WrappedState> States;
-	ModelState LastFinalizedState;
-
-	/** The number of states to store before starting the interpolation */
-	uint32 kTargetBufferSize = FMath::CeilToInt32(kDesiredInterpolationBufferMs / (kFixedDt * 1000.0) / kSyncFrames);
-
-	uint32 StartInterpolationIndex = -1;
-	uint32 EndInterpolationIndex = -1;
 };
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
+ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::GenerateOutputGameDt(Chaos::FReal GameDt) {
+	if (States.IsEmpty()) { return {}; }
+	
 	if (CurrentFrame == kInvalidFrame) {
-		if (static_cast<uint32>(States.Num()) < kTargetBufferSize) {
-			return;
-		}
+		const float TimeInBuffer = static_cast<float>(States.Last().FrameNumber - States[0].FrameNumber) * kFixedDt;
+		if (TimeInBuffer < kDesiredInterpolationBufferTime) { return States[0].State; }
 
 		CurrentFrame = States[0].FrameNumber;
-	} else {
-		CurrentFrame++;
+		return States[0].State;
+	}
 
-		if (!States.IsEmpty()) {
-			uint32 BufferSize = static_cast<uint32>(States.Num());
+	// Adjust the playback speed of the buffer based on if there is too much or too little
+	float TimeLeftInBuffer = static_cast<float>(States.Last().FrameNumber - CurrentFrame) * kFixedDt - AccumulatedGameTime;
+	if (TimeLeftInBuffer < 0.0) { TimeLeftInBuffer = 1.0; }
+	
+	float Timescale = 1.0;
+	
+	if (TimeLeftInBuffer <= kDesiredInterpolationTooLittleTime) { Timescale = 1.0 - kTimeDilation; }
+	if (TimeLeftInBuffer >= kDesiredInterpolationTooMuchTime) { Timescale = 1.0 + kTimeDilation; }
+	AccumulatedGameTime += Timescale * GameDt;
+	
+	CurrentFrame += static_cast<uint32>(AccumulatedGameTime / kFixedDt);
+	AccumulatedGameTime = FMath::Fmod(AccumulatedGameTime, kFixedDt);
 
-			// Dispatch cues if there are any
-			for (uint32 i = 0; i < BufferSize; i++) {
-				if (States[i].FrameNumber == CurrentFrame) {
-					for (int Cue = 0; Cue < States[i].Cues.Num(); Cue++) {
-						HandleCue(States[i].State, static_cast<CueSet>(States[i].Cues[Cue]));
-					}
-				}
-			}
+	// We don't want to go into the future
+	if (CurrentFrame >= States.Last().FrameNumber) {
+		WrappedState Last = States.Last();
+		CurrentFrame = Last.FrameNumber;
 
-			// Find which two states to interpolate between.
-			// If both indexes are the last element that means there was nothing to interpolate between and the latest
-			// state should just be shown.
-			StartInterpolationIndex = EndInterpolationIndex = BufferSize - 1;
+		States.Empty();
+		States.Add(Last);
+		return Last.State;
+	}
 
-			for (uint32 i = 0; i < BufferSize - 1; i++) {
-				if (States[i].FrameNumber <= CurrentFrame
-				 && i + 1 < BufferSize
-				 && States[i + 1].FrameNumber > CurrentFrame) {
-					StartInterpolationIndex = i;
-					EndInterpolationIndex = i + 1;
-					break;
-				 }
-			}
+	if (TimeLeftInBuffer >= kFastForwardTime) {
+		UE_LOG(LogTemp, Warning, TEXT("Client is very far behind for a simulated proxy, fast forwarding..."));
+		CurrentFrame += static_cast<uint32>((kFastForwardTime - kDesiredInterpolationBufferTime));
+		AccumulatedGameTime = 0;
+	}
 
-			// Pop states that aren't needed anymore
-			if (StartInterpolationIndex != BufferSize - 1) {
-				for (uint32 i = 0; i < StartInterpolationIndex; i++) {
-					LastPoppedFrame = States[0].FrameNumber;
-					States.RemoveAt(0);
-				}
-			}
-
-			StartInterpolationIndex = 0;
-			EndInterpolationIndex = 1;
-
-		} else {
-			StartInterpolationIndex = EndInterpolationIndex = kInvalidFrame;
+	// Figure out where in the buffer we are
+	int32 BeginFrameIndex = 0;
+	for (; BeginFrameIndex < States.Num() - 1; BeginFrameIndex++) {
+		if (States[BeginFrameIndex + 1].FrameNumber > CurrentFrame) {
+			break;
 		}
 	}
-}
 
-template <typename InputPacket, typename ModelState, typename CueSet>
-ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::GenerateOutput(Chaos::FReal Alpha) {
-	if (States.IsEmpty() || StartInterpolationIndex == kInvalidFrame || EndInterpolationIndex == kInvalidFrame) {
-		return LastFinalizedState;
+	// If we made it here, we should be interpolating between two frames
+	check(BeginFrameIndex != States.Num() - 1);
+	
+	// Remove any states that are not longer needed
+	for (int32 i = 0; i < BeginFrameIndex; i++) {
+		LastPoppedFrame = States[0].FrameNumber;
+		States.RemoveAt(0);
 	}
+	
+	const WrappedState& StartState = States[0];
+	const WrappedState& EndState = States[1];
 
-	if (StartInterpolationIndex == EndInterpolationIndex) {
-		LastFinalizedState = States[StartInterpolationIndex].State;
-	} else {
-		const WrappedState Start = States[StartInterpolationIndex];
-		const WrappedState End   = States[EndInterpolationIndex];
+	const float TimeDelta = static_cast<float>(EndState.FrameNumber - StartState.FrameNumber);
+	const float Progress = static_cast<float>(CurrentFrame - StartState.FrameNumber) + (AccumulatedGameTime / kFixedDt);
+	const float Alpha = Progress / TimeDelta;
 
-		float FrameDelta = static_cast<float>(End.FrameNumber - Start.FrameNumber);
-		float FrameAlpha = static_cast<float>(CurrentFrame - Start.FrameNumber) / FrameDelta;
-		float TrueAlpha  = FrameAlpha + Alpha / FrameDelta;
-
-		LastFinalizedState = Start.State;
-		LastFinalizedState.Interpolate(TrueAlpha, End.State);
-	}
-
-	return LastFinalizedState;
+	ModelState FinalState = StartState.State;
+	FinalState.Interpolate(Alpha, EndState.State);
+	
+	return FinalState;
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
@@ -147,8 +150,7 @@ void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::ReceiveRel
 		}
 	}
 
-	// This could potentially come out of order in relation to what comes out of the replication proxy,
-	// so we sort it.
+	// This could potentially come out of order in relation to what comes out of the replication proxy, so we sort it.
 	States.Add(State);
 	States.Sort([](const WrappedState& A, const WrappedState& B) {
 		return A.FrameNumber < B.FrameNumber;
