@@ -4,6 +4,10 @@
 #include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsActorHandle_Chaos.h"
 
 void FPhysicsContext::AddForce(const FVector& Force, bool bAccelerateChange) const {
+	check(!isnan(Force.X))
+	check(!isnan(Force.Y))
+	check(!isnan(Force.Z))
+	
 	if (bAccelerateChange) {
 		DynamicHandle->AddForce(Force * GetMass());
 	} else {
@@ -14,6 +18,10 @@ void FPhysicsContext::AddForce(const FVector& Force, bool bAccelerateChange) con
 }
 
 void FPhysicsContext::AddTorqueInRadians(const FVector& Torque, bool bAccelerateChange) const {
+	check(!isnan(Torque.X))
+	check(!isnan(Torque.Y))
+	check(!isnan(Torque.Z))
+
 	if (bAccelerateChange) {
 		if (Chaos::FPBDRigidParticleHandle* Rigid = DynamicHandle->GetParticle()->CastToRigidParticle()) {
 			DynamicHandle->AddTorque(Chaos::FParticleUtilitiesXR::GetWorldInertia(Rigid) * Torque);
@@ -26,6 +34,14 @@ void FPhysicsContext::AddTorqueInRadians(const FVector& Torque, bool bAccelerate
 }
 
 void FPhysicsContext::AddImpulseAtLocation(FVector Impulse, FVector Location) const {
+	check(!isnan(Impulse.X))
+	check(!isnan(Impulse.Y))
+	check(!isnan(Impulse.Z))
+
+	check(!isnan(Location.X))
+	check(!isnan(Location.Y))
+	check(!isnan(Location.Z))
+	
 	DynamicHandle->AddImpulseAtLocation(Impulse, Location);
 	SetBodySleeping(false);
 }

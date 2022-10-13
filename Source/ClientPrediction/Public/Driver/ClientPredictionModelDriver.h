@@ -23,8 +23,15 @@ public:
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) = 0;
 
 	/**
+	 * To be called after ticks have been performed and finalizes the output from the model. By default,
+	 * this will generate an alpha value and call GenerateOutput.
+	 * @param GameDt The GAME time that has elapsed since the last call to GenerateOutputGameDt.
+	 */
+	virtual ModelState GenerateOutputGameDt(Chaos::FReal GameDt);
+	
+	/**
 	 * To be called after ticks have been performed and finalizes the output from the model.
-	 * @param Alpha the percentage that time is between the current tick and the next tick.
+	 * @param Alpha The percentage that time is between the current tick and the next tick.
 	 */
 	virtual ModelState GenerateOutput(Chaos::FReal Alpha) = 0;
 
@@ -49,4 +56,16 @@ public:
 	TFunction<void(const ModelState& State, UPrimitiveComponent* Component)> Rewind;
 	TFunction<void(Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component)> BeginTick;
 	TFunction<void(const ModelState& State, CueSet Cue)> HandleCue;
+
+private:
+
+	/** This is the total time accumulated from the game ticks NOT ClientPrediction ticks */
+	float AccumulatedGameTime = 0.0;
+	
 };
+
+template <typename InputPacket, typename ModelState, typename CueSet>
+ModelState IClientPredictionModelDriver<InputPacket, ModelState, CueSet>::GenerateOutputGameDt(Chaos::FReal GameDt) {
+	AccumulatedGameTime = FMath::Fmod(AccumulatedGameTime + GameDt, kFixedDt);
+	return GenerateOutput(AccumulatedGameTime / kFixedDt);
+}
