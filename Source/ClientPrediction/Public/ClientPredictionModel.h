@@ -27,10 +27,11 @@ public:
 
 	/**
 	 * To be called after ticks have been performed and finalizes the output from the model.
+	 * @param Alpha The percentage that time is between the current tick and the next tick.
 	 * @param DeltaTime The time between the last finalized tick.
 	 * @param Component The component that should be updated.
 	 */
-	virtual void Finalize(const float DeltaTime, UPrimitiveComponent* Component) = 0;
+	virtual void Finalize(const Chaos::FReal Alpha, const Chaos::FReal DeltaTime, UPrimitiveComponent* Component) = 0;
 
 // Input packet / state receiving
 
@@ -63,7 +64,7 @@ public:
 
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override final;
 
-	virtual void Finalize(const float DeltaTime, UPrimitiveComponent* Component) override final;
+	virtual void Finalize(Chaos::FReal Alpha, Chaos::FReal DeltaTime, UPrimitiveComponent* Component) override final;
 
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override final;
 	virtual void ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) override final;
@@ -178,10 +179,10 @@ template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::ApplyState(UPrimitiveComponent* Component, const ModelState& State) {}
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Finalize(const float DeltaTime, UPrimitiveComponent* Component) {
+void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Finalize(Chaos::FReal Alpha, Chaos::FReal DeltaTime, UPrimitiveComponent* Component) {
 	if (Driver == nullptr) { return; }
 
-	ModelState InterpolatedState = Driver->GenerateOutputGameDt(DeltaTime);
+	ModelState InterpolatedState = Driver->GenerateOutputGameDt(Alpha, DeltaTime);
 	ApplyState(Component, InterpolatedState);
 
 	OnFinalized.ExecuteIfBound(InterpolatedState, DeltaTime);

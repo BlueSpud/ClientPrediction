@@ -54,7 +54,7 @@ private:
 	UPROPERTY()
 	class UPrimitiveComponent* UpdatedComponent;
 
-	float AccumulatedTime = 0.0;
+	double AccumulatedTime = 0.0;
 	ENetRole CachedRole = ENetRole::ROLE_None;
 
 };

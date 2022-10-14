@@ -60,7 +60,7 @@ void UClientPredictionComponent::TickComponent(float DeltaTime, ELevelTick TickT
 		Model->Tick(kFixedDt, UpdatedComponent);
 	}
 
-	Model->Finalize(DeltaTime, UpdatedComponent);
+	Model->Finalize(AccumulatedTime / kFixedDt, DeltaTime, UpdatedComponent);
 }
 
 void UClientPredictionComponent::RecvReliableAuthorityState_Implementation(FNetSerializationProxy Proxy) {

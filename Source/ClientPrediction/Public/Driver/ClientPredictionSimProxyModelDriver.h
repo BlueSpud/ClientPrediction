@@ -18,7 +18,7 @@ public:
 	// Simulation ticking
 
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override {};
-	virtual ModelState GenerateOutputGameDt(Chaos::FReal GameDt) override;
+	virtual ModelState GenerateOutputGameDt(Chaos::FReal Alpha, Chaos::FReal GameDt) override;
 
 	// This should never be called, since GenerateOutputGame
 	virtual ModelState GenerateOutput(Chaos::FReal Alpha) override {
@@ -62,7 +62,7 @@ private:
 };
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::GenerateOutputGameDt(Chaos::FReal GameDt) {
+ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::GenerateOutputGameDt(Chaos::FReal ModelAlpha, Chaos::FReal GameDt) {
 	if (States.IsEmpty()) { return {}; }
 	
 	if (CurrentFrame == kInvalidFrame) {
