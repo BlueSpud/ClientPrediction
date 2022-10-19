@@ -72,10 +72,12 @@ void UClientPredictionComponent::CheckOwnerRoleChanged() {
 	const ENetRole CurrentRole = OwnerActor->GetLocalRole();
 	const bool bHasNetConnection = OwnerActor->GetNetConnection() != nullptr;
 
-	if (CachedRole == CurrentRole) { return; }
+	if (CachedRole == CurrentRole && bCachedHasNetConnection == bHasNetConnection) { return; }
+	
+	bCachedHasNetConnection = bHasNetConnection;
 	CachedRole = CurrentRole;
-
-	Model->SetNetRole(CachedRole, !bHasNetConnection, AutoProxyRep, SimProxyRep);
+	
+	Model->SetNetRole(CachedRole, !bCachedHasNetConnection, AutoProxyRep, SimProxyRep);
 }
 
 void UClientPredictionComponent::RecvInputPacket_Implementation(FNetSerializationProxy Proxy) {

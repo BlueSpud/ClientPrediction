@@ -12,7 +12,7 @@ class ClientPredictionAuthorityDriver : public IClientPredictionModelDriver<Inpu
 
 public:
 
-	ClientPredictionAuthorityDriver(bool bTakesInput);
+	ClientPredictionAuthorityDriver(bool bAuthorityTakesInput);
 
 	// Simulation ticking
 
@@ -32,11 +32,12 @@ private:
 	/** Input packet used for the current frame */
 	uint32 CurrentInputPacketIdx = kInvalidFrame;
 	FInputPacketWrapper<InputPacket> CurrentInputPacket;
+	TQueue<uint32> DroppedInputPackedIndices;
 
 	WrappedState CurrentState;
 	ModelState LastState;
 
-	bool bTakesInput = false;
+	bool bAuthorityTakesInput = false;
 	FInputBuffer<FInputPacketWrapper<InputPacket>> InputBuffer;
 
 	FClientPredictionRepProxy* AutoProxyRep = nullptr;
@@ -44,9 +45,7 @@ private:
 };
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ClientPredictionAuthorityDriver(bool bTakesInput) : bTakesInput(bTakesInput) {
-	InputBuffer.SetAuthorityTargetBufferSize(kAuthorityTargetInputBufferSize);
-}
+ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ClientPredictionAuthorityDriver(bool bTakesInput) : bAuthorityTakesInput(bTakesInput) {}
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Initialize() {
@@ -56,20 +55,23 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Initializ
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
-	LastState = CurrentState.State;
-
+	if (!bAuthorityTakesInput && CurrentInputPacketIdx == kInvalidFrame && InputBuffer.AuthorityBufferSize() == 0) {
+		return;
+	}
+	
 	// Pre-tick
+	LastState = CurrentState.State;
+	
 	CurrentState.FrameNumber = NextFrame++;
 	CurrentState.Cues.Empty();
 	BeginTick(Dt, CurrentState.State, Component);
 
-	if (!bTakesInput) {
-		if (CurrentInputPacketIdx != kInvalidFrame || InputBuffer.AuthorityBufferSize() > InputBuffer.GetAuthorityTargetBufferSize()) {
-			InputBuffer.ConsumeInputAuthority(CurrentInputPacket);
-			CurrentInputPacketIdx = CurrentInputPacket.PacketNumber;
-		}
-
+	if (!bAuthorityTakesInput) {
+		const bool bDroppedPacked = InputBuffer.ConsumeInputAuthority(CurrentInputPacket);
+		CurrentInputPacketIdx = CurrentInputPacket.PacketNumber;
 		CurrentState.InputPacketNumber = CurrentInputPacketIdx;
+
+		if (bDroppedPacked) { DroppedInputPackedIndices.Enqueue(CurrentInputPacketIdx); }
 	} else {
 		CurrentInputPacket = FInputPacketWrapper<InputPacket>();
 		InputDelegate.ExecuteIfBound(CurrentInputPacket.Packet, CurrentState.State, Dt);

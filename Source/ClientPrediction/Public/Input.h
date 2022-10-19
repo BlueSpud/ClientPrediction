@@ -93,31 +93,24 @@ public:
 		++RemoteFrontBufferSize;
 	}
 
-	void ConsumeInputAuthority(InputPacket& OutPacket) {
-		uint32 AuthorityBufferSize = AuthorityBuffer.Num();
-
-		// Attempt to keep the buffer reasonably close to the target size. This will cause minor client de-syncs
-		if (AuthorityBufferSize > 2 && AuthorityBufferSize > TargetAuthorityBufferSize * 1.75) {
-			// Consume two packets because there are too many in the buffer
+	/** Returns true if an input packet was dropped */
+	bool ConsumeInputAuthority(InputPacket& OutPacket) {
+		uint32 DesiredPackedIdx = AuthorityInputPacketNumber == kInvalidFrame ? 0 : AuthorityInputPacketNumber + 1;
+		if (!AuthorityBuffer.IsEmpty() && AuthorityBuffer.Last().PacketNumber == DesiredPackedIdx) {
 			OutPacket = AuthorityBuffer.Pop();
-			OutPacket = AuthorityBuffer.Pop();
-			UE_LOG(LogTemp, Error, TEXT("Consuming two packets because the buffer was too full"));
-		} else if (AuthorityBufferSize <= TargetAuthorityBufferSize * 0.25) {
-			// Consume no packets because there are not enough in the buffer
-			UE_LOG(LogTemp, Error, TEXT("Not consuming a packet because the buffer was not full enough"));
-			OutPacket = LastAuthorityPacket;
-		} else if (AuthorityInputPacketNumber + 1 != AuthorityBuffer[AuthorityBufferSize - 1].PacketNumber) {
-			// If the next packet was not the next packet in the sequence, just assume that the missing packet was the same as the last one.
-			// This can also lead to minor client de-syncs if the missing input packet on the client is different from the last packet.
-			UE_LOG(LogTemp, Warning, TEXT("Did not use sequential input %i %i"), AuthorityInputPacketNumber + 1, AuthorityBuffer[AuthorityBufferSize - 1].PacketNumber);
-			OutPacket = LastAuthorityPacket;
-			OutPacket.PacketNumber = AuthorityInputPacketNumber + 1;
-		} else {
-			OutPacket = AuthorityBuffer.Pop();
+				
+			AuthorityInputPacketNumber = OutPacket.PacketNumber;
+			LastAuthorityPacket = OutPacket;
+			return false;
 		}
 
-		AuthorityInputPacketNumber = OutPacket.PacketNumber;
-		LastAuthorityPacket = OutPacket;
+		++LastAuthorityPacket.PacketNumber;
+		++AuthorityInputPacketNumber;
+			
+		OutPacket = LastAuthorityPacket;
+
+		UE_LOG(LogTemp, Warning, TEXT("Authority dropped packet %d had %d"), DesiredPackedIdx, !AuthorityBuffer.IsEmpty() ? AuthorityBuffer.Last().PacketNumber : kInvalidFrame);
+		return true;
 	}
 
 	bool ConsumeInputRemote(InputPacket& OutPacket) {
@@ -130,14 +123,6 @@ public:
 
 		BackBuffer.Enqueue(OutPacket);
 		return true;
-	}
-
-	void SetAuthorityTargetBufferSize(uint32 TargetSize) {
-		TargetAuthorityBufferSize = TargetSize;
-	}
-
-	uint32 GetAuthorityTargetBufferSize() const {
-		return TargetAuthorityBufferSize;
 	}
 
 private:
@@ -155,10 +140,7 @@ private:
 
 	/** The frame number of the last input packet consumed on the authority */
 	uint32 AuthorityInputPacketNumber = kInvalidFrame;
-
-	/** The target size for the remote buffer */
-	uint32 TargetAuthorityBufferSize = 1;
-
+	
 	/** The last packet consumed by the authority */
 	InputPacket LastAuthorityPacket;
 
