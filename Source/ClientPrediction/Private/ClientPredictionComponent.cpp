@@ -44,7 +44,9 @@ void UClientPredictionComponent::PreNetReceive() {
 
 void UClientPredictionComponent::BeginPlay() {
 	Super::BeginPlay();
-	Model->Initialize(UpdatedComponent, GetOwnerRole());
+
+	CheckOwnerRoleChanged();
+	Model->Initialize(UpdatedComponent);
 }
 
 void UClientPredictionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
@@ -72,12 +74,14 @@ void UClientPredictionComponent::RecvReliableAuthorityState_Implementation(FNetS
 void UClientPredictionComponent::CheckOwnerRoleChanged() {
 	const AActor* OwnerActor = GetOwner();
 	const ENetRole CurrentRole = OwnerActor->GetLocalRole();
-	const bool bHasNetConnection = OwnerActor->GetNetConnection() != nullptr;
+	const bool bAuthorityTakesInput = OwnerActor->GetNetConnection() == nullptr;
 
-	if (CachedRole == CurrentRole) { return; }
+	if (CachedRole == CurrentRole || bCachedAuthorityTakesInput == bAuthorityTakesInput) { return; }
+	
 	CachedRole = CurrentRole;
+	bCachedAuthorityTakesInput = bAuthorityTakesInput;
 
-	Model->SetNetRole(CachedRole, !bHasNetConnection, AutoProxyRep, SimProxyRep);
+	Model->SetNetRole(CachedRole, bAuthorityTakesInput, AutoProxyRep, SimProxyRep);
 }
 
 void UClientPredictionComponent::RecvInputPacket_Implementation(FNetSerializationProxy Proxy) {

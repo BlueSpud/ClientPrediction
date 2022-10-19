@@ -31,9 +31,10 @@ public:
 
 	BaseClientPredictionPhysicsModel();
 	virtual ~BaseClientPredictionPhysicsModel() override;
+	
+	virtual void Initialize(UPrimitiveComponent* Component) override final;
 
 protected:
-	virtual void Initialize(UPrimitiveComponent* Component) override final;
 	virtual void InitializeModel(UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle);
 
 	virtual void GenerateInitialState(FPhysicsStateWrapper<ModelState>& State) override final;

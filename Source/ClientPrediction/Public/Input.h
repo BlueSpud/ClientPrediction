@@ -93,31 +93,18 @@ public:
 		++RemoteFrontBufferSize;
 	}
 
-	void ConsumeInputAuthority(InputPacket& OutPacket) {
-		uint32 AuthorityBufferSize = AuthorityBuffer.Num();
+	bool ConsumeInputAuthority(InputPacket& OutPacket) {
+		AuthorityInputPacketNumber = AuthorityInputPacketNumber == kInvalidFrame ? 0 : AuthorityInputPacketNumber + 1;
+		if (!AuthorityBuffer.IsEmpty() && AuthorityBuffer.Last().PacketNumber == AuthorityInputPacketNumber) {
+			LastAuthorityPacket = AuthorityBuffer.Pop();
+			OutPacket = LastAuthorityPacket;
 
-		// Attempt to keep the buffer reasonably close to the target size. This will cause minor client de-syncs
-		if (AuthorityBufferSize > 2 && AuthorityBufferSize > TargetAuthorityBufferSize * 1.75) {
-			// Consume two packets because there are too many in the buffer
-			OutPacket = AuthorityBuffer.Pop();
-			OutPacket = AuthorityBuffer.Pop();
-			UE_LOG(LogTemp, Error, TEXT("Consuming two packets because the buffer was too full"));
-		} else if (AuthorityBufferSize <= TargetAuthorityBufferSize * 0.25) {
-			// Consume no packets because there are not enough in the buffer
-			UE_LOG(LogTemp, Error, TEXT("Not consuming a packet because the buffer was not full enough"));
-			OutPacket = LastAuthorityPacket;
-		} else if (AuthorityInputPacketNumber + 1 != AuthorityBuffer[AuthorityBufferSize - 1].PacketNumber) {
-			// If the next packet was not the next packet in the sequence, just assume that the missing packet was the same as the last one.
-			// This can also lead to minor client de-syncs if the missing input packet on the client is different from the last packet.
-			UE_LOG(LogTemp, Warning, TEXT("Did not use sequential input %i %i"), AuthorityInputPacketNumber + 1, AuthorityBuffer[AuthorityBufferSize - 1].PacketNumber);
-			OutPacket = LastAuthorityPacket;
-			OutPacket.PacketNumber = AuthorityInputPacketNumber + 1;
-		} else {
-			OutPacket = AuthorityBuffer.Pop();
+			return false;
 		}
-
-		AuthorityInputPacketNumber = OutPacket.PacketNumber;
-		LastAuthorityPacket = OutPacket;
+		
+		
+		OutPacket = LastAuthorityPacket;
+		return true;
 	}
 
 	bool ConsumeInputRemote(InputPacket& OutPacket) {
@@ -132,32 +119,21 @@ public:
 		return true;
 	}
 
-	void SetAuthorityTargetBufferSize(uint32 TargetSize) {
-		TargetAuthorityBufferSize = TargetSize;
-	}
-
-	uint32 GetAuthorityTargetBufferSize() const {
-		return TargetAuthorityBufferSize;
-	}
-
 private:
 
 	/** On the remote the queued inputs. When rewinding the back buffer is swapped into the front buffer. */
     TQueue<InputPacket> FrontBuffer;
 
+	uint32 RemoteFrontBufferSize = 0;
+	
 	/** The inputs that have already been used on the remote */
 	TQueue<InputPacket> BackBuffer;
 
 	/** The inputs from the authority */
 	TArray<InputPacket> AuthorityBuffer;
 
-	uint32 RemoteFrontBufferSize = 0;
-
 	/** The frame number of the last input packet consumed on the authority */
 	uint32 AuthorityInputPacketNumber = kInvalidFrame;
-
-	/** The target size for the remote buffer */
-	uint32 TargetAuthorityBufferSize = 1;
 
 	/** The last packet consumed by the authority */
 	InputPacket LastAuthorityPacket;

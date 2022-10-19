@@ -18,8 +18,8 @@ public:
 	IClientPredictionModel() = default;
 	virtual ~IClientPredictionModel() = default;
 
+	virtual void Initialize(UPrimitiveComponent* Component) = 0;
 	virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) = 0;
-	virtual void Initialize(UPrimitiveComponent* Component, ENetRole Role) = 0;
 
 // Simulation ticking
 
@@ -60,8 +60,8 @@ public:
 	BaseClientPredictionModel() = default;
 	virtual ~BaseClientPredictionModel() override = default;
 
+	virtual void Initialize(UPrimitiveComponent* Component) override;
 	virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) override final;
-	virtual void Initialize(UPrimitiveComponent* Component, ENetRole Role) override final;
 
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override final;
 	virtual float GetTimescale() const override final; 
@@ -83,8 +83,6 @@ public:
 	FSimulationOutputDelegate OnFinalized;
 
 protected:
-
-	virtual void Initialize(UPrimitiveComponent* Component) = 0;
 	virtual void GenerateInitialState(ModelState& State) = 0;
 	
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, SimOutput& Output, const InputPacket& Input) = 0;
@@ -112,6 +110,15 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::ReceiveReliable
 	if (Driver != nullptr) {
 		Driver->ReceiveReliableAuthorityState(Proxy);
 	}
+}
+
+template <typename InputPacket, typename ModelState, typename CueSet>
+void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Initialize(UPrimitiveComponent* Component) {
+	if (!bIsInitialized) {
+		Driver->Initialize();
+	}
+	
+	bIsInitialized = true;
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
@@ -153,14 +160,6 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::SetNetRole(ENet
 	if (bIsInitialized) {
 		Driver->Initialize();
 	}
-}
-
-template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Initialize(UPrimitiveComponent* Component, ENetRole Role) {
-	Initialize(Component);
-	Driver->Initialize();
-
-	bIsInitialized = true;
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>

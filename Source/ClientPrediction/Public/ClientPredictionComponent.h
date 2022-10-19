@@ -56,6 +56,7 @@ private:
 
 	double AccumulatedTime = 0.0;
 	ENetRole CachedRole = ENetRole::ROLE_None;
+	bool bCachedAuthorityTakesInput = false;
 
 };
 

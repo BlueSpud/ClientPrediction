@@ -47,10 +47,9 @@ private:
 	FClientPredictionRepProxy* SimProxyRep = nullptr;
 };
 
+// TODO fix
 template <typename InputPacket, typename ModelState, typename CueSet>
-ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ClientPredictionAuthorityDriver(bool bTakesInput) : bAuthorityTakesInput(bTakesInput) {
-	InputBuffer.SetAuthorityTargetBufferSize(kAuthorityTargetInputBufferSize);
-}
+ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ClientPredictionAuthorityDriver(bool bAuthorityTakesInput) : bAuthorityTakesInput(false) {}
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Initialize() {
@@ -60,9 +59,13 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Initializ
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
-	LastState = CurrentState.State;
+	if (!bAuthorityTakesInput && CurrentInputPacketIdx == kInvalidFrame && InputBuffer.AuthorityBufferSize() == 0) {
+		return;
+	}
 
-	// Pre-tick
+	// Pre tick
+
+	LastState = CurrentState.State;
 	CurrentState.FrameNumber = NextFrame++;
 	CurrentState.Cues.Empty();
 	
@@ -75,7 +78,7 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 		CurrentInputPacket = FInputPacketWrapper<InputPacket>();
 		InputDelegate.ExecuteIfBound(CurrentInputPacket.Packet, CurrentState.State, Dt);
 	}
-
+	
 	// Tick
 	FSimulationOutput<ModelState, CueSet> Output(CurrentState);
 	Simulate(Dt, Component, LastState, Output, CurrentInputPacket.Packet);
