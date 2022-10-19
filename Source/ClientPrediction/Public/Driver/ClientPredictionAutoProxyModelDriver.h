@@ -74,16 +74,14 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 	// Pre-tick
 	CurrentState.FrameNumber = NextFrame++;
 	CurrentState.Cues.Empty();
-	BeginTick(Dt, CurrentState.State, Component);
 
 	if (!bIsForcedSimulation) {
+
+		// Generate a new input packet
 		FInputPacketWrapper<InputPacket> Packet;
 		Packet.PacketNumber = CurrentState.FrameNumber;
-
 		InputDelegate.ExecuteIfBound(Packet.Packet, CurrentState.State, Dt);
 		InputBuffer.QueueInputRemote(Packet);
-
-		EmitInputPackets.CheckCallable();
 
 		while (!SlidingInputWindow.IsEmpty() && SlidingInputWindow.Last().PacketNumber <= AckedFrame) {
 			SlidingInputWindow.Pop();
@@ -95,6 +93,7 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 			Ar << SlidingInputWindow;
 		});
 
+		EmitInputPackets.CheckCallable();
 		EmitInputPackets(Proxy);
 	}
 

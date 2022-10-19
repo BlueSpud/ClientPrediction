@@ -34,17 +34,13 @@ private:
 	/** Input packet used for the current frame */
 	uint32 CurrentInputPacketIdx = kInvalidFrame;
 	FInputPacketWrapper<InputPacket> CurrentInputPacket;
-<<<<<<< Updated upstream
-=======
-
 	uint8 DroppedInputPacketsInTheLastSecond = 0;
 	TArray<uint32> DroppedInputPackedIndices;
->>>>>>> Stashed changes
 
 	WrappedState CurrentState;
 	ModelState LastState;
 
-	bool bTakesInput = false;
+	bool bAuthorityTakesInput = false;
 	FInputBuffer<FInputPacketWrapper<InputPacket>> InputBuffer;
 
 	FClientPredictionRepProxy* AutoProxyRep = nullptr;
@@ -52,7 +48,7 @@ private:
 };
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ClientPredictionAuthorityDriver(bool bTakesInput) : bTakesInput(bTakesInput) {
+ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ClientPredictionAuthorityDriver(bool bTakesInput) : bAuthorityTakesInput(bTakesInput) {
 	InputBuffer.SetAuthorityTargetBufferSize(kAuthorityTargetInputBufferSize);
 }
 
@@ -69,23 +65,12 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 	// Pre-tick
 	CurrentState.FrameNumber = NextFrame++;
 	CurrentState.Cues.Empty();
-	BeginTick(Dt, CurrentState.State, Component);
-
-<<<<<<< Updated upstream
-	if (!bTakesInput) {
-		if (CurrentInputPacketIdx != kInvalidFrame || InputBuffer.AuthorityBufferSize() > InputBuffer.GetAuthorityTargetBufferSize()) {
-			InputBuffer.ConsumeInputAuthority(CurrentInputPacket);
-			CurrentInputPacketIdx = CurrentInputPacket.PacketNumber;
-		}
-
-		CurrentState.InputPacketNumber = CurrentInputPacketIdx;
-=======
+	
 	if (!bAuthorityTakesInput) {
 		const bool bDroppedPacked = InputBuffer.ConsumeInputAuthority(CurrentInputPacket);
 		CurrentInputPacketIdx = CurrentInputPacket.PacketNumber;
 		
 		if (bDroppedPacked) { DroppedInputPackedIndices.Push(CurrentInputPacketIdx); }
->>>>>>> Stashed changes
 	} else {
 		CurrentInputPacket = FInputPacketWrapper<InputPacket>();
 		InputDelegate.ExecuteIfBound(CurrentInputPacket.Packet, CurrentState.State, Dt);

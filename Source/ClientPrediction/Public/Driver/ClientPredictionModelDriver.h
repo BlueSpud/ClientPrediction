@@ -58,7 +58,6 @@ public:
 	TFunction<void(ModelState& State)> GenerateInitialState;
 	TFunction<void(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, FSimulationOutput<ModelState, CueSet>& Output, const InputPacket& Input)> Simulate;
 	TFunction<void(const ModelState& State, UPrimitiveComponent* Component)> Rewind;
-	TFunction<void(Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component)> BeginTick;
 	TFunction<void(const ModelState& State, CueSet Cue)> HandleCue;
 };
 

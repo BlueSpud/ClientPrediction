@@ -86,8 +86,7 @@ protected:
 
 	virtual void Initialize(UPrimitiveComponent* Component) = 0;
 	virtual void GenerateInitialState(ModelState& State) = 0;
-
-	virtual void BeginTick(Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component);
+	
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, SimOutput& Output, const InputPacket& Input) = 0;
 	virtual void Rewind(const ModelState& State, UPrimitiveComponent* Component) = 0;
 
@@ -142,11 +141,7 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::SetNetRole(ENet
 	Driver->Simulate = [&](Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, FSimulationOutput<ModelState, CueSet>& Output, const InputPacket& Input) {
 		Simulate(Dt, Component, PrevState, Output, Input);
 	};
-
-	Driver->BeginTick = [&](Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component) {
-		BeginTick(Dt, State, Component);
-	};
-
+	
 	Driver->Rewind = [&](const ModelState& State, UPrimitiveComponent* Component) {
 		Rewind(State, Component);
 	};
@@ -167,9 +162,6 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Initialize(UPri
 
 	bIsInitialized = true;
 }
-
-template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::BeginTick(Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component) {}
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
