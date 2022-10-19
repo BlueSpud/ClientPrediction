@@ -25,6 +25,9 @@ public:
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override;
 	virtual void BindToRepProxies(FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) override;
 
+	// Time dilation
+	virtual float GetTimescale() const override;
+	
 private:
 
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component, bool bIsForcedSimulation);
@@ -37,7 +40,6 @@ private:
 	/** At this frame the authority and the auto proxy agreed */
 	uint32 AckedFrame = kInvalidFrame;
 	uint32 NextFrame = 0;
-	uint32 NextInputPacket = 0;
 
 	/** All of the frames that have not been reconciled with the authority. */
 	TQueue<WrappedState> History;
@@ -51,6 +53,7 @@ private:
 	/* We send each input with several previous inputs. In case a packet is dropped, the next send will also contain the new dropped input */
 	TArray<FInputPacketWrapper<InputPacket>> SlidingInputWindow;
 	FInputBuffer<FInputPacketWrapper<InputPacket>> InputBuffer;
+	uint8 DroppedInputPacketsInTheLastSecond = 0;
 };
 
 template <typename InputPacket, typename ModelState, typename CueSet>
@@ -73,16 +76,16 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 	CurrentState.Cues.Empty();
 	BeginTick(Dt, CurrentState.State, Component);
 
-	if (!bIsForcedSimulation || InputBuffer.RemoteBufferSize() == 0) {
+	if (!bIsForcedSimulation) {
 		FInputPacketWrapper<InputPacket> Packet;
-		Packet.PacketNumber = NextInputPacket++;
+		Packet.PacketNumber = CurrentState.FrameNumber;
 
 		InputDelegate.ExecuteIfBound(Packet.Packet, CurrentState.State, Dt);
 		InputBuffer.QueueInputRemote(Packet);
 
 		EmitInputPackets.CheckCallable();
 
-		if (SlidingInputWindow.Num() >= kInputWindowSize) {
+		while (!SlidingInputWindow.IsEmpty() && SlidingInputWindow.Last().PacketNumber <= AckedFrame) {
 			SlidingInputWindow.Pop();
 		}
 
@@ -96,7 +99,6 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 	}
 
 	check(InputBuffer.ConsumeInputRemote(CurrentInputPacket));
-	CurrentState.InputPacketNumber = CurrentInputPacket.PacketNumber;
 
 	// Tick
 	FSimulationOutput<ModelState, CueSet> Output(CurrentState);
@@ -125,17 +127,10 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 		return;
 	}
 
-	if (LastAuthorityState.InputPacketNumber == kInvalidFrame) {
-		// Server has not started to consume input, ignore it since the client has been applying input since frame 0
-		return;
-	}
-
 	if (LastAuthorityState.FrameNumber > CurrentState.FrameNumber) {
 		// Server is ahead of the client. The client should just chuck out everything and resimulate
-		UE_LOG(LogTemp, Warning, TEXT("Client was behind server. Jumping to frame %i and resimulating"), LastAuthorityState.FrameNumber);
-
-		Rewind_Internal(LastAuthorityState, Component);
-		ForceSimulate(FMath::Max(kClientForwardPredictionFrames, InputBuffer.RemoteBufferSize()), Dt, Component);
+		// TODO reimplement
+		check(false);
 	} else {
 		// Check history against the server state
 		WrappedState HistoricState;
@@ -154,9 +149,9 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 		if (HistoricState == LastAuthorityState) {
 			// Server state and historic state matched, simulation was good up to LocalServerState.FrameNumber
 			AckedFrame = LastAuthorityState.FrameNumber;
-			InputBuffer.Ack(LastAuthorityState.InputPacketNumber);
-			UE_LOG(LogTemp, Verbose, TEXT("Acked up to %i, input packet %i. Input buffer had %i elements"), AckedFrame, LastAuthorityState.InputPacketNumber, InputBuffer.RemoteBufferSize());
+			InputBuffer.Ack(LastAuthorityState.FrameNumber);
 		} else {
+			
 			// Server/client mismatch. Resimulate the client
 			FAnsiStringBuilderBase HistoricBuilder;
 			HistoricState.Print(HistoricBuilder);
@@ -167,10 +162,10 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 			const FString AuthorityString = StringCast<TCHAR>(AuthorityBuilder.ToString()).Get();
 
 			UE_LOG(LogTemp, Warning, TEXT("\nRewinding and resimulating from frame %i."), LastAuthorityState.FrameNumber);
-			UE_LOG(LogTemp, Log, TEXT("Client\n%s\nAuthority\n%s\n"), *HistoricString, *AuthorityString);
+			UE_LOG(LogTemp, Verbose, TEXT("Client\n%s\nAuthority\n%s\n"), *HistoricString, *AuthorityString);
 
 			Rewind_Internal(LastAuthorityState, Component);
-			ForceSimulate(FMath::Max(kClientForwardPredictionFrames, InputBuffer.RemoteBufferSize()), Dt, Component);
+			ForceSimulate(InputBuffer.RemoteBufferSize(), Dt, Component);
 		}
 	}
 }
@@ -192,11 +187,23 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::BindToRep
 	AutoProxyRep.SerializeFunc = [&](FArchive& Ar) {
 		WrappedState State;
 		State.NetSerialize(Ar);
+		Ar << DroppedInputPacketsInTheLastSecond;
 
 		if (LastAuthorityState.FrameNumber == kInvalidFrame || State.FrameNumber > LastAuthorityState.FrameNumber) {
 			LastAuthorityState = State;
 		}
 	};
+}
+
+template <typename InputPacket, typename ModelState, typename CueSet>
+float ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::GetTimescale() const {
+	const float SpeedupPercent = FMath::Clamp(static_cast<float>(DroppedInputPacketsInTheLastSecond) / 5.0f, 0.0f, 1.0f);
+	
+	if (DroppedInputPacketsInTheLastSecond != 0) {
+		UE_LOG(LogTemp, Warning, TEXT("Authority buffer health: %d %f"), DroppedInputPacketsInTheLastSecond, 1.0 - SpeedupPercent * 0.2);
+	}
+	
+	return 1.0 - SpeedupPercent * 0.2;
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
@@ -208,7 +215,7 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Rewind_In
 	// Add here because the body is at State.FrameNumber so the next frame will be State.FrameNumber + 1
 	NextFrame = State.FrameNumber + 1;
 
-	InputBuffer.Rewind(State.InputPacketNumber);
+	InputBuffer.Rewind(AckedFrame);
 	Rewind(State.State, Component);
 }
 

@@ -55,12 +55,14 @@ void UClientPredictionComponent::TickComponent(float DeltaTime, ELevelTick TickT
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	AccumulatedTime += DeltaTime;
-	while (AccumulatedTime >= kFixedDt) {
-		AccumulatedTime = FMath::Clamp(AccumulatedTime - kFixedDt, 0.0, AccumulatedTime);
+
+	const float DilatedTimePerTick = kFixedDt * Model->GetTimescale();
+	while (AccumulatedTime >= DilatedTimePerTick) {
+		AccumulatedTime = FMath::Clamp(AccumulatedTime - DilatedTimePerTick, 0.0, AccumulatedTime);
 		Model->Tick(kFixedDt, UpdatedComponent);
 	}
 
-	Model->Finalize(AccumulatedTime / kFixedDt, DeltaTime, UpdatedComponent);
+	Model->Finalize(AccumulatedTime / DilatedTimePerTick, DeltaTime, UpdatedComponent);
 }
 
 void UClientPredictionComponent::RecvReliableAuthorityState_Implementation(FNetSerializationProxy Proxy) {
