@@ -30,13 +30,13 @@ public:
 
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override;
 	virtual void ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) override;
-	
+
 	virtual void BindToRepProxies(FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) override;
 
 private:
 
 	void DispatchCues(const WrappedState& State);
-	
+
 private:
 	/** The number of seconds of interpolation data that is desired to be stored in the buffer. */
 	static constexpr float kDesiredInterpolationBufferTime = kDesiredInterpolationBufferMs / 1000.0;
@@ -48,7 +48,7 @@ private:
 
 	/** This is how much time is sped up or slowed down to compensate for a buffer being to large or too small */
 	static constexpr float kTimeDilation = 0.2;
-	
+
 	uint32 CurrentFrame = kInvalidFrame;
 	float AccumulatedGameTime = 0.0;
 
@@ -64,21 +64,21 @@ private:
 template <typename InputPacket, typename ModelState, typename CueSet>
 ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::GenerateOutputGameDt(Chaos::FReal ModelAlpha, Chaos::FReal GameDt) {
 	if (States.IsEmpty()) { return {}; }
-	
+
 	if (CurrentFrame == kInvalidFrame) {
 		const float TimeInBuffer = static_cast<float>(States.Last().FrameNumber - States[0].FrameNumber) * kFixedDt;
 		if (TimeInBuffer < kDesiredInterpolationBufferTime) { return States[0].State; }
 
 		CurrentFrame = States[0].FrameNumber;
 		DispatchCues(States[0]);
-		
+
 		return States[0].State;
 	}
 
 	// Adjust the playback speed of the buffer based on if there is too much or too little
 	float TimeLeftInBuffer = static_cast<float>(States.Last().FrameNumber - CurrentFrame) * kFixedDt - AccumulatedGameTime;
 	if (TimeLeftInBuffer < 0.0) { TimeLeftInBuffer = 0.0; }
-	
+
 	float Timescale = 1.0;
 	if (TimeLeftInBuffer <= kDesiredInterpolationTooLittleTime) { Timescale = 1.0 - kTimeDilation; }
 	if (TimeLeftInBuffer >= kDesiredInterpolationTooMuchTime) { Timescale = 1.0 + kTimeDilation; }
@@ -111,7 +111,7 @@ ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::Gene
 			}
 		}
 	}
-	
+
 	// Figure out where in the buffer we are
 	int32 BeginFrameIndex = 0;
 	for (; BeginFrameIndex < States.Num() - 1; BeginFrameIndex++) {
@@ -122,13 +122,13 @@ ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::Gene
 
 	// If we made it here, we should be interpolating between two frames
 	check(BeginFrameIndex != States.Num() - 1);
-	
+
 	// Remove any states that are not longer needed
 	for (int32 i = 0; i < BeginFrameIndex; i++) {
 		LastPoppedFrame = States[0].FrameNumber;
 		States.RemoveAt(0);
 	}
-	
+
 	const WrappedState& StartState = States[0];
 	const WrappedState& EndState = States[1];
 
@@ -138,7 +138,7 @@ ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::Gene
 
 	ModelState FinalState = StartState.State;
 	FinalState.Interpolate(Alpha, EndState.State);
-	
+
 	return FinalState;
 }
 

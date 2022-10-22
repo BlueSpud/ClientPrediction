@@ -29,7 +29,7 @@ public:
 	 * @param GameDt The GAME time that has elapsed since the last call to GenerateOutputGameDt.
 	 */
 	virtual ModelState GenerateOutputGameDt(Chaos::FReal Alpha, Chaos::FReal GameDt);
-	
+
 	/**
 	 * To be called after ticks have been performed and finalizes the output from the model.
 	 * @param Alpha The percentage that time is between the current tick and the next tick.

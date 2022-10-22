@@ -31,7 +31,7 @@ public:
 
 	BaseClientPredictionPhysicsModel();
 	virtual ~BaseClientPredictionPhysicsModel() override;
-	
+
 	virtual void Initialize(UPrimitiveComponent* Component) override final;
 
 protected:
@@ -39,7 +39,7 @@ protected:
 
 	virtual void GenerateInitialState(FPhysicsStateWrapper<ModelState>& State) override final;
 	virtual void GenerateInitialModelState(ModelState& State);
-	
+
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const WrappedModelState& PrevState, SimOutput& Output, const InputPacket& Input) override final;
 	virtual void Rewind(const WrappedModelState& State, UPrimitiveComponent* Component) override final;
 
@@ -114,7 +114,7 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Simulate
 	PhysicsSimOutput PhysicsOutput(Output);
 	FPhysicsContext Context(SimulatedBodyHandle, Component, FTransform(PrevState.PhysicsState.Rotation, PrevState.PhysicsState.Location));
 	SimulatePhysics(Dt, Component, Context, PrevState.State, PhysicsOutput, Input);
-	
+
 	UpdateWorld(Component);
 
 	PhysicsSimulation->SetSolverSettings(Dt, -1.0, -1.0f, 5, 5, 5);

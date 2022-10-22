@@ -1,7 +1,5 @@
 ﻿#pragma once
 
-#include <mutex>
-
 #include "Declares.h"
 
 template <typename InputPacket>
@@ -57,11 +55,11 @@ public:
 		return RemoteFrontBufferSize;
 	}
 
-	uint32 AuthorityBufferSize() {
+	uint32 BufferSize() {
 		return AuthorityBuffer.Num();
 	}
 
-	void QueueInputAuthority(const InputPacket& Packet) {
+	void QueueInput(const InputPacket& Packet) {
 
 		// Ensure that the packet is not in the past
 		if (AuthorityInputPacketNumber != kInvalidFrame && Packet.PacketNumber <= AuthorityInputPacketNumber) {
@@ -93,7 +91,7 @@ public:
 		++RemoteFrontBufferSize;
 	}
 
-	bool ConsumeInputAuthority(InputPacket& OutPacket) {
+	bool ConsumeInput(InputPacket& OutPacket) {
 		AuthorityInputPacketNumber = AuthorityInputPacketNumber == kInvalidFrame ? 0 : AuthorityInputPacketNumber + 1;
 		if (!AuthorityBuffer.IsEmpty() && AuthorityBuffer.Last().PacketNumber == AuthorityInputPacketNumber) {
 			LastAuthorityPacket = AuthorityBuffer.Pop();
@@ -101,8 +99,8 @@ public:
 
 			return false;
 		}
-		
-		
+
+
 		OutPacket = LastAuthorityPacket;
 		return true;
 	}
@@ -125,7 +123,7 @@ private:
     TQueue<InputPacket> FrontBuffer;
 
 	uint32 RemoteFrontBufferSize = 0;
-	
+
 	/** The inputs that have already been used on the remote */
 	TQueue<InputPacket> BackBuffer;
 

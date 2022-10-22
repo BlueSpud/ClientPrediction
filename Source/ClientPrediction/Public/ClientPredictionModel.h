@@ -24,7 +24,7 @@ public:
 // Simulation ticking
 
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) = 0;
-	virtual float GetTimescale() const = 0; 
+	virtual float GetTimescale() const = 0;
 
 	/**
 	 * To be called after ticks have been performed and finalizes the output from the model.
@@ -64,7 +64,7 @@ public:
 	virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) override final;
 
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override final;
-	virtual float GetTimescale() const override final; 
+	virtual float GetTimescale() const override final;
 
 	virtual void Finalize(Chaos::FReal Alpha, Chaos::FReal DeltaTime, UPrimitiveComponent* Component) override final;
 
@@ -84,7 +84,7 @@ public:
 
 protected:
 	virtual void GenerateInitialState(ModelState& State) = 0;
-	
+
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, SimOutput& Output, const InputPacket& Input) = 0;
 	virtual void Rewind(const ModelState& State, UPrimitiveComponent* Component) = 0;
 
@@ -117,7 +117,7 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Initialize(UPri
 	if (!bIsInitialized) {
 		Driver->Initialize();
 	}
-	
+
 	bIsInitialized = true;
 }
 
@@ -148,7 +148,7 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::SetNetRole(ENet
 	Driver->Simulate = [&](Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, FSimulationOutput<ModelState, CueSet>& Output, const InputPacket& Input) {
 		Simulate(Dt, Component, PrevState, Output, Input);
 	};
-	
+
 	Driver->Rewind = [&](const ModelState& State, UPrimitiveComponent* Component) {
 		Rewind(State, Component);
 	};

@@ -21,7 +21,7 @@ public:
 	void AddImpulseAtLocation(FVector Impulse, FVector Location);
 
 	void SetBodySleeping(const bool Sleeping);
-	
+
 	Chaos::FReal GetMass() const;
 	FVector GetInertia() const;
 	FVector ScaleByMomentOfInertia(const FVector& InputVector) const;

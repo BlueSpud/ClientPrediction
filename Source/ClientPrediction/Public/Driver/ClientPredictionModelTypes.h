@@ -7,6 +7,10 @@ struct FModelStateWrapper {
 
 	uint32 FrameNumber = kInvalidFrame;
 
+	// These are only needed for the auto proxy
+	uint8 FramesSpentInBuffer = 0;
+	uint8 NumRecentlyDroppedPackets = 0;
+
 	ModelState State;
 	TArray<uint8> Cues;
 
