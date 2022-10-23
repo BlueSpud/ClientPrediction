@@ -51,24 +51,25 @@ public:
 
 	/** Returns true if there was a packet in the buffer to get */
 	bool ConsumeInput(InputPacket& OutPacket, uint8& FramesSpentInBuffer) {
-		for (FInputBufferPacketWrapper& Packet : PacketBuffer) {
-			++Packet.FramesSpentInBuffer;
-		}
+		bool bFoundInputPacket = false;
 
 		InputPacketNumber = InputPacketNumber == kInvalidFrame ? 0 : InputPacketNumber + 1;
 		if (!PacketBuffer.IsEmpty() && PacketBuffer.Last().Packet.PacketNumber == InputPacketNumber) {
+			bFoundInputPacket = true;
 
 			LastPacket = PacketBuffer.Pop();
 			OutPacket = LastPacket.Packet;
 			FramesSpentInBuffer = LastPacket.FramesSpentInBuffer;
-
-			return true;
+		} else {
+			OutPacket = LastPacket.Packet;
+			FramesSpentInBuffer = 0;
 		}
 
+		for (FInputBufferPacketWrapper& Packet : PacketBuffer) {
+			++Packet.FramesSpentInBuffer;
+		}
 
-		OutPacket = LastPacket.Packet;
-		FramesSpentInBuffer = LastPacket.FramesSpentInBuffer;
-		return false;
+		return bFoundInputPacket;
 	}
 
 

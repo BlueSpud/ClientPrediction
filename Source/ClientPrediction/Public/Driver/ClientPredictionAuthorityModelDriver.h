@@ -58,7 +58,7 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Initializ
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
-	if (!bAuthorityTakesInput && NextFrame == kInvalidFrame && InputBuffer.BufferSize() == 0) {
+	if (!bAuthorityTakesInput && NextFrame == kInvalidFrame && InputBuffer.BufferSize() > 1) {
 		return;
 	}
 
@@ -76,12 +76,11 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 		uint8 FramesSpentInBuffer;
 		if (!InputBuffer.ConsumeInput(CurrentInputPacket, FramesSpentInBuffer)) {
 			DroppedInputPackedIndices.Push(CurrentState.FrameNumber);
+			UE_LOG(LogTemp, Warning, TEXT("Dropped an input packet"));
 		}
 
 		CurrentState.NumRecentlyDroppedPackets = CalculateInputBufferHealth();
 		CurrentState.FramesSpentInBuffer = FramesSpentInBuffer;
-
-		UE_LOG(LogTemp, Error, TEXT("dropped %d buf %d frame number %d %d"), CurrentState.NumRecentlyDroppedPackets, CurrentState.FramesSpentInBuffer, CurrentState.FrameNumber, kBufferHealthTicks);
 	} else {
 		CurrentInputPacket = FInputPacketWrapper<InputPacket>();
 		InputDelegate.ExecuteIfBound(CurrentInputPacket.Packet, CurrentState.State, Dt);

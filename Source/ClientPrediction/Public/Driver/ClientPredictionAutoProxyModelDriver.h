@@ -8,8 +8,8 @@
 
 /** The number of dropped input packets before full speedup / the number of input packets in the buffer before full slowdown */
 static constexpr uint8 kInputPacketBufferTolerance = 5;
-static constexpr float kMaxSlowdownPercent = 0.2;
-static constexpr float kMaxSpeedupPercent = 0.1;
+static constexpr float kMaxSpeedupPercent = 0.2;
+static constexpr float kSlowdownPercent = 0.1;
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 class ClientPredictionAutoProxyDriver : public IClientPredictionModelDriver<InputPacket, ModelState, CueSet> {
@@ -58,6 +58,7 @@ private:
 	/* We send each input with several previous inputs. In case a packet is dropped, the next send will also contain the new dropped input */
 	TArray<FInputPacketWrapper<InputPacket>> SlidingInputWindow;
 	FInputBuffer<FInputPacketWrapper<InputPacket>> InputBuffer;
+	uint8 SlowDownFrames = 0;
 };
 
 template <typename InputPacket, typename ModelState, typename CueSet>
@@ -76,6 +77,8 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 	LastState = CurrentState.State;
 
 	// Pre-tick
+	if (SlowDownFrames > 0) { --SlowDownFrames; }
+
 	CurrentState.FrameNumber = NextFrame++;
 	CurrentState.Cues.Empty();
 
@@ -87,7 +90,7 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 		InputDelegate.ExecuteIfBound(Packet.Packet, CurrentState.State, Dt);
 		InputBuffer.QueueInputRemote(Packet);
 
-		while (!SlidingInputWindow.IsEmpty() && SlidingInputWindow.Last().PacketNumber <= AckedFrame) {
+		while (!SlidingInputWindow.IsEmpty() && SlidingInputWindow.Last().PacketNumber <= kInputWindowSize) {
 			SlidingInputWindow.Pop();
 		}
 
@@ -198,6 +201,10 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::BindToRep
 
 		if (LastAuthorityState.FrameNumber == kInvalidFrame || State.FrameNumber > LastAuthorityState.FrameNumber) {
 			LastAuthorityState = State;
+
+			if (LastAuthorityState.FramesSpentInBuffer > 2 && LastAuthorityState.NumRecentlyDroppedPackets == 0) {
+				SlowDownFrames = FMath::Floor(static_cast<float>(LastAuthorityState.FramesSpentInBuffer - 2) / kSlowdownPercent);
+			} else { SlowDownFrames = 0; }
 		}
 	};
 }
@@ -208,14 +215,14 @@ float ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::GetTimes
 
 	// Speed up if there is loss in the input stream
 	if (NumRecentlyDroppedPackets != 0) {
-		const float SpeedupPercent = FMath::Clamp(static_cast<float>(NumRecentlyDroppedPackets) / static_cast<float>(kInputPacketBufferTolerance), 0.0f, 1.0f);
-		return 1.0 - SpeedupPercent * kMaxSlowdownPercent;
+		UE_LOG(LogTemp, Warning, TEXT("FAST %d %d %d"), LastAuthorityState.FramesSpentInBuffer, LastAuthorityState.NumRecentlyDroppedPackets, SlowDownFrames);
+		return 1.0 - kMaxSpeedupPercent;
 	}
 
 	// Slow down if the server input buffer is full
-	if (LastAuthorityState.FramesSpentInBuffer > 2) {
-		const float SlowdownPercent = FMath::Clamp(static_cast<float>(LastAuthorityState.FramesSpentInBuffer) / static_cast<float>(kInputPacketBufferTolerance), 0.0f, 1.0f);
-		return 1.0 + SlowdownPercent * kMaxSpeedupPercent;
+	if (SlowDownFrames > 0) {
+		UE_LOG(LogTemp, Warning, TEXT("SLOW %d %d %d"), LastAuthorityState.FramesSpentInBuffer, LastAuthorityState.NumRecentlyDroppedPackets, SlowDownFrames);
+		return 1.0 + kSlowdownPercent;
 	}
 
 	return 1.0;
