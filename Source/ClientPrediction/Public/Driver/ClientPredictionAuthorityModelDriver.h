@@ -25,16 +25,12 @@ public:
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override;
 	virtual void BindToRepProxies(FClientPredictionRepProxy& NewAutoProxyRep, FClientPredictionRepProxy& NewSimProxyRep) override;
 
-	uint8 CalculateInputBufferHealth();
-	void SerializeCurrentStateForAutoProxy(FArchive& Ar);
-
 private:
 
 	uint32 NextFrame = kInvalidFrame;
 
 	/** Input packet used for the current frame */
 	FInputPacketWrapper<InputPacket> CurrentInputPacket;
-	TArray<uint32> DroppedInputPackedIndices;
 
 	WrappedState CurrentState;
 	ModelState LastState;
@@ -58,7 +54,8 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Initializ
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
-	if (!bAuthorityTakesInput && NextFrame == kInvalidFrame && InputBuffer.BufferSize() > 1) {
+	// TODO decrement this back to 1
+	if (!bAuthorityTakesInput && NextFrame == kInvalidFrame && InputBuffer.BufferSize() <= 5) {
 		return;
 	}
 
@@ -75,12 +72,8 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 
 		uint8 FramesSpentInBuffer;
 		if (!InputBuffer.ConsumeInput(CurrentInputPacket, FramesSpentInBuffer)) {
-			DroppedInputPackedIndices.Push(CurrentState.FrameNumber);
-			UE_LOG(LogTemp, Warning, TEXT("Dropped an input packet"));
+			UE_LOG(LogTemp, Warning, TEXT("Dropped an input packet %d"), CurrentInputPacket.PacketNumber);
 		}
-
-		CurrentState.NumRecentlyDroppedPackets = CalculateInputBufferHealth();
-		CurrentState.FramesSpentInBuffer = FramesSpentInBuffer;
 	} else {
 		CurrentInputPacket = FInputPacketWrapper<InputPacket>();
 		InputDelegate.ExecuteIfBound(CurrentInputPacket.Packet, CurrentState.State, Dt);
@@ -102,7 +95,7 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 		// Reliably dispatch the state
 		FNetSerializationProxy Proxy;
 		Proxy.NetSerializeFunc = [=](FArchive& Ar) {
-			SerializeCurrentStateForAutoProxy(Ar);
+			CurrentState.NetSerialize(Ar);
 		};
 
 		EmitReliableAuthorityState(Proxy);
@@ -135,31 +128,10 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::BindToRep
 	SimProxyRep = &NewSimProxyRep;
 
 	AutoProxyRep->SerializeFunc = [&](FArchive& Ar) {
-		SerializeCurrentStateForAutoProxy(Ar);
+		CurrentState.NetSerialize(Ar);
 	};
 
 	SimProxyRep->SerializeFunc = [&](FArchive& Ar) {
 		CurrentState.NetSerialize(Ar);
 	};
-}
-
-template <typename InputPacket, typename ModelState, typename CueSet>
-uint8 ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::CalculateInputBufferHealth() {
-	const uint32 CurrentFrameNumber = CurrentState.FrameNumber;
-
-	// Drop any entries that are no longer needed
-	if (CurrentFrameNumber > kBufferHealthTicks) {
-		while (!DroppedInputPackedIndices.IsEmpty() && DroppedInputPackedIndices.Last() < CurrentFrameNumber - kBufferHealthTicks) {
-			DroppedInputPackedIndices.Pop();
-		}
-	}
-
-	return DroppedInputPackedIndices.Num();
-}
-
-template <typename InputPacket, typename ModelState, typename CueSet>
-void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::SerializeCurrentStateForAutoProxy(FArchive& Ar) {
-	CurrentState.NetSerialize(Ar);
-	Ar << CurrentState.NumRecentlyDroppedPackets;
-	Ar << CurrentState.FramesSpentInBuffer;
 }

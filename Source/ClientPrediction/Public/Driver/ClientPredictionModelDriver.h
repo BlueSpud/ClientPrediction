@@ -42,9 +42,6 @@ public:
 	virtual void ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) {};
 	virtual void BindToRepProxies(FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) = 0;
 
-	// Time dilation
-	virtual float GetTimescale() const { return 1.0; }
-
 public:
 
 	DECLARE_DELEGATE_ThreeParams(FInputProductionDelgate, InputPacket&, const ModelState& State, Chaos::FReal Dt)

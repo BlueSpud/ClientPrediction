@@ -24,7 +24,6 @@ public:
 // Simulation ticking
 
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) = 0;
-	virtual float GetTimescale() const = 0;
 
 	/**
 	 * To be called after ticks have been performed and finalizes the output from the model.
@@ -64,7 +63,6 @@ public:
 	virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) override final;
 
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override final;
-	virtual float GetTimescale() const override final;
 
 	virtual void Finalize(Chaos::FReal Alpha, Chaos::FReal DeltaTime, UPrimitiveComponent* Component) override final;
 
@@ -166,12 +164,6 @@ template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
 	if (Driver == nullptr) { return; }
 	Driver->Tick(Dt, Component);
-}
-
-template <typename InputPacket, typename ModelState, typename CueSet>
-float BaseClientPredictionModel<InputPacket, ModelState, CueSet>::GetTimescale() const {
-	if (Driver == nullptr) { return 1.0; }
-	return Driver->GetTimescale();
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>

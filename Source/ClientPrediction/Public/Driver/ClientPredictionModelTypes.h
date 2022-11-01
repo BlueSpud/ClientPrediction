@@ -7,10 +7,6 @@ struct FModelStateWrapper {
 
 	uint32 FrameNumber = kInvalidFrame;
 
-	// These are only needed for the auto proxy
-	uint8 FramesSpentInBuffer = 0;
-	uint8 NumRecentlyDroppedPackets = 0;
-
 	ModelState State;
 	TArray<uint8> Cues;
 
@@ -60,7 +56,6 @@ struct FInputPacketWrapper {
 	 * lockstep with the frames they're generated on due to latency. 
 	 */
 	uint32 PacketNumber = kInvalidFrame;
-
 	InputPacket Packet;
 
 	void NetSerialize(FArchive& Ar);

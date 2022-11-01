@@ -6,11 +6,6 @@
 #include "../ClientPredictionNetSerialization.h"
 #include "../Input.h"
 
-/** The number of dropped input packets before full speedup / the number of input packets in the buffer before full slowdown */
-static constexpr uint8 kInputPacketBufferTolerance = 5;
-static constexpr float kMaxSpeedupPercent = 0.2;
-static constexpr float kSlowdownPercent = 0.1;
-
 template <typename InputPacket, typename ModelState, typename CueSet>
 class ClientPredictionAutoProxyDriver : public IClientPredictionModelDriver<InputPacket, ModelState, CueSet> {
 	using WrappedState = FModelStateWrapper<ModelState>;
@@ -29,9 +24,6 @@ public:
 
 	virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override;
 	virtual void BindToRepProxies(FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) override;
-
-	// Time dilation
-	virtual float GetTimescale() const override;
 
 private:
 
@@ -58,7 +50,6 @@ private:
 	/* We send each input with several previous inputs. In case a packet is dropped, the next send will also contain the new dropped input */
 	TArray<FInputPacketWrapper<InputPacket>> SlidingInputWindow;
 	FInputBuffer<FInputPacketWrapper<InputPacket>> InputBuffer;
-	uint8 SlowDownFrames = 0;
 };
 
 template <typename InputPacket, typename ModelState, typename CueSet>
@@ -77,8 +68,6 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 	LastState = CurrentState.State;
 
 	// Pre-tick
-	if (SlowDownFrames > 0) { --SlowDownFrames; }
-
 	CurrentState.FrameNumber = NextFrame++;
 	CurrentState.Cues.Empty();
 
@@ -134,12 +123,7 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 	}
 
 	if (LastAuthorityState.FrameNumber > CurrentState.FrameNumber) {
-		// Server is ahead of the client. The client should just chuck out everything and resimulate
-		const uint32 FrameDifference =  LastAuthorityState.FrameNumber - CurrentState.FrameNumber;
-		const uint32 SimulationFrames = FrameDifference * 2 + LastAuthorityState.FramesSpentInBuffer;
-
-		Rewind_Internal(LastAuthorityState, Component);
-		ForceSimulate(SimulationFrames, Dt, Component);
+		// TODO implement
 	} else {
 		// Check history against the server state
 		WrappedState HistoricState;
@@ -196,36 +180,11 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::BindToRep
 	AutoProxyRep.SerializeFunc = [&](FArchive& Ar) {
 		WrappedState State;
 		State.NetSerialize(Ar);
-		Ar << State.NumRecentlyDroppedPackets;
-		Ar << State.FramesSpentInBuffer;
 
 		if (LastAuthorityState.FrameNumber == kInvalidFrame || State.FrameNumber > LastAuthorityState.FrameNumber) {
 			LastAuthorityState = State;
-
-			if (LastAuthorityState.FramesSpentInBuffer > 2 && LastAuthorityState.NumRecentlyDroppedPackets == 0) {
-				SlowDownFrames = FMath::Floor(static_cast<float>(LastAuthorityState.FramesSpentInBuffer - 2) / kSlowdownPercent);
-			} else { SlowDownFrames = 0; }
 		}
 	};
-}
-
-template <typename InputPacket, typename ModelState, typename CueSet>
-float ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::GetTimescale() const {
-	const uint8 NumRecentlyDroppedPackets = LastAuthorityState.NumRecentlyDroppedPackets;
-
-	// Speed up if there is loss in the input stream
-	if (NumRecentlyDroppedPackets != 0) {
-		UE_LOG(LogTemp, Warning, TEXT("FAST %d %d %d"), LastAuthorityState.FramesSpentInBuffer, LastAuthorityState.NumRecentlyDroppedPackets, SlowDownFrames);
-		return 1.0 - kMaxSpeedupPercent;
-	}
-
-	// Slow down if the server input buffer is full
-	if (SlowDownFrames > 0) {
-		UE_LOG(LogTemp, Warning, TEXT("SLOW %d %d %d"), LastAuthorityState.FramesSpentInBuffer, LastAuthorityState.NumRecentlyDroppedPackets, SlowDownFrames);
-		return 1.0 + kSlowdownPercent;
-	}
-
-	return 1.0;
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
