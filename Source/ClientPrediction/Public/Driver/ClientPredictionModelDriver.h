@@ -56,6 +56,9 @@ public:
 	TFunction<void(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, FSimulationOutput<ModelState, CueSet>& Output, const InputPacket& Input)> Simulate;
 	TFunction<void(const ModelState& State, UPrimitiveComponent* Component)> Rewind;
 	TFunction<void(const ModelState& State, CueSet Cue)> HandleCue;
+
+	/** These are functions to help adjust the remote based on the server time / input health */
+	TFunction<float()> GetRtt;
 	TFunction<void(const Chaos::FReal)> AdjustTime;
 };
 

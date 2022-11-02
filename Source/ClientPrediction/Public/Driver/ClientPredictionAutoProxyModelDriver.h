@@ -28,6 +28,7 @@ public:
 private:
 
 	virtual void Tick(Chaos::FReal Dt, Chaos::FReal RemainingAccumulatedTime, UPrimitiveComponent* Component, bool bIsForcedSimulation);
+	void ReconcileWithAuthority(Chaos::FReal Dt, UPrimitiveComponent* Component);
 
 	void Rewind_Internal(const WrappedState& State, UPrimitiveComponent* Component);
 	void ForceSimulate(uint32 Ticks, Chaos::FReal TickDt, UPrimitiveComponent* Component);
@@ -78,8 +79,8 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 		FInputPacketWrapper<InputPacket> Packet;
 		Packet.PacketNumber = CurrentState.FrameNumber;
 		InputDelegate.ExecuteIfBound(Packet.Packet, CurrentState.State, Dt);
-		InputBuffer.QueueInputRemote(Packet);
 
+		InputBuffer.QueueInputRemote(Packet);
 		while (SlidingInputWindow.Num() >= kInputWindowSize) {
 			SlidingInputWindow.Pop();
 		}
@@ -109,10 +110,13 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 
 	// If there are frames that are being used to fast-forward / resimulate no logic needs to be performed
 	// for them
-	if (bIsForcedSimulation) {
-		return;
+	if (!bIsForcedSimulation) {
+		ReconcileWithAuthority(Dt, Component);
 	}
+}
 
+template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::ReconcileWithAuthority(Chaos::FReal Dt, UPrimitiveComponent* Component) {
 	if (LastAuthorityState.FrameNumber == kInvalidFrame) {
 		// Never received a frame from the server
 		return;
@@ -164,6 +168,7 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 	}
 }
 
+
 template <typename InputPacket, typename ModelState, typename CueSet>
 ModelState ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::GenerateOutput(Chaos::FReal Alpha) {
 	ModelState InterpolatedState = LastState;
@@ -186,12 +191,15 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::BindToRep
 		if (LastAuthorityState.FrameNumber == kInvalidFrame || State.FrameNumber > LastAuthorityState.FrameNumber) {
 			LastAuthorityState = State;
 
-			// Figure out the time needed to adjust by to achieve desired offset
-			const Chaos::FReal TimeAheadOfAuthority = kFixedDt * 5.0;
+			// Figure out the time needed to adjust by to achieve desired offset. We use a full RTT, since the
+			// server time is already RTT/2 seconds in the past
+			GetRtt.CheckCallable();
+			const Chaos::FReal TimeAheadOfAuthority = GetRtt() + kFixedDt;
+
 			const Chaos::FReal FrameDelta = static_cast<Chaos::FReal>(CurrentState.FrameNumber) - static_cast<Chaos::FReal>(LastAuthorityState.FrameNumber) ;
 			const Chaos::FReal CurrentDelta = FrameDelta * kFixedDt + (CurrentState.RemainingAccumulatedTime - LastAuthorityState.RemainingAccumulatedTime);
+			const Chaos::FReal AdjustmentTime = TimeAheadOfAuthority - CurrentDelta;
 
-			Chaos::FReal AdjustmentTime = TimeAheadOfAuthority - CurrentDelta;
 			AdjustTime.CheckCallable();
 			AdjustTime(AdjustmentTime);
 		}

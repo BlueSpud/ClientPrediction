@@ -63,6 +63,16 @@ void UClientPredictionComponent::RecvReliableAuthorityState_Implementation(FNetS
 	Model->ReceiveReliableAuthorityState(Proxy);
 }
 
+float UClientPredictionComponent::GetRtt() const {
+	const AActor* Owner = GetOwner();
+	if (!Owner) { return 0.0f; }
+
+	const UNetConnection* NetConnection = Owner->GetNetConnection();
+	if (NetConnection == nullptr) { return 0.0f; }
+
+	return NetConnection->AvgLag;
+}
+
 void UClientPredictionComponent::CheckOwnerRoleChanged() {
 	const AActor* OwnerActor = GetOwner();
 	const ENetRole CurrentRole = OwnerActor->GetLocalRole();

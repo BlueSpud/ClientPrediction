@@ -43,6 +43,7 @@ public:
 	/** These are the functions to queue RPC sends. The proxies should use functions that capture by value */
 	TFunction<void(FNetSerializationProxy&)> EmitInputPackets;
 	TFunction<void(FNetSerializationProxy&)> EmitReliableAuthorityState;
+	TFunction<float()> GetRtt;
 
 };
 
@@ -90,10 +91,13 @@ protected:
 	virtual void ApplyState(UPrimitiveComponent* Component, const ModelState& State);
 
 private:
+	static constexpr Chaos::FReal kMaxTimeAdjustment = kFixedDt * 0.05;
 
 	TUniquePtr<IClientPredictionModelDriver<InputPacket, ModelState, CueSet>> Driver;
-	Chaos::FReal AccumulatedTime = 0.0;
 	bool bIsInitialized = false;
+
+	Chaos::FReal AccumulatedTime = 0.0;
+	Chaos::FReal AdjustmentTime = 0.0;
 
 };
 
@@ -156,8 +160,9 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::SetNetRole(ENet
 		HandleCue.ExecuteIfBound(State, Cue);
 	};
 
-	Driver->AdjustTime = [&](const Chaos::FReal AdjustmentTime) {
-		AccumulatedTime += AdjustmentTime;
+	Driver->GetRtt = GetRtt;
+	Driver->AdjustTime = [&](const Chaos::FReal Adjustment) {
+		AdjustmentTime = Adjustment;
 	};
 
 	if (bIsInitialized) {
@@ -169,7 +174,10 @@ template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Update(Chaos::FReal RealDt, UPrimitiveComponent* Component) {
 	if (Driver == nullptr) { return; }
 
-	AccumulatedTime += RealDt;
+	const Chaos::FReal Adjustment = FMath::Clamp(AdjustmentTime, -kMaxTimeAdjustment, kMaxTimeAdjustment);
+	AdjustmentTime -= Adjustment;
+
+	AccumulatedTime += RealDt + Adjustment;
 	while (AccumulatedTime >= kFixedDt) {
 		AccumulatedTime = FMath::Clamp(AccumulatedTime - kFixedDt, 0.0, AccumulatedTime);
 		Driver->Tick(kFixedDt, AccumulatedTime, Component);

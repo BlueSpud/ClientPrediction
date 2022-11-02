@@ -1,5 +1,8 @@
 ﻿#pragma once
 
+#include "GameFramework/GameStateBase.h"
+#include "Kismet/GameplayStatics.h"
+
 #include "ClientPredictionModelDriver.h"
 #include "ClientPredictionModelTypes.h"
 
@@ -35,7 +38,9 @@ private:
 	WrappedState CurrentState;
 	ModelState LastState;
 
+	// TODO this needs to be set
 	bool bAuthorityTakesInput = false;
+
 	FAuthorityInputBuffer<FInputPacketWrapper<InputPacket>> InputBuffer;
 
 	FClientPredictionRepProxy* AutoProxyRep = nullptr;
@@ -54,7 +59,6 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Initializ
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, Chaos::FReal RemainingAccumulatedTime, UPrimitiveComponent* Component) {
-	// TODO decrement this back to 1
 	if (!bAuthorityTakesInput && NextFrame == kInvalidFrame && InputBuffer.BufferSize() == 0) {
 		return;
 	}

@@ -2,7 +2,6 @@
 
 #include "ClientPredictionNetSerialization.h"
 #include "ClientPredictionModel.h"
-#include "Input.h"
 #include "Driver/ClientPredictionRepProxy.h"
 
 #include "ClientPredictionComponent.generated.h"
@@ -36,6 +35,8 @@ private:
 
 	UFUNCTION(NetMulticast, Reliable)
 	void RecvReliableAuthorityState(FNetSerializationProxy Proxy);
+
+	float GetRtt() const;
 
 	void CheckOwnerRoleChanged();
 
@@ -71,5 +72,6 @@ ModelType* UClientPredictionComponent::CreateModel() {
 		RecvReliableAuthorityState(Proxy);
 	};
 
+	Model->GetRtt = [&]() { return GetRtt(); };
 	return static_cast<ModelType*>(Model.Get());
 }
