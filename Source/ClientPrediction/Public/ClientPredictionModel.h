@@ -23,7 +23,7 @@ public:
 
 // Simulation ticking
 
-	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) = 0;
+	virtual void Update(Chaos::FReal RealDt, UPrimitiveComponent* Component) = 0;
 
 	/**
 	 * To be called after ticks have been performed and finalizes the output from the model.
@@ -62,7 +62,7 @@ public:
 	virtual void Initialize(UPrimitiveComponent* Component) override;
 	virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) override final;
 
-	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override final;
+	virtual void Update(Chaos::FReal RealDt, UPrimitiveComponent* Component) override final;
 
 	virtual void Finalize(Chaos::FReal Alpha, Chaos::FReal DeltaTime, UPrimitiveComponent* Component) override final;
 
@@ -92,6 +92,7 @@ protected:
 private:
 
 	TUniquePtr<IClientPredictionModelDriver<InputPacket, ModelState, CueSet>> Driver;
+	Chaos::FReal AccumulatedTime = 0.0;
 	bool bIsInitialized = false;
 
 };
@@ -155,15 +156,26 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::SetNetRole(ENet
 		HandleCue.ExecuteIfBound(State, Cue);
 	};
 
+	Driver->AdjustTime = [&](const Chaos::FReal AdjustmentTime) {
+		AccumulatedTime += AdjustmentTime;
+	};
+
 	if (bIsInitialized) {
 		Driver->Initialize();
 	}
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
+void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Update(Chaos::FReal RealDt, UPrimitiveComponent* Component) {
 	if (Driver == nullptr) { return; }
-	Driver->Tick(Dt, Component);
+
+	AccumulatedTime += RealDt;
+	while (AccumulatedTime >= kFixedDt) {
+		AccumulatedTime = FMath::Clamp(AccumulatedTime - kFixedDt, 0.0, AccumulatedTime);
+		Driver->Tick(kFixedDt, AccumulatedTime, Component);
+	}
+
+	Finalize(AccumulatedTime / kFixedDt, RealDt, Component);
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>

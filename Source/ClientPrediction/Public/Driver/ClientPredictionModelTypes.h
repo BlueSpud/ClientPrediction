@@ -10,6 +10,9 @@ struct FModelStateWrapper {
 	ModelState State;
 	TArray<uint8> Cues;
 
+	// These are only used for auth proxy
+	Chaos::FReal RemainingAccumulatedTime;
+
 	void NetSerialize(FArchive& Ar);
 
 	bool operator ==(const FModelStateWrapper<ModelState>& Other) const;

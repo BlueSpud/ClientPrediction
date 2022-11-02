@@ -17,7 +17,7 @@ public:
 	// Simulation ticking
 
 	virtual void Initialize() override;
-	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override;
+	virtual void Tick(Chaos::FReal Dt, Chaos::FReal RemainingAccumulatedTime, UPrimitiveComponent* Component) override;
 	virtual ModelState GenerateOutput(Chaos::FReal Alpha) override;
 
 	// Input packet / state receiving
@@ -53,9 +53,9 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Initializ
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
+void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, Chaos::FReal RemainingAccumulatedTime, UPrimitiveComponent* Component) {
 	// TODO decrement this back to 1
-	if (!bAuthorityTakesInput && NextFrame == kInvalidFrame && InputBuffer.BufferSize() <= 5) {
+	if (!bAuthorityTakesInput && NextFrame == kInvalidFrame && InputBuffer.BufferSize() == 0) {
 		return;
 	}
 
@@ -66,13 +66,14 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 	// Pre tick
 	LastState = CurrentState.State;
 	CurrentState.FrameNumber = NextFrame++;
+	CurrentState.RemainingAccumulatedTime = RemainingAccumulatedTime;
 	CurrentState.Cues.Empty();
 
 	if (!bAuthorityTakesInput) {
 
 		uint8 FramesSpentInBuffer;
 		if (!InputBuffer.ConsumeInput(CurrentInputPacket, FramesSpentInBuffer)) {
-			UE_LOG(LogTemp, Warning, TEXT("Dropped an input packet %d"), CurrentInputPacket.PacketNumber);
+			UE_LOG(LogTemp, Display, TEXT("Dropped an input packet %d %d"), CurrentInputPacket.PacketNumber, InputBuffer.BufferSize());
 		}
 	} else {
 		CurrentInputPacket = FInputPacketWrapper<InputPacket>();
@@ -129,6 +130,7 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::BindToRep
 
 	AutoProxyRep->SerializeFunc = [&](FArchive& Ar) {
 		CurrentState.NetSerialize(Ar);
+		Ar << CurrentState.RemainingAccumulatedTime;
 	};
 
 	SimProxyRep->SerializeFunc = [&](FArchive& Ar) {

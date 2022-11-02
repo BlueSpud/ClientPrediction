@@ -17,7 +17,7 @@ public:
 	// Simulation ticking
 
 	virtual void Initialize() override;
-	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override;
+	virtual void Tick(Chaos::FReal Dt, Chaos::FReal RemainingAccumulatedTime, UPrimitiveComponent* Component) override;
 	virtual ModelState GenerateOutput(Chaos::FReal Alpha) override;
 
 	// Input packet / state receiving
@@ -27,7 +27,7 @@ public:
 
 private:
 
-	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component, bool bIsForcedSimulation);
+	virtual void Tick(Chaos::FReal Dt, Chaos::FReal RemainingAccumulatedTime, UPrimitiveComponent* Component, bool bIsForcedSimulation);
 
 	void Rewind_Internal(const WrappedState& State, UPrimitiveComponent* Component);
 	void ForceSimulate(uint32 Ticks, Chaos::FReal TickDt, UPrimitiveComponent* Component);
@@ -59,16 +59,17 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Initializ
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
-	Tick(Dt, Component, false);
+void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, Chaos::FReal RemainingAccumulatedTime, UPrimitiveComponent* Component) {
+	Tick(Dt, RemainingAccumulatedTime, Component, false);
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component, bool bIsForcedSimulation) {
+void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, Chaos::FReal RemainingAccumulatedTime, UPrimitiveComponent* Component, bool bIsForcedSimulation) {
 	LastState = CurrentState.State;
 
 	// Pre-tick
 	CurrentState.FrameNumber = NextFrame++;
+	CurrentState.RemainingAccumulatedTime = RemainingAccumulatedTime;
 	CurrentState.Cues.Empty();
 
 	if (!bIsForcedSimulation || InputBuffer.RemoteBufferSize() == 0) {
@@ -79,7 +80,7 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 		InputDelegate.ExecuteIfBound(Packet.Packet, CurrentState.State, Dt);
 		InputBuffer.QueueInputRemote(Packet);
 
-		while (!SlidingInputWindow.IsEmpty() && SlidingInputWindow.Last().PacketNumber <= kInputWindowSize) {
+		while (SlidingInputWindow.Num() >= kInputWindowSize) {
 			SlidingInputWindow.Pop();
 		}
 
@@ -180,9 +181,19 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::BindToRep
 	AutoProxyRep.SerializeFunc = [&](FArchive& Ar) {
 		WrappedState State;
 		State.NetSerialize(Ar);
+		Ar << State.RemainingAccumulatedTime;
 
 		if (LastAuthorityState.FrameNumber == kInvalidFrame || State.FrameNumber > LastAuthorityState.FrameNumber) {
 			LastAuthorityState = State;
+
+			// Figure out the time needed to adjust by to achieve desired offset
+			const Chaos::FReal TimeAheadOfAuthority = kFixedDt * 5.0;
+			const Chaos::FReal FrameDelta = static_cast<Chaos::FReal>(CurrentState.FrameNumber) - static_cast<Chaos::FReal>(LastAuthorityState.FrameNumber) ;
+			const Chaos::FReal CurrentDelta = FrameDelta * kFixedDt + (CurrentState.RemainingAccumulatedTime - LastAuthorityState.RemainingAccumulatedTime);
+
+			Chaos::FReal AdjustmentTime = TimeAheadOfAuthority - CurrentDelta;
+			AdjustTime.CheckCallable();
+			AdjustTime(AdjustmentTime);
 		}
 	};
 }
@@ -203,6 +214,6 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Rewind_In
 template <typename InputPacket, typename ModelState, typename CueSet>
 void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::ForceSimulate(uint32 Ticks, Chaos::FReal TickDt, UPrimitiveComponent* Component) {
 	for (uint32 i = 0; i < Ticks; i++) {
-		Tick(TickDt, Component, true);
+		Tick(TickDt, 0.0, Component, true);
 	}
 }

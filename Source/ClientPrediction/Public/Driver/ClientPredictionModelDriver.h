@@ -20,7 +20,7 @@ public:
 
 	/** To be called after all of the delegate functions are set */
 	virtual void Initialize() {};
-	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) = 0;
+	virtual void Tick(Chaos::FReal Dt, Chaos::FReal RemainingAccumulatedTime, UPrimitiveComponent* Component) = 0;
 
 	/**
 	 * To be called after ticks have been performed and finalizes the output from the model. By default,
@@ -56,6 +56,7 @@ public:
 	TFunction<void(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, FSimulationOutput<ModelState, CueSet>& Output, const InputPacket& Input)> Simulate;
 	TFunction<void(const ModelState& State, UPrimitiveComponent* Component)> Rewind;
 	TFunction<void(const ModelState& State, CueSet Cue)> HandleCue;
+	TFunction<void(const Chaos::FReal)> AdjustTime;
 };
 
 template <typename InputPacket, typename ModelState, typename CueSet>

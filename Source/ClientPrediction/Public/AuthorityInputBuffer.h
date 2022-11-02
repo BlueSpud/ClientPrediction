@@ -38,7 +38,7 @@ public:
 		NewPacket.Packet = Packet;
 		NewPacket.FramesSpentInBuffer = 0;
 
-		PacketBuffer.Add(NewPacket);
+		PacketBuffer.Push(NewPacket);
 
 		// Sort the input buffer in case packets have come in out of order
 		//
@@ -62,6 +62,7 @@ public:
 			FramesSpentInBuffer = LastPacket.FramesSpentInBuffer;
 		} else {
 			OutPacket = LastPacket.Packet;
+			OutPacket.PacketNumber = InputPacketNumber;
 			FramesSpentInBuffer = 0;
 		}
 

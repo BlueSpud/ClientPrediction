@@ -17,7 +17,7 @@ public:
 
 	// Simulation ticking
 
-	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override {};
+	virtual void Tick(Chaos::FReal Dt, Chaos::FReal RemainingAccumulatedTime, UPrimitiveComponent* Component) override {};
 	virtual ModelState GenerateOutputGameDt(Chaos::FReal Alpha, Chaos::FReal GameDt) override;
 
 	// This should never be called, since GenerateOutputGame
