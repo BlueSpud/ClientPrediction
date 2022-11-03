@@ -55,9 +55,7 @@ private:
 	class UPrimitiveComponent* UpdatedComponent;
 
 	double AccumulatedTime = 0.0;
-	
 	ENetRole CachedRole = ENetRole::ROLE_None;
-	bool bCachedHasNetConnection = false;
 
 };
 

@@ -18,7 +18,7 @@ public:
 	IClientPredictionModel() = default;
 	virtual ~IClientPredictionModel() = default;
 
-	virtual void SetNetRole(ENetRole Role, bool bAuthorityTakesInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) = 0;
+	virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) = 0;
 	virtual void Initialize(UPrimitiveComponent* Component, ENetRole Role) = 0;
 
 // Simulation ticking
@@ -59,7 +59,7 @@ public:
 	BaseClientPredictionModel() = default;
 	virtual ~BaseClientPredictionModel() override = default;
 
-	virtual void SetNetRole(ENetRole Role, bool bAuthorityTakesInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) override final;
+	virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) override final;
 	virtual void Initialize(UPrimitiveComponent* Component, ENetRole Role) override final;
 
 	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override final;
@@ -114,10 +114,10 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::ReceiveReliable
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::SetNetRole(ENetRole Role, bool bAuthorityTakesInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) {
+void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) {
 	switch (Role) {
 	case ROLE_Authority:
-		Driver = MakeUnique<ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>>(bAuthorityTakesInput);
+		Driver = MakeUnique<ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>>(bShouldTakeInput);
 		break;
 	case ROLE_AutonomousProxy:
 		Driver = MakeUnique<ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>>();
