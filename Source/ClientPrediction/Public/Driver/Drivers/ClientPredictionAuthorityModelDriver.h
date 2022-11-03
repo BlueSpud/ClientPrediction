@@ -72,7 +72,7 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 
 		uint8 FramesSpentInBuffer;
 		if (!InputBuffer.ConsumeInput(CurrentInputPacket, FramesSpentInBuffer)) {
-			UE_LOG(LogTemp, Verbose, TEXT("Dropped an input packet %d %d"), CurrentInputPacket.PacketNumber, InputBuffer.BufferSize());
+			UE_LOG(LogTemp, Log, TEXT("Dropped an input packet %d %d"), CurrentInputPacket.PacketNumber, InputBuffer.BufferSize());
 		}
 	} else {
 		CurrentInputPacket = FInputPacketWrapper<InputPacket>();

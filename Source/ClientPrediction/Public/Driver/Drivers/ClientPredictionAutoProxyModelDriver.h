@@ -31,7 +31,7 @@ private:
 
 	void SampleInput(Chaos::FReal Dt);
 	void ReconcileWithAuthority(Chaos::FReal Dt, UPrimitiveComponent* Component);
-	void CalculateTimeAdjustment();
+	Chaos::FReal CalculateTimeAdjustment();
 
 	void Rewind_Internal(const WrappedState& State, UPrimitiveComponent* Component);
 	void ForceSimulate(uint32 Ticks, Chaos::FReal TickDt, UPrimitiveComponent* Component);
@@ -140,7 +140,15 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Reconcile
 	}
 
 	if (LastAuthorityState.FrameNumber > CurrentState.FrameNumber) {
-		// TODO implement
+		Rewind_Internal(LastAuthorityState, Component);
+
+		GetNetworkConditions.CheckCallable();
+		const FNetworkConditions NetworkConditions = GetNetworkConditions();
+
+		const Chaos::FReal SimulationTime = NetworkConditions.RttMs + NetworkConditions.JitterMs;
+	    const uint32 SimulationTicks = FMath::CeilToInt(SimulationTime / kFixedDt);
+
+       	ForceSimulate(SimulationTicks, Dt, Component);
 	} else {
 		// Check history against the authority state
 		WrappedState HistoricState;
@@ -187,18 +195,16 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Reconcile
 // When we get packet loss, we also add additional time so that gaps in the buffer will be filled
 // by sending the sliding window of inputs.
 template <typename InputPacket, typename ModelState, typename CueSet>
-void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::CalculateTimeAdjustment() {
+Chaos::FReal ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::CalculateTimeAdjustment() {
 	GetNetworkConditions.CheckCallable();
 	const FNetworkConditions NetworkConditions = GetNetworkConditions();
 	const Chaos::FReal PacketLossTime = NetworkConditions.PercentPacketLoss / kMaxPacketLossPercent * static_cast<float>(kMaxAheadTicksPacketLoss) * kFixedDt;
-	const Chaos::FReal TimeAheadOfAuthority = NetworkConditions.RttMs + NetworkConditions.JitterMs + PacketLossTime;
+	const Chaos::FReal TimeAheadOfAuthority = NetworkConditions.RttMs + NetworkConditions.JitterMs + PacketLossTime + kFixedDt;
 
 	const Chaos::FReal FrameDelta = static_cast<Chaos::FReal>(CurrentState.FrameNumber) - static_cast<Chaos::FReal>(LastAuthorityState.FrameNumber);
 	const Chaos::FReal CurrentDelta = FrameDelta * kFixedDt + (CurrentState.RemainingAccumulatedTime - LastAuthorityState.RemainingAccumulatedTime);
-	const Chaos::FReal AdjustmentTime = TimeAheadOfAuthority - CurrentDelta;
 
-	AdjustTime.CheckCallable();
-	AdjustTime(AdjustmentTime);
+	return TimeAheadOfAuthority - CurrentDelta;
 }
 
 
@@ -223,16 +229,22 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::BindToRep
 
 		if (LastAuthorityState.FrameNumber == kInvalidFrame || State.FrameNumber > LastAuthorityState.FrameNumber) {
 			LastAuthorityState = State;
-			CalculateTimeAdjustment();
+
+			AdjustTime.CheckCallable();
+            AdjustTime(CalculateTimeAdjustment());
 		}
 	};
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Rewind_Internal(const WrappedState& State, UPrimitiveComponent* Component) {
+    WrappedState PreviousState = CurrentState;
+
 	History.Empty();
 	AckedFrame = State.FrameNumber;
+
 	CurrentState = State;
+	CurrentState.RemainingAccumulatedTime = PreviousState.RemainingAccumulatedTime;
 
 	// Add here because the simulation is at State.FrameNumber so the next frame will be State.FrameNumber + 1
 	NextFrame = State.FrameNumber + 1;

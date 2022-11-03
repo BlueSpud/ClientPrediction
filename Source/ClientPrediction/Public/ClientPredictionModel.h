@@ -92,7 +92,7 @@ protected:
 	virtual void ApplyState(UPrimitiveComponent* Component, const ModelState& State);
 
 private:
-	static constexpr Chaos::FReal kMaxTimeAdjustment = kFixedDt * 0.05;
+	static constexpr Chaos::FReal kMaxTimeDilationPercent = 0.25;
 
 	TUniquePtr<IClientPredictionModelDriver<InputPacket, ModelState, CueSet>> Driver;
 	bool bIsInitialized = false;
@@ -175,7 +175,8 @@ template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Update(Chaos::FReal RealDt, UPrimitiveComponent* Component) {
 	if (Driver == nullptr) { return; }
 
-	const Chaos::FReal Adjustment = FMath::Clamp(AdjustmentTime, -kMaxTimeAdjustment, kMaxTimeAdjustment);
+	const Chaos::FReal MaxTimeDilation = RealDt * kMaxTimeDilationPercent;
+	const Chaos::FReal Adjustment = FMath::Clamp(AdjustmentTime, -MaxTimeDilation, MaxTimeDilation);
 	AdjustmentTime -= Adjustment;
 
 	AccumulatedTime += RealDt + Adjustment;
