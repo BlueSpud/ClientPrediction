@@ -35,7 +35,6 @@ private:
 	WrappedState CurrentState;
 	ModelState LastState;
 
-	// TODO this needs to be set
 	bool bAuthorityTakesInput = false;
 
 	FAuthorityInputBuffer<FInputPacketWrapper<InputPacket>> InputBuffer;
@@ -44,9 +43,8 @@ private:
 	FClientPredictionRepProxy* SimProxyRep = nullptr;
 };
 
-// TODO fix
 template <typename InputPacket, typename ModelState, typename CueSet>
-ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ClientPredictionAuthorityDriver(bool bAuthorityTakesInput) : bAuthorityTakesInput(false) {}
+ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ClientPredictionAuthorityDriver(bool bAuthorityTakesInput) : bAuthorityTakesInput(bAuthorityTakesInput) {}
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Initialize() {
@@ -74,13 +72,8 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 
 		uint8 FramesSpentInBuffer;
 		if (!InputBuffer.ConsumeInput(CurrentInputPacket, FramesSpentInBuffer)) {
-			UE_LOG(LogTemp, Display, TEXT("Dropped an input packet %d %d"), CurrentInputPacket.PacketNumber, InputBuffer.BufferSize());
+			UE_LOG(LogTemp, Verbose, TEXT("Dropped an input packet %d %d"), CurrentInputPacket.PacketNumber, InputBuffer.BufferSize());
 		}
-
-		if (CurrentState.FrameNumber % static_cast<uint32>(1.0 / kFixedDt) == 0) {
-			UE_LOG(LogTemp, Log, TEXT("Input buffer size %d"), FramesSpentInBuffer);
-		}
-
 	} else {
 		CurrentInputPacket = FInputPacketWrapper<InputPacket>();
 		InputDelegate.ExecuteIfBound(CurrentInputPacket.Packet, CurrentState.State, Dt);

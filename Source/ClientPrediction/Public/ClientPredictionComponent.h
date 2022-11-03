@@ -19,6 +19,7 @@ public:
 	virtual void InitializeComponent() override;
 	virtual void PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) override;
 	virtual void PreNetReceive() override;
+	void CheckOwnerRoleChanged();
 
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -38,8 +39,6 @@ private:
 
 	FNetworkConditions GetNetworkConditions() const;
 
-	void CheckOwnerRoleChanged();
-
 public:
 
 	TUniquePtr<IClientPredictionModel> Model;
@@ -56,7 +55,7 @@ private:
 	class UPrimitiveComponent* UpdatedComponent;
 
 	ENetRole CachedRole = ENetRole::ROLE_None;
-	bool bCachedAuthorityTakesInput = false;
+	uint8 bCachedAuthorityTakesInput = -1;
 
 };
 

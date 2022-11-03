@@ -42,6 +42,19 @@ void UClientPredictionComponent::PreNetReceive() {
 	CheckOwnerRoleChanged();
 }
 
+void UClientPredictionComponent::CheckOwnerRoleChanged() {
+	const AActor* OwnerActor = GetOwner();
+	const ENetRole CurrentRole = OwnerActor->GetLocalRole();
+	const bool bAuthorityTakesInput = OwnerActor->GetNetConnection() == nullptr;
+
+	if (CachedRole == CurrentRole && bCachedAuthorityTakesInput == static_cast<uint8>(bAuthorityTakesInput)) { return; }
+
+	CachedRole = CurrentRole;
+	bCachedAuthorityTakesInput = bAuthorityTakesInput;
+
+	Model->SetNetRole(CurrentRole, bAuthorityTakesInput, AutoProxyRep, SimProxyRep);
+}
+
 void UClientPredictionComponent::BeginPlay() {
 	Super::BeginPlay();
 
@@ -76,19 +89,6 @@ FNetworkConditions UClientPredictionComponent::GetNetworkConditions() const {
 	Conditions.PercentPacketLoss = NetConnection->GetOutLossPercentage().GetLossPercentage();
 
 	return Conditions;
-}
-
-void UClientPredictionComponent::CheckOwnerRoleChanged() {
-	const AActor* OwnerActor = GetOwner();
-	const ENetRole CurrentRole = OwnerActor->GetLocalRole();
-	const bool bAuthorityTakesInput = OwnerActor->GetNetConnection() == nullptr;
-
-	if (CachedRole == CurrentRole || bCachedAuthorityTakesInput == bAuthorityTakesInput) { return; }
-
-	CachedRole = CurrentRole;
-	bCachedAuthorityTakesInput = bAuthorityTakesInput;
-
-	Model->SetNetRole(CachedRole, bAuthorityTakesInput, AutoProxyRep, SimProxyRep);
 }
 
 void UClientPredictionComponent::RecvInputPacket_Implementation(FNetSerializationProxy Proxy) {
