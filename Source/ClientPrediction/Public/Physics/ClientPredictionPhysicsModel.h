@@ -91,6 +91,9 @@ template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Initialize(UPrimitiveComponent* Component) {
 	SimulatedBodyHandle = PhysicsSimulation->CreateActor(ImmediatePhysics::EActorType::DynamicActor, Component->GetBodyInstance(), Component->GetComponentTransform());
 	check(SimulatedBodyHandle);
+
+	Component->SetSimulatePhysics(false);
+
 	SimulatedBodyHandle->SetEnabled(true);
 	PhysicsSimulation->SetNumActiveBodies(1, {0});
 

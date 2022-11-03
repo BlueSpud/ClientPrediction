@@ -38,17 +38,12 @@ private:
 private:
 	/** The number of seconds of interpolation data that is desired to be stored in the buffer. */
 	static constexpr float kDesiredInterpolationBufferTime = kDesiredInterpolationBufferMs / 1000.0;
-	static constexpr float kDesiredInterpolationTooMuchTime = kDesiredInterpolationBufferTime * 1.5;
-	static constexpr float kDesiredInterpolationTooLittleTime = kDesiredInterpolationBufferTime * 0.75;
-
-	/** If for some reason the buffer is far in the future, we will fast forward. */
-	static constexpr float kFastForwardTime = kDesiredInterpolationBufferMs * 3.0;
-
-	/** This is how much time is sped up or slowed down to compensate for a buffer being to large or too small */
-	static constexpr float kTimeDilation = 0.2;
+	static constexpr float kDesiredInterpolationTooMuchTime = kDesiredInterpolationBufferTime * 1.1;
+	static constexpr float kDesiredInterpolationTooLittleTime = kDesiredInterpolationBufferTime * 0.9;
+	static constexpr Chaos::FReal kMaxTimeAdjustment = kFixedDt * 0.05;
 
 	uint32 CurrentFrame = kInvalidFrame;
-	float AccumulatedGameTime = 0.0;
+	Chaos::FReal AccumulatedGameTime = 0.0;
 
 	/**
 	 *The frame number of the last state that was popped off the interpolation buffer.
@@ -64,7 +59,7 @@ ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::Gene
 	if (States.IsEmpty()) { return {}; }
 
 	if (CurrentFrame == kInvalidFrame) {
-		const float TimeInBuffer = static_cast<float>(States.Last().FrameNumber - States[0].FrameNumber) * kFixedDt;
+		const Chaos::FReal TimeInBuffer = static_cast<Chaos::FReal>(States.Last().FrameNumber - States[0].FrameNumber) * kFixedDt;
 		if (TimeInBuffer < kDesiredInterpolationBufferTime) { return States[0].State; }
 
 		CurrentFrame = States[0].FrameNumber;
@@ -74,17 +69,21 @@ ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::Gene
 	}
 
 	// Adjust the playback speed of the buffer based on if there is too much or too little
-	float TimeLeftInBuffer = static_cast<float>(States.Last().FrameNumber - CurrentFrame) * kFixedDt - AccumulatedGameTime;
+	Chaos::FReal TimeLeftInBuffer = static_cast<Chaos::FReal>(States.Last().FrameNumber - CurrentFrame) * kFixedDt - (AccumulatedGameTime + GameDt);
 	if (TimeLeftInBuffer < 0.0) { TimeLeftInBuffer = 0.0; }
 
-	float Timescale = 1.0;
-	if (TimeLeftInBuffer <= kDesiredInterpolationTooLittleTime) { Timescale = 1.0 - kTimeDilation; }
-	if (TimeLeftInBuffer >= kDesiredInterpolationTooMuchTime) { Timescale = 1.0 + kTimeDilation; }
-	AccumulatedGameTime += Timescale * GameDt;
+	Chaos::FReal AdjustmentTime = 0.0;
+	if (TimeLeftInBuffer <= kDesiredInterpolationTooLittleTime) { AdjustmentTime = TimeLeftInBuffer - kDesiredInterpolationTooLittleTime; }
+	if (TimeLeftInBuffer >= kDesiredInterpolationTooMuchTime) { AdjustmentTime = TimeLeftInBuffer - kDesiredInterpolationTooMuchTime; }
+	AdjustmentTime = FMath::Clamp(AdjustmentTime, -kMaxTimeAdjustment, kMaxTimeAdjustment);
 
 	uint32 PreviousFrame = CurrentFrame;
-	CurrentFrame += static_cast<uint32>(AccumulatedGameTime / kFixedDt);
-	AccumulatedGameTime = FMath::Fmod(AccumulatedGameTime, kFixedDt);
+	AccumulatedGameTime += GameDt + AdjustmentTime;
+
+	while (AccumulatedGameTime > kFixedDt) {
+		AccumulatedGameTime -= kFixedDt;
+		++CurrentFrame;
+	}
 
 	// We don't want to go into the future
 	if (CurrentFrame >= States.Last().FrameNumber) {
@@ -94,12 +93,6 @@ ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::Gene
 		States.Empty();
 		States.Add(Last);
 		return Last.State;
-	}
-
-	if (TimeLeftInBuffer >= kFastForwardTime) {
-		UE_LOG(LogTemp, Warning, TEXT("Client is very far behind for a simulated proxy, fast forwarding..."));
-		CurrentFrame += static_cast<uint32>((kFastForwardTime - kDesiredInterpolationBufferTime));
-		AccumulatedGameTime = 0;
 	}
 
 	if (PreviousFrame != CurrentFrame) {
@@ -130,9 +123,9 @@ ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::Gene
 	const WrappedState& StartState = States[0];
 	const WrappedState& EndState = States[1];
 
-	const float TimeDelta = static_cast<float>(EndState.FrameNumber - StartState.FrameNumber);
-	const float Progress = static_cast<float>(CurrentFrame - StartState.FrameNumber) + (AccumulatedGameTime / kFixedDt);
-	const float Alpha = Progress / TimeDelta;
+	const Chaos::FReal TimeDelta = static_cast<Chaos::FReal>(EndState.FrameNumber - StartState.FrameNumber) * kFixedDt;
+	const Chaos::FReal Progress = static_cast<Chaos::FReal>(CurrentFrame - StartState.FrameNumber) * kFixedDt + AccumulatedGameTime;
+	const Chaos::FReal Alpha = Progress / TimeDelta;
 
 	ModelState FinalState = StartState.State;
 	FinalState.Interpolate(Alpha, EndState.State);
