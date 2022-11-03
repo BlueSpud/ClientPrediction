@@ -1,13 +1,10 @@
 ﻿#pragma once
 
-#include "GameFramework/GameStateBase.h"
-#include "Kismet/GameplayStatics.h"
+#include "../ClientPredictionModelDriver.h"
+#include "../ClientPredictionModelTypes.h"
 
-#include "ClientPredictionModelDriver.h"
-#include "ClientPredictionModelTypes.h"
-
-#include "../ClientPredictionNetSerialization.h"
-#include "../AuthorityInputBuffer.h"
+#include "../../ClientPredictionNetSerialization.h"
+#include "../../Input/AuthorityInputBuffer.h"
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 class ClientPredictionAuthorityDriver : public IClientPredictionModelDriver<InputPacket, ModelState, CueSet> {
@@ -79,6 +76,11 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 		if (!InputBuffer.ConsumeInput(CurrentInputPacket, FramesSpentInBuffer)) {
 			UE_LOG(LogTemp, Display, TEXT("Dropped an input packet %d %d"), CurrentInputPacket.PacketNumber, InputBuffer.BufferSize());
 		}
+
+		if (CurrentState.FrameNumber % static_cast<uint32>(1.0 / kFixedDt) == 0) {
+			UE_LOG(LogTemp, Log, TEXT("Input buffer size %d"), FramesSpentInBuffer);
+		}
+
 	} else {
 		CurrentInputPacket = FInputPacketWrapper<InputPacket>();
 		InputDelegate.ExecuteIfBound(CurrentInputPacket.Packet, CurrentState.State, Dt);

@@ -1,11 +1,12 @@
 ﻿#pragma once
 
 #include "ClientPredictionNetSerialization.h"
-#include "Driver/ClientPredictionAuthorityModelDriver.h"
-#include "Driver/ClientPredictionAutoProxyModelDriver.h"
+
+#include "Driver/Drivers/ClientPredictionAuthorityModelDriver.h"
+#include "Driver/Drivers/ClientPredictionAutoProxyModelDriver.h"
+#include "Driver/Drivers/ClientPredictionSimProxyModelDriver.h"
 
 #include "Driver/ClientPredictionModelDriver.h"
-#include "Driver/ClientPredictionSimProxyModelDriver.h"
 
 /**
  * The interface for the client prediction model. This exists so that the prediction component can hold a
@@ -43,7 +44,7 @@ public:
 	/** These are the functions to queue RPC sends. The proxies should use functions that capture by value */
 	TFunction<void(FNetSerializationProxy&)> EmitInputPackets;
 	TFunction<void(FNetSerializationProxy&)> EmitReliableAuthorityState;
-	TFunction<float()> GetRtt;
+	TFunction<FNetworkConditions()> GetNetworkConditions;
 
 };
 
@@ -160,7 +161,7 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::SetNetRole(ENet
 		HandleCue.ExecuteIfBound(State, Cue);
 	};
 
-	Driver->GetRtt = GetRtt;
+	Driver->GetNetworkConditions = GetNetworkConditions;
 	Driver->AdjustTime = [&](const Chaos::FReal Adjustment) {
 		AdjustmentTime = Adjustment;
 	};

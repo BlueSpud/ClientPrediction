@@ -36,7 +36,7 @@ private:
 	UFUNCTION(NetMulticast, Reliable)
 	void RecvReliableAuthorityState(FNetSerializationProxy Proxy);
 
-	float GetRtt() const;
+	FNetworkConditions GetNetworkConditions() const;
 
 	void CheckOwnerRoleChanged();
 
@@ -72,6 +72,6 @@ ModelType* UClientPredictionComponent::CreateModel() {
 		RecvReliableAuthorityState(Proxy);
 	};
 
-	Model->GetRtt = [&]() { return GetRtt(); };
+	Model->GetNetworkConditions = [&]() { return GetNetworkConditions(); };
 	return static_cast<ModelType*>(Model.Get());
 }

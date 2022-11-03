@@ -63,14 +63,19 @@ void UClientPredictionComponent::RecvReliableAuthorityState_Implementation(FNetS
 	Model->ReceiveReliableAuthorityState(Proxy);
 }
 
-float UClientPredictionComponent::GetRtt() const {
+FNetworkConditions UClientPredictionComponent::GetNetworkConditions() const {
 	const AActor* Owner = GetOwner();
-	if (!Owner) { return 0.0f; }
+	if (!Owner) { return {}; }
 
 	const UNetConnection* NetConnection = Owner->GetNetConnection();
-	if (NetConnection == nullptr) { return 0.0f; }
+	if (NetConnection == nullptr) { return {}; }
 
-	return NetConnection->AvgLag;
+	FNetworkConditions Conditions;
+	Conditions.RttMs = NetConnection->AvgLag;
+	Conditions.JitterMs = NetConnection->GetAverageJitterInMS() / 1000.0;
+	Conditions.PercentPacketLoss = NetConnection->GetOutLossPercentage().GetLossPercentage();
+
+	return Conditions;
 }
 
 void UClientPredictionComponent::CheckOwnerRoleChanged() {

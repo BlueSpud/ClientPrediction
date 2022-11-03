@@ -1,11 +1,9 @@
 ﻿#pragma once
 
-#pragma once
+#include "../ClientPredictionModelDriver.h"
+#include "../ClientPredictionModelTypes.h"
 
-#include "ClientPredictionModelDriver.h"
-#include "ClientPredictionModelTypes.h"
-
-#include "../ClientPredictionNetSerialization.h"
+#include "../../ClientPredictionNetSerialization.h"
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 class ClientPredictionSimProxyDriver : public IClientPredictionModelDriver<InputPacket, ModelState, CueSet> {
@@ -20,7 +18,7 @@ public:
 	virtual void Tick(Chaos::FReal Dt, Chaos::FReal RemainingAccumulatedTime, UPrimitiveComponent* Component) override {};
 	virtual ModelState GenerateOutputGameDt(Chaos::FReal Alpha, Chaos::FReal GameDt) override;
 
-	// This should never be called, since GenerateOutputGame
+	// This should never be called, since GenerateOutputGameDt is overriden
 	virtual ModelState GenerateOutput(Chaos::FReal Alpha) override {
 		check(false);
 		return {};

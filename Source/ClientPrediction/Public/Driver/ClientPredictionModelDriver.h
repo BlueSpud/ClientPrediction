@@ -4,6 +4,12 @@
 #include "ClientPredictionNetSerialization.h"
 #include "ClientPredictionRepProxy.h"
 
+struct FNetworkConditions {
+	float RttMs = 0.0;
+	float JitterMs = 0.0;
+	float PercentPacketLoss = 0.0;
+};
+
 /**
  * The interface for the client prediction model driver. This has different implementations based on the net role
  * of the owner of a model.
@@ -58,7 +64,7 @@ public:
 	TFunction<void(const ModelState& State, CueSet Cue)> HandleCue;
 
 	/** These are functions to help adjust the remote based on the server time / input health */
-	TFunction<float()> GetRtt;
+	TFunction<FNetworkConditions()> GetNetworkConditions;
 	TFunction<void(const Chaos::FReal)> AdjustTime;
 };
 
