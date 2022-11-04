@@ -40,7 +40,7 @@ void FPhysicsContext::SetBodySleeping(const bool Sleeping) {
 			!RigidParticle->AngularImpulseVelocity().IsNearlyZero() ||
 			!RigidParticle->LinearImpulseVelocity().IsNearlyZero()) {
 			return;
-			}
+		}
 	}
 
 	if (RigidParticle != nullptr) {

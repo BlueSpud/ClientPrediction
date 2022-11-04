@@ -148,6 +148,7 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Reconcile
 		const Chaos::FReal SimulationTime = NetworkConditions.RttMs + NetworkConditions.JitterMs;
 	    const uint32 SimulationTicks = FMath::CeilToInt(SimulationTime / kFixedDt);
 
+		// TODO these shouldn't sample input packets, they should re-use the last input packet that the server has confirmed
        	ForceSimulate(SimulationTicks, Dt, Component);
 	} else {
 		// Check history against the authority state
@@ -226,6 +227,10 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::BindToRep
 		WrappedState State;
 		State.NetSerialize(Ar);
 		Ar << State.RemainingAccumulatedTime;
+
+		if (State.FrameNumber == kInvalidFrame) {
+			return;
+		}
 
 		if (LastAuthorityState.FrameNumber == kInvalidFrame || State.FrameNumber > LastAuthorityState.FrameNumber) {
 			LastAuthorityState = State;

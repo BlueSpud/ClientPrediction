@@ -148,6 +148,10 @@ void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::ReceiveRel
 
 	Proxy.Deserialize();
 
+	if (State.FrameNumber == kInvalidFrame) {
+		return;
+	}
+
 	// Once CurrentFrame is set, it is assumed that all cues have been handled for that frame. So if this state is before that,
 	// it needs to have the cues dispatched.
 	if (CurrentFrame != kInvalidFrame && State.FrameNumber <= CurrentFrame) {
@@ -167,6 +171,10 @@ void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::BindToRepP
 	SimProxyRep.SerializeFunc = [&](FArchive& Ar) {
 		WrappedState State;
 		State.NetSerialize(Ar);
+
+		if (State.FrameNumber == kInvalidFrame) {
+			return;
+		}
 
 		// Don't add any states that are "in the past"
 		if (LastPoppedFrame != kInvalidFrame && State.FrameNumber <= LastPoppedFrame) {
