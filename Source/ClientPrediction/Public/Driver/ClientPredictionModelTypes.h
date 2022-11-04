@@ -6,10 +6,12 @@ template <typename ModelState>
 struct FModelStateWrapper {
 
 	uint32 FrameNumber = kInvalidFrame;
-	uint32 InputPacketNumber = kInvalidFrame;
 
 	ModelState State;
 	TArray<uint8> Cues;
+
+	// These are only used for auth proxy
+	Chaos::FReal RemainingAccumulatedTime;
 
 	void NetSerialize(FArchive& Ar);
 
@@ -20,7 +22,6 @@ struct FModelStateWrapper {
 template <typename ModelState>
 void FModelStateWrapper<ModelState>::NetSerialize(FArchive& Ar)  {
 	Ar << FrameNumber;
-	Ar << InputPacketNumber;
 	Ar << Cues;
 
 	State.NetSerialize(Ar);
@@ -38,14 +39,12 @@ bool FModelStateWrapper<ModelState>::operator==(const FModelStateWrapper<ModelSt
 		}
 	}
 
-	return InputPacketNumber == Other.InputPacketNumber
-		&& State == Other.State;
+	return State == Other.State;
 }
 
 template <typename ModelState>
 void FModelStateWrapper<ModelState>::Print(FAnsiStringBuilderBase& Builder) const {
 	Builder.Appendf("FrameNumber %d\n", FrameNumber);
-	Builder.Appendf("InputPacketNumber %d\n", InputPacketNumber);
 	Builder.Appendf("Cues TODO\n");
 	State.Print(Builder);
 }
@@ -60,7 +59,6 @@ struct FInputPacketWrapper {
 	 * lockstep with the frames they're generated on due to latency. 
 	 */
 	uint32 PacketNumber = kInvalidFrame;
-
 	InputPacket Packet;
 
 	void NetSerialize(FArchive& Ar);

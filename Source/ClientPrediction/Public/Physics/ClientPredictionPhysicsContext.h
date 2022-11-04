@@ -15,10 +15,12 @@ public:
 		  Component(Component),
 	      PreviousTransform(PreviousTransform) {}
 
-// Dynamic actor methods
-	void AddForce(const FVector& Force, bool bAccelerateChange = false) const;
-	void AddTorqueInRadians(const FVector& Torque, bool bAccelerateChange = false) const;
-	void AddImpulseAtLocation(FVector Impulse, FVector Location) const;
+	// Dynamic actor methods
+	void AddForce(const FVector& Force, bool bAccelerateChange = false);
+	void AddTorqueInRadians(const FVector& Torque, bool bAccelerateChange = false);
+	void AddImpulseAtLocation(FVector Impulse, FVector Location);
+
+	void SetBodySleeping(const bool Sleeping);
 
 	Chaos::FReal GetMass() const;
 	FVector GetInertia() const;
@@ -29,8 +31,6 @@ public:
 
 	FVector GetLinearVelocity() const;
 	FVector GetAngularVelocity() const;
-
-	void SetBodySleeping(const bool Sleeping) const;
 
 	// World query methods
 	// TODO add more

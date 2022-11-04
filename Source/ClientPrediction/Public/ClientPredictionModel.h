@@ -1,11 +1,12 @@
 ﻿#pragma once
 
 #include "ClientPredictionNetSerialization.h"
-#include "Driver/ClientPredictionAuthorityModelDriver.h"
-#include "Driver/ClientPredictionAutoProxyModelDriver.h"
+
+#include "Driver/Drivers/ClientPredictionAuthorityModelDriver.h"
+#include "Driver/Drivers/ClientPredictionAutoProxyModelDriver.h"
+#include "Driver/Drivers/ClientPredictionSimProxyModelDriver.h"
 
 #include "Driver/ClientPredictionModelDriver.h"
-#include "Driver/ClientPredictionSimProxyModelDriver.h"
 
 /**
  * The interface for the client prediction model. This exists so that the prediction component can hold a
@@ -18,12 +19,12 @@ public:
 	IClientPredictionModel() = default;
 	virtual ~IClientPredictionModel() = default;
 
+	virtual void Initialize(UPrimitiveComponent* Component) = 0;
 	virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) = 0;
-	virtual void Initialize(UPrimitiveComponent* Component, ENetRole Role) = 0;
 
 // Simulation ticking
 
-	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) = 0;
+	virtual void Update(Chaos::FReal RealDt, UPrimitiveComponent* Component) = 0;
 
 	/**
 	 * To be called after ticks have been performed and finalizes the output from the model.
@@ -43,6 +44,7 @@ public:
 	/** These are the functions to queue RPC sends. The proxies should use functions that capture by value */
 	TFunction<void(FNetSerializationProxy&)> EmitInputPackets;
 	TFunction<void(FNetSerializationProxy&)> EmitReliableAuthorityState;
+	TFunction<FNetworkConditions()> GetNetworkConditions;
 
 };
 
@@ -59,10 +61,10 @@ public:
 	BaseClientPredictionModel() = default;
 	virtual ~BaseClientPredictionModel() override = default;
 
+	virtual void Initialize(UPrimitiveComponent* Component) override;
 	virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) override final;
-	virtual void Initialize(UPrimitiveComponent* Component, ENetRole Role) override final;
 
-	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override final;
+	virtual void Update(Chaos::FReal RealDt, UPrimitiveComponent* Component) override final;
 
 	virtual void Finalize(Chaos::FReal Alpha, Chaos::FReal DeltaTime, UPrimitiveComponent* Component) override final;
 
@@ -81,11 +83,8 @@ public:
 	FSimulationOutputDelegate OnFinalized;
 
 protected:
-
-	virtual void Initialize(UPrimitiveComponent* Component) = 0;
 	virtual void GenerateInitialState(ModelState& State) = 0;
 
-	virtual void BeginTick(Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component);
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, SimOutput& Output, const InputPacket& Input) = 0;
 	virtual void Rewind(const ModelState& State, UPrimitiveComponent* Component) = 0;
 
@@ -93,9 +92,13 @@ protected:
 	virtual void ApplyState(UPrimitiveComponent* Component, const ModelState& State);
 
 private:
+	static constexpr Chaos::FReal kMaxTimeDilationPercent = 0.05;
 
 	TUniquePtr<IClientPredictionModelDriver<InputPacket, ModelState, CueSet>> Driver;
 	bool bIsInitialized = false;
+
+	Chaos::FReal AccumulatedTime = 0.0;
+	Chaos::FReal AdjustmentTime = 0.0;
 
 };
 
@@ -111,6 +114,15 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::ReceiveReliable
 	if (Driver != nullptr) {
 		Driver->ReceiveReliableAuthorityState(Proxy);
 	}
+}
+
+template <typename InputPacket, typename ModelState, typename CueSet>
+void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Initialize(UPrimitiveComponent* Component) {
+	if (!bIsInitialized) {
+		Driver->Initialize();
+	}
+
+	bIsInitialized = true;
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
@@ -141,10 +153,6 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::SetNetRole(ENet
 		Simulate(Dt, Component, PrevState, Output, Input);
 	};
 
-	Driver->BeginTick = [&](Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component) {
-		BeginTick(Dt, State, Component);
-	};
-
 	Driver->Rewind = [&](const ModelState& State, UPrimitiveComponent* Component) {
 		Rewind(State, Component);
 	};
@@ -153,26 +161,31 @@ void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::SetNetRole(ENet
 		HandleCue.ExecuteIfBound(State, Cue);
 	};
 
+	Driver->GetNetworkConditions = GetNetworkConditions;
+	Driver->AdjustTime = [&](const Chaos::FReal Adjustment) {
+		AdjustmentTime = Adjustment;
+	};
+
 	if (bIsInitialized) {
 		Driver->Initialize();
 	}
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Initialize(UPrimitiveComponent* Component, ENetRole Role) {
-	Initialize(Component);
-	Driver->Initialize();
-
-	bIsInitialized = true;
-}
-
-template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::BeginTick(Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component) {}
-
-template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
+void BaseClientPredictionModel<InputPacket, ModelState, CueSet>::Update(Chaos::FReal RealDt, UPrimitiveComponent* Component) {
 	if (Driver == nullptr) { return; }
-	Driver->Tick(Dt, Component);
+
+	const Chaos::FReal MaxTimeDilation = RealDt * kMaxTimeDilationPercent;
+	const Chaos::FReal Adjustment = FMath::Clamp(AdjustmentTime, -MaxTimeDilation, MaxTimeDilation);
+	AdjustmentTime -= Adjustment;
+
+	AccumulatedTime += RealDt + Adjustment;
+	while (AccumulatedTime >= kFixedDt) {
+		AccumulatedTime = FMath::Clamp(AccumulatedTime - kFixedDt, 0.0, AccumulatedTime);
+		Driver->Tick(kFixedDt, AccumulatedTime, Component);
+	}
+
+	Finalize(AccumulatedTime / kFixedDt, RealDt, Component);
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>

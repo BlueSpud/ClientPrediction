@@ -1,10 +1,10 @@
 ﻿#pragma once
 
-#include "ClientPredictionModelDriver.h"
-#include "ClientPredictionModelTypes.h"
+#include "../ClientPredictionModelDriver.h"
+#include "../ClientPredictionModelTypes.h"
 
-#include "../ClientPredictionNetSerialization.h"
-#include "../Input.h"
+#include "../../ClientPredictionNetSerialization.h"
+#include "../../Input/AuthorityInputBuffer.h"
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 class ClientPredictionAuthorityDriver : public IClientPredictionModelDriver<InputPacket, ModelState, CueSet> {
@@ -17,7 +17,7 @@ public:
 	// Simulation ticking
 
 	virtual void Initialize() override;
-	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) override;
+	virtual void Tick(Chaos::FReal Dt, Chaos::FReal RemainingAccumulatedTime, UPrimitiveComponent* Component) override;
 	virtual ModelState GenerateOutput(Chaos::FReal Alpha) override;
 
 	// Input packet / state receiving
@@ -27,26 +27,24 @@ public:
 
 private:
 
-	uint32 NextFrame = 0;
+	uint32 NextFrame = kInvalidFrame;
 
 	/** Input packet used for the current frame */
-	uint32 CurrentInputPacketIdx = kInvalidFrame;
 	FInputPacketWrapper<InputPacket> CurrentInputPacket;
 
 	WrappedState CurrentState;
 	ModelState LastState;
 
-	bool bTakesInput = false;
-	FInputBuffer<FInputPacketWrapper<InputPacket>> InputBuffer;
+	bool bAuthorityTakesInput = false;
+
+	FAuthorityInputBuffer<FInputPacketWrapper<InputPacket>> InputBuffer;
 
 	FClientPredictionRepProxy* AutoProxyRep = nullptr;
 	FClientPredictionRepProxy* SimProxyRep = nullptr;
 };
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ClientPredictionAuthorityDriver(bool bTakesInput) : bTakesInput(bTakesInput) {
-	InputBuffer.SetAuthorityTargetBufferSize(kAuthorityTargetInputBufferSize);
-}
+ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ClientPredictionAuthorityDriver(bool bAuthorityTakesInput) : bAuthorityTakesInput(bAuthorityTakesInput) {}
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Initialize() {
@@ -55,21 +53,27 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Initializ
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) {
+void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, Chaos::FReal RemainingAccumulatedTime, UPrimitiveComponent* Component) {
+	if (!bAuthorityTakesInput && NextFrame == kInvalidFrame && InputBuffer.BufferSize() == 0) {
+		return;
+	}
+
+	if (NextFrame == kInvalidFrame) {
+		NextFrame = 0;
+	}
+
+	// Pre tick
 	LastState = CurrentState.State;
-
-	// Pre-tick
 	CurrentState.FrameNumber = NextFrame++;
+	CurrentState.RemainingAccumulatedTime = RemainingAccumulatedTime;
 	CurrentState.Cues.Empty();
-	BeginTick(Dt, CurrentState.State, Component);
 
-	if (!bTakesInput) {
-		if (CurrentInputPacketIdx != kInvalidFrame || InputBuffer.AuthorityBufferSize() > InputBuffer.GetAuthorityTargetBufferSize()) {
-			InputBuffer.ConsumeInputAuthority(CurrentInputPacket);
-			CurrentInputPacketIdx = CurrentInputPacket.PacketNumber;
+	if (!bAuthorityTakesInput) {
+
+		uint8 FramesSpentInBuffer;
+		if (!InputBuffer.ConsumeInput(CurrentInputPacket, FramesSpentInBuffer)) {
+			UE_LOG(LogTemp, Verbose, TEXT("Dropped an input packet %d %d"), CurrentInputPacket.PacketNumber, InputBuffer.BufferSize());
 		}
-
-		CurrentState.InputPacketNumber = CurrentInputPacketIdx;
 	} else {
 		CurrentInputPacket = FInputPacketWrapper<InputPacket>();
 		InputDelegate.ExecuteIfBound(CurrentInputPacket.Packet, CurrentState.State, Dt);
@@ -114,7 +118,7 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::ReceiveIn
 
 	Proxy.Deserialize();
 	for (const FInputPacketWrapper<InputPacket>& Packet : Packets) {
-		InputBuffer.QueueInputAuthority(Packet);
+		InputBuffer.QueueInput(Packet);
 	}
 }
 
@@ -125,6 +129,7 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::BindToRep
 
 	AutoProxyRep->SerializeFunc = [&](FArchive& Ar) {
 		CurrentState.NetSerialize(Ar);
+		Ar << CurrentState.RemainingAccumulatedTime;
 	};
 
 	SimProxyRep->SerializeFunc = [&](FArchive& Ar) {

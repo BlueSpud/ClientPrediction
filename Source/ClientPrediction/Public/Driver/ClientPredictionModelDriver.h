@@ -4,6 +4,12 @@
 #include "ClientPredictionNetSerialization.h"
 #include "ClientPredictionRepProxy.h"
 
+struct FNetworkConditions {
+	float RttMs = 0.0;
+	float JitterMs = 0.0;
+	float PercentPacketLoss = 0.0;
+};
+
 /**
  * The interface for the client prediction model driver. This has different implementations based on the net role
  * of the owner of a model.
@@ -20,7 +26,7 @@ public:
 
 	/** To be called after all of the delegate functions are set */
 	virtual void Initialize() {};
-	virtual void Tick(Chaos::FReal Dt, UPrimitiveComponent* Component) = 0;
+	virtual void Tick(Chaos::FReal Dt, Chaos::FReal RemainingAccumulatedTime, UPrimitiveComponent* Component) = 0;
 
 	/**
 	 * To be called after ticks have been performed and finalizes the output from the model. By default,
@@ -29,7 +35,7 @@ public:
 	 * @param GameDt The GAME time that has elapsed since the last call to GenerateOutputGameDt.
 	 */
 	virtual ModelState GenerateOutputGameDt(Chaos::FReal Alpha, Chaos::FReal GameDt);
-	
+
 	/**
 	 * To be called after ticks have been performed and finalizes the output from the model.
 	 * @param Alpha The percentage that time is between the current tick and the next tick.
@@ -55,8 +61,11 @@ public:
 	TFunction<void(ModelState& State)> GenerateInitialState;
 	TFunction<void(Chaos::FReal Dt, UPrimitiveComponent* Component, const ModelState& PrevState, FSimulationOutput<ModelState, CueSet>& Output, const InputPacket& Input)> Simulate;
 	TFunction<void(const ModelState& State, UPrimitiveComponent* Component)> Rewind;
-	TFunction<void(Chaos::FReal Dt, ModelState& State, UPrimitiveComponent* Component)> BeginTick;
 	TFunction<void(const ModelState& State, CueSet Cue)> HandleCue;
+
+	/** These are functions to help adjust the remote based on the server time / input health */
+	TFunction<FNetworkConditions()> GetNetworkConditions;
+	TFunction<void(const Chaos::FReal)> AdjustTime;
 };
 
 template <typename InputPacket, typename ModelState, typename CueSet>

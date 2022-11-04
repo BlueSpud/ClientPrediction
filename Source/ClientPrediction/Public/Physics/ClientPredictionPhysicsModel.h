@@ -32,19 +32,20 @@ public:
 	BaseClientPredictionPhysicsModel();
 	virtual ~BaseClientPredictionPhysicsModel() override;
 
-protected:
 	virtual void Initialize(UPrimitiveComponent* Component) override final;
+
+protected:
 	virtual void InitializeModel(UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle);
 
 	virtual void GenerateInitialState(FPhysicsStateWrapper<ModelState>& State) override final;
 	virtual void GenerateInitialModelState(ModelState& State);
 
-	virtual void BeginTick(Chaos::FReal Dt, FPhysicsStateWrapper<ModelState>& State, UPrimitiveComponent* Component) override;
 	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const WrappedModelState& PrevState, SimOutput& Output, const InputPacket& Input) override final;
 	virtual void Rewind(const WrappedModelState& State, UPrimitiveComponent* Component) override final;
 
 	// Should be implemented by child classes
-	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const FPhysicsContext& Context, const ModelState& PrevState, PhysicsSimOutput& Output, const InputPacket& Input);
+	virtual void SimulatePhysics(Chaos::FReal Dt, UPrimitiveComponent* Component, FPhysicsContext& Context, const ModelState& PrevState, PhysicsSimOutput& Output, const InputPacket& Input);
+	virtual void PostSimulatePhysics(Chaos::FReal Dt, UPrimitiveComponent* Component, const FPhysicsContext& Context, const ModelState& PrevState, PhysicsSimOutput& Output, const InputPacket& Input);
 
 	virtual void ApplyState(UPrimitiveComponent* Component, const WrappedModelState& State) override;
 
@@ -90,6 +91,9 @@ template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Initialize(UPrimitiveComponent* Component) {
 	SimulatedBodyHandle = PhysicsSimulation->CreateActor(ImmediatePhysics::EActorType::DynamicActor, Component->GetBodyInstance(), Component->GetComponentTransform());
 	check(SimulatedBodyHandle);
+
+	Component->SetSimulatePhysics(false);
+
 	SimulatedBodyHandle->SetEnabled(true);
 	PhysicsSimulation->SetNumActiveBodies(1, {0});
 
@@ -109,21 +113,19 @@ template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::GenerateInitialModelState(ModelState& State) {}
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::BeginTick(Chaos::FReal Dt, FPhysicsStateWrapper<ModelState>& State, UPrimitiveComponent* Component) {
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const WrappedModelState& PrevState, SimOutput& Output, const InputPacket& Input) {
+	PhysicsSimOutput PhysicsOutput(Output);
+	FPhysicsContext Context(SimulatedBodyHandle, Component, FTransform(PrevState.PhysicsState.Rotation, PrevState.PhysicsState.Location));
+	SimulatePhysics(Dt, Component, Context, PrevState.State, PhysicsOutput, Input);
+
 	UpdateWorld(Component);
 
 	PhysicsSimulation->SetSolverSettings(Dt, -1.0, -1.0f, 5, 5, 5);
 	PhysicsSimulation->Simulate(Dt, 1.0, 1, FVector(0.0, 0.0, -980.0));
 
-	FillPhysicsState(State);
-}
+	FillPhysicsState(Output.State());
 
-template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const WrappedModelState& PrevState, SimOutput& Output, const InputPacket& Input) {
-	FPhysicsContext Context(SimulatedBodyHandle, Component, FTransform(PrevState.PhysicsState.Rotation, PrevState.PhysicsState.Location));
-	FPhysicsSimulationOutput<ModelState, CueSet> PhysicsOutput(Output);
-
-	Simulate(Dt, Component, Context, PrevState.State, PhysicsOutput, Input);
+	PostSimulatePhysics(Dt, Component, Context, PrevState.State, PhysicsOutput, Input);
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
@@ -132,7 +134,10 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Rewind(c
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const FPhysicsContext& Context, const ModelState& PrevState, PhysicsSimOutput& Output, const InputPacket& Input) {}
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::SimulatePhysics(Chaos::FReal Dt, UPrimitiveComponent* Component, FPhysicsContext& Context, const ModelState& PrevState, PhysicsSimOutput& Output, const InputPacket& Input) {}
+
+template <typename InputPacket, typename ModelState, typename CueSet>
+void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::PostSimulatePhysics(Chaos::FReal Dt, UPrimitiveComponent* Component,  const FPhysicsContext& Context, const ModelState& PrevState, PhysicsSimOutput& Output, const InputPacket& Input) {}
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::ApplyState(UPrimitiveComponent* Component, const WrappedModelState& State) {

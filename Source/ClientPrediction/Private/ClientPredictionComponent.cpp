@@ -42,9 +42,24 @@ void UClientPredictionComponent::PreNetReceive() {
 	CheckOwnerRoleChanged();
 }
 
+void UClientPredictionComponent::CheckOwnerRoleChanged() {
+	const AActor* OwnerActor = GetOwner();
+	const ENetRole CurrentRole = OwnerActor->GetLocalRole();
+	const bool bAuthorityTakesInput = OwnerActor->GetNetConnection() == nullptr;
+
+	if (CachedRole == CurrentRole && bCachedAuthorityTakesInput == static_cast<uint8>(bAuthorityTakesInput)) { return; }
+
+	CachedRole = CurrentRole;
+	bCachedAuthorityTakesInput = bAuthorityTakesInput;
+
+	Model->SetNetRole(CurrentRole, bAuthorityTakesInput, AutoProxyRep, SimProxyRep);
+}
+
 void UClientPredictionComponent::BeginPlay() {
 	Super::BeginPlay();
-	Model->Initialize(UpdatedComponent, GetOwnerRole());
+
+	CheckOwnerRoleChanged();
+	Model->Initialize(UpdatedComponent);
 }
 
 void UClientPredictionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
@@ -54,28 +69,26 @@ void UClientPredictionComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
 void UClientPredictionComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	AccumulatedTime += DeltaTime;
-	while (AccumulatedTime >= kFixedDt) {
-		AccumulatedTime = FMath::Clamp(AccumulatedTime - kFixedDt, 0.0, AccumulatedTime);
-		Model->Tick(kFixedDt, UpdatedComponent);
-	}
-
-	Model->Finalize(AccumulatedTime / kFixedDt, DeltaTime, UpdatedComponent);
+	Model->Update(DeltaTime, UpdatedComponent);
 }
 
 void UClientPredictionComponent::RecvReliableAuthorityState_Implementation(FNetSerializationProxy Proxy) {
 	Model->ReceiveReliableAuthorityState(Proxy);
 }
 
-void UClientPredictionComponent::CheckOwnerRoleChanged() {
-	const AActor* OwnerActor = GetOwner();
-	const ENetRole CurrentRole = OwnerActor->GetLocalRole();
-	const bool bHasNetConnection = OwnerActor->GetNetConnection() != nullptr;
+FNetworkConditions UClientPredictionComponent::GetNetworkConditions() const {
+	const AActor* Owner = GetOwner();
+	if (!Owner) { return {}; }
 
-	if (CachedRole == CurrentRole) { return; }
-	CachedRole = CurrentRole;
+	const UNetConnection* NetConnection = Owner->GetNetConnection();
+	if (NetConnection == nullptr) { return {}; }
 
-	Model->SetNetRole(CachedRole, !bHasNetConnection, AutoProxyRep, SimProxyRep);
+	FNetworkConditions Conditions;
+	Conditions.RttMs = NetConnection->AvgLag;
+	Conditions.JitterMs = NetConnection->GetAverageJitterInMS() / 1000.0;
+	Conditions.PercentPacketLoss = NetConnection->GetOutLossPercentage().GetLossPercentage();
+
+	return Conditions;
 }
 
 void UClientPredictionComponent::RecvInputPacket_Implementation(FNetSerializationProxy Proxy) {

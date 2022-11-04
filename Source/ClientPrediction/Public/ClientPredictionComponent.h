@@ -2,7 +2,6 @@
 
 #include "ClientPredictionNetSerialization.h"
 #include "ClientPredictionModel.h"
-#include "Input.h"
 #include "Driver/ClientPredictionRepProxy.h"
 
 #include "ClientPredictionComponent.generated.h"
@@ -20,6 +19,7 @@ public:
 	virtual void InitializeComponent() override;
 	virtual void PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) override;
 	virtual void PreNetReceive() override;
+	void CheckOwnerRoleChanged();
 
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -37,7 +37,7 @@ private:
 	UFUNCTION(NetMulticast, Reliable)
 	void RecvReliableAuthorityState(FNetSerializationProxy Proxy);
 
-	void CheckOwnerRoleChanged();
+	FNetworkConditions GetNetworkConditions() const;
 
 public:
 
@@ -54,8 +54,8 @@ private:
 	UPROPERTY()
 	class UPrimitiveComponent* UpdatedComponent;
 
-	double AccumulatedTime = 0.0;
 	ENetRole CachedRole = ENetRole::ROLE_None;
+	uint8 bCachedAuthorityTakesInput = -1;
 
 };
 
@@ -71,5 +71,6 @@ ModelType* UClientPredictionComponent::CreateModel() {
 		RecvReliableAuthorityState(Proxy);
 	};
 
+	Model->GetNetworkConditions = [&]() { return GetNetworkConditions(); };
 	return static_cast<ModelType*>(Model.Get());
 }
