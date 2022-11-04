@@ -12,6 +12,7 @@ class ClientPredictionSimProxyDriver : public IClientPredictionModelDriver<Input
 public:
 
 	ClientPredictionSimProxyDriver() = default;
+	virtual void Initialize() override;
 
 	// Simulation ticking
 
@@ -33,6 +34,7 @@ public:
 
 private:
 
+	void ProcessAuthorityState(const WrappedState& State);
 	void DispatchCues(const WrappedState& State);
 
 private:
@@ -40,7 +42,8 @@ private:
 	static constexpr float kDesiredInterpolationBufferTime = kDesiredInterpolationBufferMs / 1000.0;
 	static constexpr float kDesiredInterpolationTooMuchTime = kDesiredInterpolationBufferTime * 1.1;
 	static constexpr float kDesiredInterpolationTooLittleTime = kDesiredInterpolationBufferTime * 0.9;
-	static constexpr Chaos::FReal kMaxTimeAdjustment = kFixedDt * 0.05;
+	static constexpr Chaos::FReal kFastForwardTime = kDesiredInterpolationBufferTime * 2.0;
+	static constexpr Chaos::FReal kMaxTimeDilationPercent = 0.20;
 
 	uint32 CurrentFrame = kInvalidFrame;
 	Chaos::FReal AccumulatedGameTime = 0.0;
@@ -52,11 +55,17 @@ private:
 	uint32 LastPoppedFrame = kInvalidFrame;
 
 	TArray<WrappedState> States;
+	ModelState InitialState;
 };
 
 template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::Initialize() {
+	GenerateInitialState(InitialState);
+}
+
+template <typename InputPacket, typename ModelState, typename CueSet>
 ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::GenerateOutputGameDt(Chaos::FReal ModelAlpha, Chaos::FReal GameDt) {
-	if (States.IsEmpty()) { return {}; }
+	if (States.IsEmpty()) { return InitialState; }
 
 	if (CurrentFrame == kInvalidFrame) {
 		const Chaos::FReal TimeInBuffer = static_cast<Chaos::FReal>(States.Last().FrameNumber - States[0].FrameNumber) * kFixedDt;
@@ -72,10 +81,18 @@ ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::Gene
 	Chaos::FReal TimeLeftInBuffer = static_cast<Chaos::FReal>(States.Last().FrameNumber - CurrentFrame) * kFixedDt - (AccumulatedGameTime + GameDt);
 	if (TimeLeftInBuffer < 0.0) { TimeLeftInBuffer = 0.0; }
 
+	// Adjust the speed that time is ticking to try to keep the buffer at the target
 	Chaos::FReal AdjustmentTime = 0.0;
 	if (TimeLeftInBuffer <= kDesiredInterpolationTooLittleTime) { AdjustmentTime = TimeLeftInBuffer - kDesiredInterpolationTooLittleTime; }
 	if (TimeLeftInBuffer >= kDesiredInterpolationTooMuchTime) { AdjustmentTime = TimeLeftInBuffer - kDesiredInterpolationTooMuchTime; }
-	AdjustmentTime = FMath::Clamp(AdjustmentTime, -kMaxTimeAdjustment, kMaxTimeAdjustment);
+
+	const Chaos::FReal MaxTimeDilation = GameDt * kMaxTimeDilationPercent;
+	AdjustmentTime = FMath::Clamp(AdjustmentTime, -MaxTimeDilation, MaxTimeDilation);
+
+	// If there is far too much time in the buffer, just fast forward
+	if (TimeLeftInBuffer > kFastForwardTime) {
+		AdjustmentTime = (TimeLeftInBuffer - kFastForwardTime);
+	}
 
 	uint32 PreviousFrame = CurrentFrame;
 	AccumulatedGameTime += GameDt + AdjustmentTime;
@@ -147,7 +164,21 @@ void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::ReceiveRel
 	};
 
 	Proxy.Deserialize();
+	ProcessAuthorityState(State);
+}
 
+template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::BindToRepProxies(FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) {
+	SimProxyRep.SerializeFunc = [&](FArchive& Ar) {
+		WrappedState State;
+		State.NetSerialize(Ar);
+
+		ProcessAuthorityState(State);
+	};
+}
+
+template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::ProcessAuthorityState(const WrappedState& State) {
 	if (State.FrameNumber == kInvalidFrame) {
 		return;
 	}
@@ -158,38 +189,16 @@ void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::ReceiveRel
 		DispatchCues(State);
 	}
 
-	// This is sent from an RPC (since it is reliable) and therefore might be out of order in relation to what comes out of the replication proxy (which is a property).
-	// Just in case, we sort all of the states.
+	// Don't add any states that are "in the past"
+	if (LastPoppedFrame != kInvalidFrame && State.FrameNumber <= LastPoppedFrame) {
+		UE_LOG(LogTemp, Log, TEXT("Ignoring state that was in the past"));
+		return;
+	}
+
 	States.Add(State);
 	States.Sort([](const WrappedState& A, const WrappedState& B) {
 		return A.FrameNumber < B.FrameNumber;
 	});
-}
-
-template <typename InputPacket, typename ModelState, typename CueSet>
-void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::BindToRepProxies(FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) {
-	SimProxyRep.SerializeFunc = [&](FArchive& Ar) {
-		WrappedState State;
-		State.NetSerialize(Ar);
-
-		if (State.FrameNumber == kInvalidFrame) {
-			return;
-		}
-
-		// Don't add any states that are "in the past"
-		if (LastPoppedFrame != kInvalidFrame && State.FrameNumber <= LastPoppedFrame) {
-			UE_LOG(LogTemp, Log, TEXT("Ignoring state that was in the past"));
-			return;
-		}
-
-		// Once CurrentFrame is set, it is assumed that all cues have been handled for that frame. So if this state is before that,
-		// it needs to have the cues dispatched.
-		if (CurrentFrame != kInvalidFrame && State.FrameNumber <= CurrentFrame) {
-			DispatchCues(State);
-		}
-
-		States.Add(State);
-	};
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>

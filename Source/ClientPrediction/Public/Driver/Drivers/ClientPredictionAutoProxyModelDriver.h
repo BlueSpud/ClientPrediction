@@ -181,7 +181,7 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Reconcile
 			const FString AuthorityString = StringCast<TCHAR>(AuthorityBuilder.ToString()).Get();
 
 			UE_LOG(LogTemp, Warning, TEXT("\nRewinding and resimulating from frame %i."), LastAuthorityState.FrameNumber);
-			UE_LOG(LogTemp, Verbose, TEXT("Client\n%s\nAuthority\n%s\n"), *HistoricString, *AuthorityString);
+			UE_LOG(LogTemp, Display, TEXT("Client\n%s\nAuthority\n%s\n"), *HistoricString, *AuthorityString);
 
 			Rewind_Internal(LastAuthorityState, Component);
 			ForceSimulate(InputBuffer.BufferSize(), Dt, Component);

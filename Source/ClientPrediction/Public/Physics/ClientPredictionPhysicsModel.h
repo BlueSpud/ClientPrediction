@@ -98,6 +98,7 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Initiali
 	PhysicsSimulation->SetNumActiveBodies(1, {0});
 
 	InitializeModel(Component, SimulatedBodyHandle);
+	BaseClientPredictionModel<InputPacket, FPhysicsStateWrapper<ModelState>, CueSet>::Initialize(Component);
 }
 
 template <typename InputPacket, typename ModelState, typename CueSet>
@@ -115,6 +116,7 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Generate
 template <typename InputPacket, typename ModelState, typename CueSet>
 void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const WrappedModelState& PrevState, SimOutput& Output, const InputPacket& Input) {
 	PhysicsSimOutput PhysicsOutput(Output);
+
 	FPhysicsContext Context(SimulatedBodyHandle, Component, FTransform(PrevState.PhysicsState.Rotation, PrevState.PhysicsState.Location));
 	SimulatePhysics(Dt, Component, Context, PrevState.State, PhysicsOutput, Input);
 
