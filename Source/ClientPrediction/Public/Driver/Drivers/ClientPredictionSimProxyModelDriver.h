@@ -40,10 +40,10 @@ private:
 private:
 	/** The number of seconds of interpolation data that is desired to be stored in the buffer. */
 	static constexpr float kDesiredInterpolationBufferTime = kDesiredInterpolationBufferMs / 1000.0;
-	static constexpr float kDesiredInterpolationTooMuchTime = kDesiredInterpolationBufferTime * 1.1;
-	static constexpr float kDesiredInterpolationTooLittleTime = kDesiredInterpolationBufferTime * 0.9;
+	static constexpr float kDesiredInterpolationTooMuchTime = kDesiredInterpolationBufferTime + kFixedDt * 2.0;
+	static constexpr float kDesiredInterpolationTooLittleTime = kDesiredInterpolationBufferTime - kFixedDt * 2.0;
 	static constexpr Chaos::FReal kFastForwardTime = kDesiredInterpolationBufferTime * 2.0;
-	static constexpr Chaos::FReal kMaxTimeDilationPercent = 0.20;
+	static constexpr Chaos::FReal kMaxTimeDilationPercent = 0.05;
 
 	uint32 CurrentFrame = kInvalidFrame;
 	Chaos::FReal AccumulatedGameTime = 0.0;
@@ -102,6 +102,14 @@ ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::Gene
 		++CurrentFrame;
 	}
 
+	if (PreviousFrame != CurrentFrame) {
+		for (const WrappedState& State : States) {
+			if (State.FrameNumber > PreviousFrame && State.FrameNumber <= CurrentFrame) {
+				DispatchCues(State);
+			}
+		}
+	}
+
 	// We don't want to go into the future
 	if (CurrentFrame >= States.Last().FrameNumber) {
 		WrappedState Last = States.Last();
@@ -110,14 +118,6 @@ ModelState ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::Gene
 		States.Empty();
 		States.Add(Last);
 		return Last.State;
-	}
-
-	if (PreviousFrame != CurrentFrame) {
-		for (const WrappedState& State : States) {
-			if (State.FrameNumber > PreviousFrame && State.FrameNumber <= CurrentFrame) {
-				DispatchCues(State);
-			}
-		}
 	}
 
 	// Figure out where in the buffer we are
