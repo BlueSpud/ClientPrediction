@@ -183,9 +183,12 @@ void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::ProcessAut
 		return;
 	}
 
+	WrappedState* ExistingState = States.FindByPredicate([&](const WrappedState& Candidate) { return Candidate.FrameNumber == State.FrameNumber; });
+	if (ExistingState != nullptr) { return; }
+
 	// Once CurrentFrame is set, it is assumed that all cues have been handled for that frame. So if this state is before that,
 	// it needs to have the cues dispatched.
-	if (CurrentFrame != kInvalidFrame && State.FrameNumber <= CurrentFrame) {
+	if (CurrentFrame != kInvalidFrame && State.FrameNumber < CurrentFrame) {
 		DispatchCues(State);
 	}
 
