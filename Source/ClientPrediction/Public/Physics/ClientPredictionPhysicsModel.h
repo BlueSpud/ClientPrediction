@@ -15,7 +15,7 @@ static constexpr uint32 kActorLifetime = 30;
 static constexpr float kSimulationQueryRange = 10000.0;
 
 struct CLIENTPREDICTION_API FEmptyState {
-	void NetSerialize(FArchive& Ar) {}
+	void NetSerialize(FArchive& Ar, bool bSerializeFullState) {}
 	void Rewind(class UPrimitiveComponent* Component) const {}
 	void Interpolate(float Alpha, const FEmptyState& Other) {}
 	bool operator ==(const FEmptyState& Other) const { return true; }

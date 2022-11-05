@@ -13,18 +13,18 @@ struct FModelStateWrapper {
 	// These are only used for auth proxy
 	Chaos::FReal RemainingAccumulatedTime;
 
-	void NetSerialize(FArchive& Ar);
+	void NetSerialize(FArchive& Ar, bool bSerializeFullState);
 
 	bool operator ==(const FModelStateWrapper<ModelState>& Other) const;
 	void Print(FAnsiStringBuilderBase& Builder) const;
 };
 
 template <typename ModelState>
-void FModelStateWrapper<ModelState>::NetSerialize(FArchive& Ar)  {
+void FModelStateWrapper<ModelState>::NetSerialize(FArchive& Ar, bool bSerializeFullState)  {
 	Ar << FrameNumber;
 	Ar << Cues;
 
-	State.NetSerialize(Ar);
+	State.NetSerialize(Ar, bSerializeFullState);
 }
 
 template <typename ModelState>

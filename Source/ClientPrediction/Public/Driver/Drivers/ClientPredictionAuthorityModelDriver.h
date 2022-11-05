@@ -95,7 +95,7 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 		// Reliably dispatch the state
 		FNetSerializationProxy Proxy;
 		Proxy.NetSerializeFunc = [=](FArchive& Ar) {
-			CurrentState.NetSerialize(Ar);
+			CurrentState.NetSerialize(Ar, true);
 		};
 
 		EmitReliableAuthorityState(Proxy);
@@ -128,11 +128,11 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::BindToRep
 	SimProxyRep = &NewSimProxyRep;
 
 	AutoProxyRep->SerializeFunc = [&](FArchive& Ar) {
-		CurrentState.NetSerialize(Ar);
+		CurrentState.NetSerialize(Ar, true);
 		Ar << CurrentState.RemainingAccumulatedTime;
 	};
 
 	SimProxyRep->SerializeFunc = [&](FArchive& Ar) {
-		CurrentState.NetSerialize(Ar);
+		CurrentState.NetSerialize(Ar, false);
 	};
 }

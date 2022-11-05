@@ -160,7 +160,7 @@ void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::ReceiveRel
 	WrappedState State;
 
 	Proxy.NetSerializeFunc = [&](FArchive& Ar) {
-		State.NetSerialize(Ar);
+		State.NetSerialize(Ar, true);
 	};
 
 	Proxy.Deserialize();
@@ -171,7 +171,7 @@ template <typename InputPacket, typename ModelState, typename CueSet>
 void ClientPredictionSimProxyDriver<InputPacket, ModelState, CueSet>::BindToRepProxies(FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) {
 	SimProxyRep.SerializeFunc = [&](FArchive& Ar) {
 		WrappedState State;
-		State.NetSerialize(Ar);
+		State.NetSerialize(Ar, false);
 
 		ProcessAuthorityState(State);
 	};

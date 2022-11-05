@@ -61,7 +61,7 @@ struct FPhysicsStateWrapper {
 	ModelState State;
 	FPhysicsState PhysicsState;
 
-	void NetSerialize(FArchive& Ar);
+	void NetSerialize(FArchive& Ar, bool bSerializeFullState);
 
 	void Rewind(class UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) const;
 	void Interpolate(float Alpha, const FPhysicsStateWrapper& Other);
@@ -71,8 +71,8 @@ struct FPhysicsStateWrapper {
 };
 
 template <typename ModelState>
-void FPhysicsStateWrapper<ModelState>::NetSerialize(FArchive& Ar) {
-	State.NetSerialize(Ar);
+void FPhysicsStateWrapper<ModelState>::NetSerialize(FArchive& Ar, bool bSerializeFullState) {
+	State.NetSerialize(Ar, bSerializeFullState);
 	PhysicsState.NetSerialize(Ar);
 }
 

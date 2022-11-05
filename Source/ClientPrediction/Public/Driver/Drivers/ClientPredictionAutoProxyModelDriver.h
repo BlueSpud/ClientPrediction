@@ -225,7 +225,7 @@ template <typename InputPacket, typename ModelState, typename CueSet>
 void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::BindToRepProxies(FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) {
 	AutoProxyRep.SerializeFunc = [&](FArchive& Ar) {
 		WrappedState State;
-		State.NetSerialize(Ar);
+		State.NetSerialize(Ar, true);
 		Ar << State.RemainingAccumulatedTime;
 
 		if (State.FrameNumber == kInvalidFrame) {
