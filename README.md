@@ -12,3 +12,5 @@ Moreover, ClientPrediction performs rollback per-actor, so a rollback also won't
 Immediate mode physics makes several trade offs, namely that the simulation is running in a copy of the main physics scene. 
 ClientPrediction is ideal for a game where a single actor is controlled by the player and where collision between players is rare / not critical.
 
+## Stats
+There are some statistics that can be displayed about ClientPrediction by inserting a `#declare CLIENT_PREDICTION_STATS` statement before including ClientPrediction files and then using the command `stat ClientPrediction` from the Unreal Console. 

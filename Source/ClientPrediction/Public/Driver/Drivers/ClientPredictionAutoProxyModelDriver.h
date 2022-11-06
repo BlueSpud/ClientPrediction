@@ -2,9 +2,16 @@
 
 #include "../ClientPredictionModelDriver.h"
 #include "../ClientPredictionModelTypes.h"
+#include "ClientPredictionStats.h"
 
 #include "../../ClientPredictionNetSerialization.h"
 #include "../../Input/AutoProxyInputBuffer.h"
+
+#ifdef CLIENT_PREDICTION_STATS
+DECLARE_FLOAT_COUNTER_STAT(TEXT("Authority Input Buffer Size"), STAT_AuthInputBufferSize, STATGROUP_ClientPrediction)
+DECLARE_FLOAT_COUNTER_STAT(TEXT("Authority Input Time Spent In Buffer"), STAT_AuthTimeInBuf, STATGROUP_ClientPrediction)
+DECLARE_FLOAT_ACCUMULATOR_STAT(TEXT("Autonomous Proxy Mispredicts"), STAT_AutoMispredicts, STATGROUP_ClientPrediction)
+#endif
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 class ClientPredictionAutoProxyDriver : public IClientPredictionModelDriver<InputPacket, ModelState, CueSet> {
@@ -31,10 +38,12 @@ private:
 
 	void SampleInput(Chaos::FReal Dt);
 	void ReconcileWithAuthority(Chaos::FReal Dt, UPrimitiveComponent* Component);
-	Chaos::FReal CalculateTimeAdjustment();
+	void ResimulateFromAuthorityState(Chaos::FReal Dt, UPrimitiveComponent* Component, const WrappedState& HistoricState);
 
 	void Rewind_Internal(const WrappedState& State, UPrimitiveComponent* Component);
 	void ForceSimulate(uint32 Ticks, Chaos::FReal TickDt, UPrimitiveComponent* Component);
+
+	Chaos::FReal CalculateTimeAdjustment();
 
 private:
 
@@ -169,24 +178,29 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::Reconcile
 			// Authority state and historic state matched, simulation was good up to LastAuthorityState.FrameNumber
 			AckedFrame = LastAuthorityState.FrameNumber;
 			InputBuffer.Ack(LastAuthorityState.FrameNumber);
-		} else {
-
-			// Authority / client mismatch. Resimulate the client
-			FAnsiStringBuilderBase HistoricBuilder;
-			HistoricState.Print(HistoricBuilder);
-			const FString HistoricString = StringCast<TCHAR>(HistoricBuilder.ToString()).Get();
-
-			FAnsiStringBuilderBase AuthorityBuilder;
-			LastAuthorityState.Print(AuthorityBuilder);
-			const FString AuthorityString = StringCast<TCHAR>(AuthorityBuilder.ToString()).Get();
-
-			UE_LOG(LogTemp, Warning, TEXT("\nRewinding and resimulating from frame %i."), LastAuthorityState.FrameNumber);
-			UE_LOG(LogTemp, Display, TEXT("Client\n%s\nAuthority\n%s\n"), *HistoricString, *AuthorityString);
-
-			Rewind_Internal(LastAuthorityState, Component);
-			ForceSimulate(InputBuffer.BufferSize(), Dt, Component);
-		}
+		} else { ResimulateFromAuthorityState(Dt, Component, HistoricState); }
 	}
+}
+
+template <typename InputPacket, typename ModelState, typename CueSet>
+void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::ResimulateFromAuthorityState(Chaos::FReal Dt, UPrimitiveComponent* Component, const WrappedState& HistoricState) {
+	FAnsiStringBuilderBase HistoricBuilder;
+	HistoricState.Print(HistoricBuilder);
+	const FString HistoricString = StringCast<TCHAR>(HistoricBuilder.ToString()).Get();
+
+	FAnsiStringBuilderBase AuthorityBuilder;
+	LastAuthorityState.Print(AuthorityBuilder);
+	const FString AuthorityString = StringCast<TCHAR>(AuthorityBuilder.ToString()).Get();
+
+	UE_LOG(LogTemp, Warning, TEXT("\nRewinding and resimulating from frame %i."), LastAuthorityState.FrameNumber);
+	UE_LOG(LogTemp, Display, TEXT("Client\n%s\nAuthority\n%s\n"), *HistoricString, *AuthorityString);
+
+	Rewind_Internal(LastAuthorityState, Component);
+	ForceSimulate(InputBuffer.BufferSize(), Dt, Component);
+
+#ifdef CLIENT_PREDICTION_STATS
+	INC_FLOAT_STAT_BY(STAT_AutoMispredicts, 1)
+#endif
 }
 
 // Figure out the time needed to adjust by to achieve desired offset. We use a full RTT, since the
@@ -238,6 +252,11 @@ void ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::BindToRep
 
 			AdjustTime.CheckCallable();
             AdjustTime(CalculateTimeAdjustment());
+
+#ifdef CLIENT_PREDICTION_STATS
+			SET_FLOAT_STAT(STAT_AuthInputBufferSize, LastAuthorityState.AuthInputBufferSize)
+			SET_FLOAT_STAT(STAT_AuthTimeInBuf, LastAuthorityState.AuthTimeSpentInInputBuffer)
+#endif
 		}
 	};
 }

@@ -13,6 +13,12 @@ struct FModelStateWrapper {
 	// These are only used for auth proxy
 	Chaos::FReal RemainingAccumulatedTime;
 
+	// Stats
+#ifdef CLIENT_PREDICTION_STATS
+	uint8 AuthInputBufferSize = 0;
+	uint8 AuthTimeSpentInInputBuffer = 0;
+#endif
+
 	void NetSerialize(FArchive& Ar, bool bSerializeFullState);
 
 	bool operator ==(const FModelStateWrapper<ModelState>& Other) const;
@@ -23,6 +29,13 @@ template <typename ModelState>
 void FModelStateWrapper<ModelState>::NetSerialize(FArchive& Ar, bool bSerializeFullState)  {
 	Ar << FrameNumber;
 	Ar << Cues;
+
+#ifdef CLIENT_PREDICTION_STATS
+	if (bSerializeFullState) {
+		Ar << AuthInputBufferSize;
+		Ar << AuthTimeSpentInInputBuffer;
+	}
+#endif
 
 	State.NetSerialize(Ar, bSerializeFullState);
 }

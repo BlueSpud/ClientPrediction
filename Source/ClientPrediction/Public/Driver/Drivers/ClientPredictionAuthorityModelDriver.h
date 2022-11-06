@@ -54,7 +54,7 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Initializ
 
 template <typename InputPacket, typename ModelState, typename CueSet>
 void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chaos::FReal Dt, Chaos::FReal RemainingAccumulatedTime, UPrimitiveComponent* Component) {
-	if (!bAuthorityTakesInput && NextFrame == kInvalidFrame && InputBuffer.BufferSize() == 0) {
+	if (!bAuthorityTakesInput && NextFrame == kInvalidFrame && InputBuffer.BufferSize() < kInputWindowSize) {
 		return;
 	}
 
@@ -69,11 +69,18 @@ void ClientPredictionAuthorityDriver<InputPacket, ModelState, CueSet>::Tick(Chao
 	CurrentState.Cues.Empty();
 
 	if (!bAuthorityTakesInput) {
-
 		uint8 FramesSpentInBuffer;
-		if (!InputBuffer.ConsumeInput(CurrentInputPacket, FramesSpentInBuffer)) {
+		const bool bBufferHadPacket = InputBuffer.ConsumeInput(CurrentInputPacket, FramesSpentInBuffer);
+
+		if (!bBufferHadPacket) {
 			UE_LOG(LogTemp, Verbose, TEXT("Dropped an input packet %d %d"), CurrentInputPacket.PacketNumber, InputBuffer.BufferSize());
 		}
+
+#ifdef CLIENT_PREDICTION_STATS
+		CurrentState.AuthInputBufferSize        = InputBuffer.BufferSize() + static_cast<uint8>(bBufferHadPacket);
+		CurrentState.AuthTimeSpentInInputBuffer = FramesSpentInBuffer;
+#endif
+
 	} else {
 		CurrentInputPacket = FInputPacketWrapper<InputPacket>();
 		InputDelegate.ExecuteIfBound(CurrentInputPacket.Packet, CurrentState.State, Dt);
