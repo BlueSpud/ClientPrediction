@@ -92,7 +92,7 @@ protected:
 	virtual void ApplyState(UPrimitiveComponent* Component, const ModelState& State);
 
 private:
-	static constexpr Chaos::FReal kMaxTimeDilationPercent = 0.05;
+	static constexpr Chaos::FReal kMaxTimeDilationPercent = 0.01;
 
 	TUniquePtr<IClientPredictionModelDriver<InputPacket, ModelState, CueSet>> Driver;
 	bool bIsInitialized = false;
