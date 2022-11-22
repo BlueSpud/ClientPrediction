@@ -199,8 +199,9 @@ template <typename InputPacket, typename ModelState, typename CueSet>
 Chaos::FReal ClientPredictionAutoProxyDriver<InputPacket, ModelState, CueSet>::CalculateTimeAdjustment() {
 	GetNetworkConditions.CheckCallable();
 	const FNetworkConditions NetworkConditions = GetNetworkConditions();
-	const Chaos::FReal PacketLossTime = NetworkConditions.PercentPacketLoss / kMaxPacketLossPercent * static_cast<float>(kMaxAheadTicksPacketLoss) * kFixedDt;
-	const Chaos::FReal TimeAheadOfAuthority = NetworkConditions.RttMs + NetworkConditions.JitterMs + PacketLossTime + kFixedDt;
+	// const Chaos::FReal PacketLossTime = NetworkConditions.PercentPacketLoss / kMaxPacketLossPercent * static_cast<float>(kMaxAheadTicksPacketLoss) * kFixedDt;
+	constexpr Chaos::FReal TargetAuthorityBufferTime = kFixedDt * static_cast<Chaos::FReal>(kInputWindowSize + 1);
+	const Chaos::FReal TimeAheadOfAuthority = NetworkConditions.RttMs + NetworkConditions.JitterMs + TargetAuthorityBufferTime;
 
 	const Chaos::FReal FrameDelta = static_cast<Chaos::FReal>(CurrentState.FrameNumber) - static_cast<Chaos::FReal>(LastAuthorityState.FrameNumber);
 	const Chaos::FReal CurrentDelta = FrameDelta * kFixedDt + (CurrentState.RemainingAccumulatedTime - LastAuthorityState.RemainingAccumulatedTime);

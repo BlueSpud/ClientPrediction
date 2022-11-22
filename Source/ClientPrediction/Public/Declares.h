@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-static constexpr Chaos::FReal kFixedDt = 0.0133333333;
+static constexpr Chaos::FReal kFixedDt = 0.0166666667;
 static constexpr uint32 kInvalidFrame = -1;
 
 // Auto proxy
