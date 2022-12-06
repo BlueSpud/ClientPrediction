@@ -122,8 +122,8 @@ void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Simulate
 
 	UpdateWorld(Component);
 
-	PhysicsSimulation->SetSolverSettings(Dt, -1.0, -1.0f, 5, 5, 5);
-	PhysicsSimulation->Simulate(Dt, 1.0, 1, FVector(0.0, 0.0, -980.0));
+	PhysicsSimulation->SetSolverSettings(Dt, -1.0, -1.0f, 0, 25, 25, 25);
+	PhysicsSimulation->Simulate(0.0, 0.0, 0, FVector(0.0, 0.0, -980.0));
 
 	FillPhysicsState(Output.State());
 

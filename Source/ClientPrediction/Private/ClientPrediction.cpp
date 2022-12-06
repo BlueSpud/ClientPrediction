@@ -1,18 +1,30 @@
 #include "ClientPrediction.h"
 
+#include "World/ClientPredictionWorldManager.h"
+
 #define LOCTEXT_NAMESPACE "FClientPredictionModule"
 
 DEFINE_LOG_CATEGORY(LogClientPrediction);
 
-void FClientPredictionModule::StartupModule()
-{
-	// This code will execute after your module is loaded into memory; the exact timing is specified in the .uplugin file per-module
+FDelegateHandle FClientPredictionModule::OnPostWorldInitializationDelegate;
+FDelegateHandle FClientPredictionModule::OnWorldCleanupDelegate;
+
+void FClientPredictionModule::StartupModule() {
+	OnPostWorldInitializationDelegate = FWorldDelegates::OnPostWorldInitialization.AddStatic(&OnPostWorldInitialize);
+	OnWorldCleanupDelegate = FWorldDelegates::OnWorldCleanup.AddStatic(&OnWorldCleanup);
 }
 
-void FClientPredictionModule::ShutdownModule()
-{
-	// This function may be called during shutdown to clean up your module.  For modules that support dynamic reloading,
-	// we call this function before unloading the module.
+void FClientPredictionModule::ShutdownModule() {
+	FWorldDelegates::OnPostWorldInitialization.Remove(OnPostWorldInitializationDelegate);
+	FWorldDelegates::OnWorldCleanup.Remove(OnWorldCleanupDelegate);
+}
+
+void FClientPredictionModule::OnPostWorldInitialize(UWorld* InWorld, const UWorld::InitializationValues) {
+	FClientPredictionWorldManager::InitializeWorld(InWorld);
+}
+
+void FClientPredictionModule::OnWorldCleanup(UWorld* InWorld, bool bSessionEnded, bool bCleanupResources) {
+	FClientPredictionWorldManager::CleanupWorld(InWorld);
 }
 
 #undef LOCTEXT_NAMESPACE
