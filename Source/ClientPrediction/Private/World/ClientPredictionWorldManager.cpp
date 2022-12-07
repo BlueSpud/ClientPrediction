@@ -41,7 +41,7 @@ namespace ClientPrediction {
 	}
 
 	FWorldManager::FWorldManager(const UWorld* World) {
-		const FPhysScene* PhysScene = World->GetPhysicsScene();
+		PhysScene = World->GetPhysicsScene();
 		if (PhysScene == nullptr) { return; }
 
 		Solver = PhysScene->GetSolver();
@@ -70,16 +70,18 @@ namespace ClientPrediction {
 		RewindCallback->TriggerRewindIfNeeded_InternalDelegate.BindRaw(this, &FWorldManager::TriggerRewindIfNeeded_Internal);
 
 		PostAdvanceDelegate = Solver->AddPostAdvanceCallback(FSolverPostAdvance::FDelegate::CreateRaw(this, &FWorldManager::PostAdvance_Internal));
+		PostPhysSceneTickDelegate = PhysScene->OnPhysScenePostTick.AddRaw(this, &FWorldManager::OnPhysScenePostTick);
 	}
 
 	void FWorldManager::AddTickCallback(ITickCallback* Callback) { TickCallbacks.Add(Callback); }
 	void FWorldManager::RemoveTickCallback(const ITickCallback* Callback) { TickCallbacks.Remove(Callback); }
 
 	FWorldManager::~FWorldManager() {
-		if (Solver == nullptr) { return; }
+		if (PhysScene == nullptr || Solver == nullptr) { return; }
 
 		Solver->SetRewindCallback({});
 		Solver->RemovePostAdvanceCallback(PostAdvanceDelegate);
+		PhysScene->OnPhysScenePostTick.Remove(PostPhysSceneTickDelegate);
 	}
 
 	// Rewind callbacks
@@ -103,7 +105,7 @@ namespace ClientPrediction {
 		const Chaos::FReal Dt = Solver->GetLastDt();
 
 		for (ITickCallback* Callback : TickCallbacks) {
-			Callback->PreTickGameThread(PhysicsStep, Dt);
+			Callback->PrepareTickGameThread(PhysicsStep, Dt);
 		}
 	}
 
@@ -116,8 +118,16 @@ namespace ClientPrediction {
 	}
 
 	void FWorldManager::PostAdvance_Internal(Chaos::FReal Dt) {
+		const Chaos::FReal TickTime = Solver->GetSolverTime();
+
 		for (ITickCallback* Callback : TickCallbacks) {
-			Callback->PostTickPhysicsThread(CachedLastTickNumber, Dt);
+			Callback->PostTickPhysicsThread(CachedLastTickNumber, Dt, TickTime);
+		}
+	}
+
+	void FWorldManager::OnPhysScenePostTick(FChaosScene* /*TickedPhysScene*/) {
+		for (ITickCallback* Callback : TickCallbacks) {
+			Callback->PostPhysicsGameThread();
 		}
 	}
 
@@ -126,7 +136,7 @@ namespace ClientPrediction {
 
 		int32 RewindTickNumber = INDEX_NONE;
 		for (ITickCallback* Callback : TickCallbacks) {
-			RewindTickNumber = FMath::Min(RewindTickNumber, Callback->GetRewindTickNumber(CurrentTickNumber, Dt));
+			RewindTickNumber = FMath::Min(RewindTickNumber, Callback->GetRewindTickNumber(CurrentTickNumber));
 		}
 
 		return RewindTickNumber;

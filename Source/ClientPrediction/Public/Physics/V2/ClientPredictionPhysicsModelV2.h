@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 
 #include "Driver/ClientPredictionRepProxy.h"
+#include "Driver/V2/ClientPredictionModelDriverV2.h"
 #include "World/ClientPredictionTickCallback.h"
 
 namespace ClientPrediction {
@@ -15,13 +16,14 @@ namespace ClientPrediction {
 
 		virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep);
 
-		virtual void PreTickGameThread(int32 TickNumber, Chaos::FReal Dt) override;
+		virtual void PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) override;
 		virtual void PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) override;
-		virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) override;
-		virtual int32 GetRewindTickNumber(int32 CurrentTickNumber, Chaos::FReal Dt) override;
+		virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) override;
+		virtual void PostPhysicsGameThread() override;
+		virtual int32 GetRewindTickNumber(int32 CurrentTickNumber) override;
 
 	private:
-
 		UWorld* CachedWorld = nullptr;
+		TUniquePtr<IModelDriver> ModelDriver = nullptr;
 	};
 }

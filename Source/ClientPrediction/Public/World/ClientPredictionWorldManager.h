@@ -59,12 +59,18 @@ namespace ClientPrediction {
 		/** [Physics thread] Called after each tick */
 		void PostAdvance_Internal(Chaos::FReal Dt);
 
+		/** [Physics thread] Called after physics finishes */
+		void OnPhysScenePostTick(FChaosScene* TickedPhysScene);
+
 		/** [Physics thread] Called to determine if a rewind is needed, INDEX_NONE is no rewind. */
 		int32 TriggerRewindIfNeeded_Internal(int32 CurrentTickNumber);
 
+		FPhysScene* PhysScene = nullptr;
 		Chaos::FPhysicsSolver* Solver = nullptr;
 		FRewindCallback* RewindCallback = nullptr;
+
 		FDelegateHandle PostAdvanceDelegate;
+		FDelegateHandle PostPhysSceneTickDelegate;
 
 		int32 CachedLastTickNumber = INDEX_NONE;
 		TSet<class ITickCallback*> TickCallbacks;

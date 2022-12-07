@@ -25,19 +25,40 @@ namespace ClientPrediction {
 
 	}
 
-	void PhysicsModel::PreTickGameThread(int32 TickNumber, Chaos::FReal Dt) {
-
+	void PhysicsModel::PrepareTickGameThread(const int32 TickNumber, const Chaos::FReal Dt) {
+		if (ModelDriver != nullptr) {
+			ModelDriver->PrepareTickGameThread(TickNumber, Dt);
+		}
 	}
 
-	void PhysicsModel::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
-
+	void PhysicsModel::PreTickPhysicsThread(const int32 TickNumber, const Chaos::FReal Dt) {
+		if (ModelDriver != nullptr) {
+			ModelDriver->PreTickPhysicsThread(TickNumber, Dt);
+		}
 	}
 
-	void PhysicsModel::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
-
+	void PhysicsModel::PostTickPhysicsThread(const int32 TickNumber, const Chaos::FReal Dt, const Chaos::FReal Time) {
+		if (ModelDriver != nullptr) {
+			ModelDriver->PostTickPhysicsThread(TickNumber, Dt, Time);
+		}
 	}
 
-	int32 PhysicsModel::GetRewindTickNumber(int32 CurrentTickNumber, Chaos::FReal Dt) {
+	void PhysicsModel::PostPhysicsGameThread() {
+		// Take simulation results and interpolates between them. The physics will already be interpolated by
+		// Chaos, so this needs to be consistent with that. Unfortunately, the alpha is not exposed, so we need
+		// to calculate it ourselves consistent with FChaosResultsChannel::PullAsyncPhysicsResults_External.
+		// See also FSingleParticlePhysicsProxy::PullFromPhysicsState for how the physics state is interpolated from
+		// a rewind state
+		if (ModelDriver != nullptr) {
+			ModelDriver->PostPhysicsGameThread();
+		}
+	}
+
+	int32 PhysicsModel::GetRewindTickNumber(const int32 CurrentTickNumber) {
+		if (ModelDriver != nullptr) {
+			ModelDriver->GetRewindTickNumber(CurrentTickNumber);
+		}
+
 		return INDEX_NONE;
 	}
 }
