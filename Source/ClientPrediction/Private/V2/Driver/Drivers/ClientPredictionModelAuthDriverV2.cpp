@@ -3,10 +3,13 @@
 #include "PhysicsProxy/SingleParticlePhysicsProxy.h"
 
 namespace ClientPrediction {
-	FModelAuthDriver::FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate* InDelegate,
+	FModelAuthDriver::FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate* Delegate,
 	                                   FClientPredictionRepProxy& AutoProxyRep,
 	                                   FClientPredictionRepProxy& SimProxyRep) :
-		UpdatedComponent(UpdatedComponent), Delegate(InDelegate), AutoProxyRep(AutoProxyRep), SimProxyRep(SimProxyRep) {}
+		UpdatedComponent(UpdatedComponent), Delegate(Delegate), AutoProxyRep(AutoProxyRep), SimProxyRep(SimProxyRep) {
+		check(UpdatedComponent)
+		check(Delegate)
+	}
 
 	void FModelAuthDriver::PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) {
 

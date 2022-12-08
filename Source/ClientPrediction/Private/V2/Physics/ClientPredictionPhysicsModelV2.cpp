@@ -20,10 +20,13 @@ namespace ClientPrediction {
 		check(CachedWorldManager)
 	}
 
-	FPhysicsModel::~FPhysicsModel() {
+	void FPhysicsModel::Cleanup() {
 		if (CachedWorldManager != nullptr && ModelDriver != nullptr) {
 			CachedWorldManager->RemoveTickCallback(ModelDriver.Get());
 		}
+
+		CachedWorldManager = nullptr;
+		ModelDriver = nullptr;
 	}
 
 	void FPhysicsModel::SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) {
@@ -40,7 +43,7 @@ namespace ClientPrediction {
 			ModelDriver = MakeUnique<FModelAuthDriver>(CachedComponent, Delegate, AutoProxyRep, SimProxyRep);
 			break;
 		case ROLE_AutonomousProxy:
-			ModelDriver = MakeUnique<FModelAutoProxyDriver>(CachedComponent, Delegate, AutoProxyRep, SimProxyRep, CachedWorldManager->GetRewindBufferSize());
+			ModelDriver = MakeUnique<FModelAutoProxyDriver>(CachedComponent, Delegate, AutoProxyRep, CachedWorldManager->GetRewindBufferSize());
 			break;
 		case ROLE_SimulatedProxy:
 			// TODO add in the sim proxy

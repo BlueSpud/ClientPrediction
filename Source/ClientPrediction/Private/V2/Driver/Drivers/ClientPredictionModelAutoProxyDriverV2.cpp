@@ -7,12 +7,14 @@ FAutoConsoleVariableRef CVarClientPredictionFixedDt(TEXT("cp.SlidingWindowSize")
 
 namespace ClientPrediction {
 	FModelAutoProxyDriver::FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent,
-	                                             IModelDriverDelegate* InDelegate,
+	                                             IModelDriverDelegate* Delegate,
 	                                             FClientPredictionRepProxy& AutoProxyRep,
-	                                             FClientPredictionRepProxy& SimProxyRep, int32 RewindBufferSize) :
-		UpdatedComponent(UpdatedComponent), Delegate(InDelegate), RewindBufferSize(RewindBufferSize), InputBuf(RewindBufferSize) {
+	                                             int32 RewindBufferSize) :
+		UpdatedComponent(UpdatedComponent), Delegate(Delegate), RewindBufferSize(RewindBufferSize), InputBuf(RewindBufferSize) {
+		check(UpdatedComponent);
+		check(Delegate);
 
-		check(InDelegate);
+		BindToRepProxy(AutoProxyRep);
 	}
 
 	void FModelAutoProxyDriver::BindToRepProxy(FClientPredictionRepProxy& AutoProxyRep) {
@@ -68,7 +70,5 @@ namespace ClientPrediction {
 		return INDEX_NONE;
 	}
 
-	void FModelAutoProxyDriver::PostPhysicsGameThread() {
-
-	}
+	void FModelAutoProxyDriver::PostPhysicsGameThread() {}
 }

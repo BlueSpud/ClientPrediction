@@ -16,7 +16,6 @@ struct CLIENTPREDICTION_API FClientPredictionRepProxy {
 	FString Name;
 
 private:
-
 	uint32 SequenceNumber = 0;
 
 };

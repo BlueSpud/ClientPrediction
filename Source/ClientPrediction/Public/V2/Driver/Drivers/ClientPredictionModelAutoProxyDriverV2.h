@@ -11,7 +11,7 @@
 namespace ClientPrediction {
 	class FModelAutoProxyDriver : public IModelDriver  {
 	public:
-		FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate* InDelegate, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep, int32 RewindBufferSize);
+		FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate* InDelegate, FClientPredictionRepProxy& AutoProxyRep, int32 RewindBufferSize);
 		virtual ~FModelAutoProxyDriver() override = default;
 
 	private:

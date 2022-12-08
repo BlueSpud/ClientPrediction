@@ -58,12 +58,12 @@ void UClientPredictionComponent::CheckOwnerRoleChanged() {
 
 void UClientPredictionComponent::BeginPlay() {
 	Super::BeginPlay();
-
 	CheckOwnerRoleChanged();
 }
 
 void UClientPredictionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
 	Super::EndPlay(EndPlayReason);
+	TestPhysicsModel.Cleanup();
 }
 
 void UClientPredictionComponent::RecvReliableAuthorityState_Implementation(FNetSerializationProxy Proxy) {

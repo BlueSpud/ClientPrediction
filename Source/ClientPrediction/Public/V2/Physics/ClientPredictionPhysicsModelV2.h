@@ -14,9 +14,10 @@ namespace ClientPrediction {
 
 	struct FPhysicsModel {
 		FPhysicsModel() = default;
-
 		virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate);
-		virtual ~FPhysicsModel();
+
+		virtual ~FPhysicsModel() = default;
+		void Cleanup();
 
 		virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep);
 
