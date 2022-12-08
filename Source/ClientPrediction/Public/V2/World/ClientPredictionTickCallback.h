@@ -52,8 +52,9 @@ namespace ClientPrediction {
 		/**
 		 * Gets the tick to rewind to. Called on the physics thread.
 		 * @param [in] CurrentTickNumber The index of the current tick.
+		 * @param [in] RewindData The physics rewind data.
 		 * @return INDEX_NONE if no rewind is requested, otherwise the tick number of the tick to rewind to.
 		 */
-		virtual int32 GetRewindTickNumber(int32 CurrentTickNumber) { return INDEX_NONE; }
+		virtual int32 GetRewindTickNumber(int32 CurrentTickNumber, const class Chaos::FRewindData& RewindData) { return INDEX_NONE; }
 	};
 }

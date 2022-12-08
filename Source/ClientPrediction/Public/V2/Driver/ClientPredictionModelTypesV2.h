@@ -1,24 +1,6 @@
 ﻿#pragma once
 
 namespace ClientPrediction {
-	struct FInputPacket {
-		/** This is the frame index the input was sampled ON THE AUTO PROXY. */
-		int32 FrameNumber = INDEX_NONE;
-
-		void NetSerialize(FArchive& Ar);
-		inline friend FArchive& operator<<(FArchive& Ar, FInputPacket& Wrapper);
-
-	};
-
-	inline void FInputPacket::NetSerialize(FArchive& Ar) {
-		Ar << FrameNumber;
-	}
-
-	FArchive& operator<<(FArchive& Ar, FInputPacket& Wrapper) {
-		Wrapper.NetSerialize(Ar);
-		return Ar;
-	}
-
 	struct FPhysicsState {
 		// TODO this probably needs some re-working since we probably want to sync the proxies / authority somehow
 		/** The tick number that the state was generated on. So if receiving from the authority, this is the index according to the authority. */

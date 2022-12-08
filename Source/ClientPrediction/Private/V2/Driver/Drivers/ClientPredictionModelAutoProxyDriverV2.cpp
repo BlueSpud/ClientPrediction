@@ -1,17 +1,33 @@
 ﻿#include "V2/Driver/Drivers/ClientPredictionModelAutoProxyDriverV2.h"
 
+#include "PhysicsProxy/SingleParticlePhysicsProxy.h"
+
 CLIENTPREDICTION_API int32 ClientPredictionInputSlidingWindowSize = 3;
 FAutoConsoleVariableRef CVarClientPredictionFixedDt(TEXT("cp.SlidingWindowSize"), ClientPredictionInputSlidingWindowSize, TEXT("The max size of the sliding window of inputs that is sent to the authority"));
 
 namespace ClientPrediction {
-	FModelAutoProxyDriver::FModelAutoProxyDriver(IModelDriverDelegate* InDelegate, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep, int32 RewindBufferSize) : Delegate(InDelegate), InputBuf(RewindBufferSize) {
+	FModelAutoProxyDriver::FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent,
+	                                             IModelDriverDelegate* InDelegate,
+	                                             FClientPredictionRepProxy& AutoProxyRep,
+	                                             FClientPredictionRepProxy& SimProxyRep, int32 RewindBufferSize) :
+		UpdatedComponent(UpdatedComponent), Delegate(InDelegate), RewindBufferSize(RewindBufferSize), InputBuf(RewindBufferSize) {
+
 		check(InDelegate);
+	}
+
+	void FModelAutoProxyDriver::BindToRepProxy(FClientPredictionRepProxy& AutoProxyRep) {
+		AutoProxyRep.SerializeFunc = [&](FArchive& Ar) {
+			FPhysicsState AuthorityState;
+			AuthorityState.NetSerialize(Ar);
+
+			LastAuthorityState = AuthorityState;
+		};
 	}
 
 	void FModelAutoProxyDriver::PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) {
 		// Sample a new input packet
 		FInputPacketWrapper Packet;
-		Packet.TickNumber = TickNumber;
+		Packet.PacketNumber = TickNumber;
 
 		InputBuf.QueueInputPacket(Packet);
 
@@ -36,6 +52,20 @@ namespace ClientPrediction {
 
 	void FModelAutoProxyDriver::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) {
 		// Generate state and marshall it to the game thread
+	}
+
+	int32 FModelAutoProxyDriver::GetRewindTickNumber(int32 CurrentTickNumber, const Chaos::FRewindData& RewindData) {
+		if (CurrentTickNumber <= LastAckedTick ) { return INDEX_NONE; }
+
+		const FPhysicsState CurrentLastAuthorityState = LastAuthorityState;
+		const int32 LocalTickNumber = CurrentLastAuthorityState.InputPacketTickNumber;
+		if (LocalTickNumber == INDEX_NONE) { return INDEX_NONE; }
+
+		// TODO Both of these cases should be handled gracefully
+		check(LocalTickNumber <= CurrentTickNumber)
+		check(LocalTickNumber >= CurrentTickNumber - RewindBufferSize)
+
+		return INDEX_NONE;
 	}
 
 	void FModelAutoProxyDriver::PostPhysicsGameThread() {

@@ -2,7 +2,7 @@
 
 namespace ClientPrediction {
     struct FInputPacketWrapper {
-        int32 TickNumber = INDEX_NONE;
+        int32 PacketNumber = INDEX_NONE;
 
         void NetSerialize(FArchive& Ar);
         friend FArchive& operator<<(FArchive& Ar, FInputPacketWrapper& Wrapper);
@@ -10,7 +10,7 @@ namespace ClientPrediction {
     };
 
     inline void FInputPacketWrapper::NetSerialize(FArchive& Ar) {
-        Ar << TickNumber;
+        Ar << PacketNumber;
     }
 
     inline FArchive& operator<<(FArchive& Ar, FInputPacketWrapper& Wrapper) {

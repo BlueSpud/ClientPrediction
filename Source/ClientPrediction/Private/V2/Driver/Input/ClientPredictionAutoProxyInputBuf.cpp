@@ -10,7 +10,7 @@ namespace ClientPrediction {
 
 		// Packets should come in sequentially on the auto proxy
 		if (!InputPackets.IsEmpty()) {
-			check(InputPackets.Last().TickNumber + 1 == Packet.TickNumber);
+			check(InputPackets.Last().PacketNumber + 1 == Packet.PacketNumber);
 
 			if (InputPackets.Num() == InputBufferMaxSize) {
 				InputPackets.RemoveAt(0);
@@ -24,7 +24,7 @@ namespace ClientPrediction {
 		FScopeLock Lock(&Mutex);
 
 		for (const FInputPacketWrapper& Packet : InputPackets) {
-			if (Packet.TickNumber == TickNumber) {
+			if (Packet.PacketNumber == TickNumber) {
 				OutPacket = Packet;
 				return true;
 			}

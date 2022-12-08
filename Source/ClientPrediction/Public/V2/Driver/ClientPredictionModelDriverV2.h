@@ -1,7 +1,6 @@
 ﻿#pragma once
 
 #include "ClientPredictionNetSerialization.h"
-#include "Driver/ClientPredictionRepProxy.h"
 #include "V2/World/ClientPredictionTickCallback.h"
 
 namespace ClientPrediction {
