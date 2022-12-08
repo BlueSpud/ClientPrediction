@@ -1,7 +1,7 @@
 ﻿#pragma once
 
-#include "World/ClientPredictionWorldManager.h"
-#include "World/ClientPredictionTickCallback.h"
+#include "V2/World/ClientPredictionWorldManager.h"
+#include "V2/World/ClientPredictionTickCallback.h"
 
 #include "PBDRigidsSolver.h"
 
@@ -51,13 +51,13 @@ namespace ClientPrediction {
 		CreateCallbacks();
 	}
 
-	void FWorldManager::SetupPhysicsScene() const {
+	void FWorldManager::SetupPhysicsScene() {
 		Solver->EnableAsyncMode(ClientPredictionFixedDt);
 		check(Solver->IsUsingAsyncResults());
 
 		// TODO Investigate if InUseCollisionResimCache can be used
-		const int32 NumRewindFrames = FMath::CeilToInt32(static_cast<float>(ClientPredictionHistoryTimeMs) / 1000.0 / ClientPredictionFixedDt);
-		Solver->EnableRewindCapture(NumRewindFrames, false, MakeUnique<FRewindCallback>());
+		RewindBufferSize = FMath::CeilToInt32(static_cast<float>(ClientPredictionHistoryTimeMs) / 1000.0 / ClientPredictionFixedDt);
+		Solver->EnableRewindCapture(RewindBufferSize, false, MakeUnique<FRewindCallback>());
 		check(Solver->IsDetemerministic());
 	}
 

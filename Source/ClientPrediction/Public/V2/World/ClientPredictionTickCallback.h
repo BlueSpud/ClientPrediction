@@ -39,7 +39,7 @@ namespace ClientPrediction {
 		 * Called after a tick on the physics thread.
 		 * @param [in] TickNumber The index of the current tick.
 		 * @param [in] Dt The delta time for the tick that has just run.
-		 * @param [in] Time The time of the finished tick.
+		 * @param [in] Time The absolute time of the finished tick.
 		 */
 		virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) {}
 
@@ -50,9 +50,8 @@ namespace ClientPrediction {
 		virtual void PostPhysicsGameThread() {}
 
 		/**
-		 * Gets the tick to rewind to.
+		 * Gets the tick to rewind to. Called on the physics thread.
 		 * @param [in] CurrentTickNumber The index of the current tick.
-		 * @param [in] Dt The delta time for the tick.
 		 * @return INDEX_NONE if no rewind is requested, otherwise the tick number of the tick to rewind to.
 		 */
 		virtual int32 GetRewindTickNumber(int32 CurrentTickNumber) { return INDEX_NONE; }

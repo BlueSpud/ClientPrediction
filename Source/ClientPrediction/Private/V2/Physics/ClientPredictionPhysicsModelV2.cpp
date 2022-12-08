@@ -1,6 +1,6 @@
-﻿#include "Physics/V2/ClientPredictionPhysicsModelV2.h"
+﻿#include "V2/Physics/ClientPredictionPhysicsModelV2.h"
 
-#include "World/ClientPredictionWorldManager.h"
+#include "V2/World/ClientPredictionWorldManager.h"
 
 namespace ClientPrediction {
 

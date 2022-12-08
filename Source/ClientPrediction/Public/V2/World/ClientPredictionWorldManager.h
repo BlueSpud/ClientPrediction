@@ -20,13 +20,14 @@ namespace ClientPrediction {
 
 	private:
 		explicit FWorldManager(const class UWorld* World);
-		void SetupPhysicsScene() const;
+		void SetupPhysicsScene();
 		void CreateCallbacks();
 
 	public:
 
 		void AddTickCallback(class ITickCallback* Callback);
 		void RemoveTickCallback(const class ITickCallback* Callback);
+		int32 GetRewindBufferSize() const { return RewindBufferSize; }
 
 	private:
 
@@ -68,6 +69,7 @@ namespace ClientPrediction {
 		FPhysScene* PhysScene = nullptr;
 		Chaos::FPhysicsSolver* Solver = nullptr;
 		FRewindCallback* RewindCallback = nullptr;
+		int32 RewindBufferSize = 0;
 
 		FDelegateHandle PostAdvanceDelegate;
 		FDelegateHandle PostPhysSceneTickDelegate;

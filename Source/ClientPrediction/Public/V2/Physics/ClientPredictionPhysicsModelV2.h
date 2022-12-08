@@ -3,8 +3,8 @@
 #include "CoreMinimal.h"
 
 #include "Driver/ClientPredictionRepProxy.h"
-#include "Driver/V2/ClientPredictionModelDriverV2.h"
-#include "World/ClientPredictionTickCallback.h"
+#include "V2/Driver/ClientPredictionModelDriverV2.h"
+#include "V2/World/ClientPredictionTickCallback.h"
 
 namespace ClientPrediction {
 
