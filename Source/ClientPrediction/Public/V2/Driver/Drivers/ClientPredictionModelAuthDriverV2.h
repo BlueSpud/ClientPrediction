@@ -6,7 +6,6 @@
 namespace ClientPrediction {
 	class FModelAuthDriver : public IModelDriver  {
 	public:
-		virtual void Initialize(IModelDriverDelegate* InDelegate, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep, int32 RewindBufferSize) override;
 		virtual ~FModelAuthDriver() override = default;
 
 		// Ticking

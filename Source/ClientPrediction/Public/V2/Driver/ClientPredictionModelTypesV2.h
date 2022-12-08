@@ -21,11 +21,11 @@ namespace ClientPrediction {
 
 	struct FPhysicsState {
 		// TODO this probably needs some re-working since we probably want to sync the proxies / authority somehow
-		/** The frame number that the state was generated on. So if receiving from the authority, this is the index according to the authority. */
-		int32 FrameNumber = INDEX_NONE;
+		/** The tick number that the state was generated on. So if receiving from the authority, this is the index according to the authority. */
+		int32 TickNumber = INDEX_NONE;
 
-		/** This is the frame index the input was sampled ON THE AUTO PROXY. */
-		int32 InputPacketFrameNumber = INDEX_NONE;
+		/** This is the tick index the input was sampled ON THE AUTO PROXY. */
+		int32 InputPacketTickNumber = INDEX_NONE;
 
 		/** These mirror the Chaos properties for a particle */
 		Chaos::EObjectStateType ObjectState = Chaos::EObjectStateType::Uninitialized;
@@ -40,8 +40,8 @@ namespace ClientPrediction {
 	};
 
 	inline void FPhysicsState::NetSerialize(FArchive& Ar) {
-		Ar << FrameNumber;
-		Ar << InputPacketFrameNumber;
+		Ar << TickNumber;
+		Ar << InputPacketTickNumber;
 		Ar << ObjectState;
 
 		Ar << X;

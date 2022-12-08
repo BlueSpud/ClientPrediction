@@ -28,6 +28,7 @@ void UClientPredictionComponent::InitializeComponent() {
 
 	UpdatedComponent = Cast<UPrimitiveComponent>(GetOwner()->GetRootComponent());
 	check(UpdatedComponent);
+	TestPhysicsModel.Initialize(UpdatedComponent, this);
 
 	CheckOwnerRoleChanged();
 }
@@ -52,46 +53,27 @@ void UClientPredictionComponent::CheckOwnerRoleChanged() {
 	CachedRole = CurrentRole;
 	bCachedAuthorityTakesInput = bAuthorityTakesInput;
 
-	Model->SetNetRole(CurrentRole, bAuthorityTakesInput, AutoProxyRep, SimProxyRep);
+	TestPhysicsModel.SetNetRole(CurrentRole, bAuthorityTakesInput, AutoProxyRep, SimProxyRep);
 }
 
 void UClientPredictionComponent::BeginPlay() {
 	Super::BeginPlay();
 
 	CheckOwnerRoleChanged();
-	Model->Initialize(UpdatedComponent);
 }
 
 void UClientPredictionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
 	Super::EndPlay(EndPlayReason);
 }
 
-void UClientPredictionComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) {
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
-	Model->Update(DeltaTime, UpdatedComponent);
-}
-
 void UClientPredictionComponent::RecvReliableAuthorityState_Implementation(FNetSerializationProxy Proxy) {
-	Model->ReceiveReliableAuthorityState(Proxy);
+
 }
 
-FNetworkConditions UClientPredictionComponent::GetNetworkConditions() const {
-	const AActor* Owner = GetOwner();
-	if (!Owner) { return {}; }
-
-	const UNetConnection* NetConnection = Owner->GetNetConnection();
-	if (NetConnection == nullptr) { return {}; }
-
-	FNetworkConditions Conditions;
-	Conditions.RttMs = NetConnection->AvgLag;
-	Conditions.JitterMs = NetConnection->GetAverageJitterInMS() / 1000.0;
-	Conditions.PercentPacketLoss = NetConnection->GetOutLossPercentage().GetLossPercentage();
-
-	return Conditions;
+void UClientPredictionComponent::EmitInputPackets(FNetSerializationProxy& Proxy) {
+	RecvInputPacket(Proxy);
 }
 
 void UClientPredictionComponent::RecvInputPacket_Implementation(FNetSerializationProxy Proxy) {
-	check(Model);
-	Model->ReceiveInputPackets(Proxy);
+
 }

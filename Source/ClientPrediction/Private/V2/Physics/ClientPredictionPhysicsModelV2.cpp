@@ -1,49 +1,69 @@
 ﻿#include "V2/Physics/ClientPredictionPhysicsModelV2.h"
 
+#include "V2/Driver/Drivers/ClientPredictionModelAuthDriverV2.h"
+#include "V2/Driver/Drivers/ClientPredictionModelAutoProxyDriverV2.h"
 #include "V2/World/ClientPredictionWorldManager.h"
 
 namespace ClientPrediction {
 
-	void PhysicsModel::Initialize(UPrimitiveComponent* Component) {
-		CachedWorld = Component->GetWorld();
-		check(CachedWorld);
+	void FPhysicsModel::Initialize(UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) {
+		Delegate = InDelegate;
+		check(Delegate);
 
-		FWorldManager* WorldManager = FWorldManager::ManagerForWorld(CachedWorld);
-		check(WorldManager)
+		const UWorld* World  = Component->GetWorld();
+		check(World);
 
-		WorldManager->AddTickCallback(this);
+		CachedWorldManager = FWorldManager::ManagerForWorld(World);
+		check(CachedWorldManager)
+
+		CachedWorldManager->AddTickCallback(this);
 	}
 
-	PhysicsModel::~PhysicsModel() {
-		FWorldManager* WorldManager = FWorldManager::ManagerForWorld(CachedWorld);
-		check(WorldManager)
-
-		WorldManager->RemoveTickCallback(this);
+	FPhysicsModel::~FPhysicsModel() {
+		if (CachedWorldManager != nullptr) {
+			CachedWorldManager->RemoveTickCallback(this);
+		}
 	}
 
-	void PhysicsModel::SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) {
+	void FPhysicsModel::SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) {
+		check(CachedWorldManager);
+		check(Delegate);
 
+		switch (Role) {
+		case ROLE_Authority:
+			// TODO pass bShouldTakeInput here
+			ModelDriver = MakeUnique<FModelAuthDriver>();
+			break;
+		case ROLE_AutonomousProxy:
+			ModelDriver = MakeUnique<FModelAutoProxyDriver>(Delegate, AutoProxyRep, SimProxyRep, CachedWorldManager->GetRewindBufferSize());
+			break;
+		case ROLE_SimulatedProxy:
+			// TODO add in the sim proxy
+			break;
+		default:
+			break;
+		}
 	}
 
-	void PhysicsModel::PrepareTickGameThread(const int32 TickNumber, const Chaos::FReal Dt) {
+	void FPhysicsModel::PrepareTickGameThread(const int32 TickNumber, const Chaos::FReal Dt) {
 		if (ModelDriver != nullptr) {
 			ModelDriver->PrepareTickGameThread(TickNumber, Dt);
 		}
 	}
 
-	void PhysicsModel::PreTickPhysicsThread(const int32 TickNumber, const Chaos::FReal Dt) {
+	void FPhysicsModel::PreTickPhysicsThread(const int32 TickNumber, const Chaos::FReal Dt) {
 		if (ModelDriver != nullptr) {
 			ModelDriver->PreTickPhysicsThread(TickNumber, Dt);
 		}
 	}
 
-	void PhysicsModel::PostTickPhysicsThread(const int32 TickNumber, const Chaos::FReal Dt, const Chaos::FReal Time) {
+	void FPhysicsModel::PostTickPhysicsThread(const int32 TickNumber, const Chaos::FReal Dt, const Chaos::FReal Time) {
 		if (ModelDriver != nullptr) {
 			ModelDriver->PostTickPhysicsThread(TickNumber, Dt, Time);
 		}
 	}
 
-	void PhysicsModel::PostPhysicsGameThread() {
+	void FPhysicsModel::PostPhysicsGameThread() {
 		// Take simulation results and interpolates between them. The physics will already be interpolated by
 		// Chaos, so this needs to be consistent with that. Unfortunately, the alpha is not exposed, so we need
 		// to calculate it ourselves consistent with FChaosResultsChannel::PullAsyncPhysicsResults_External.
@@ -54,7 +74,7 @@ namespace ClientPrediction {
 		}
 	}
 
-	int32 PhysicsModel::GetRewindTickNumber(const int32 CurrentTickNumber) {
+	int32 FPhysicsModel::GetRewindTickNumber(const int32 CurrentTickNumber) {
 		if (ModelDriver != nullptr) {
 			ModelDriver->GetRewindTickNumber(CurrentTickNumber);
 		}

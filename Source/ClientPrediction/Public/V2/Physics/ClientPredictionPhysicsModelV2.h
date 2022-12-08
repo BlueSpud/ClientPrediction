@@ -8,11 +8,15 @@
 
 namespace ClientPrediction {
 
-	struct PhysicsModel : public ITickCallback {
-		PhysicsModel() = default;
+	struct IPhysicsModelDelegate : public IModelDriverDelegate {
+		virtual ~IPhysicsModelDelegate() override = default;
+	};
 
-		virtual void Initialize(class UPrimitiveComponent* Component);
-		virtual ~PhysicsModel() override;
+	struct FPhysicsModel : public ITickCallback {
+		FPhysicsModel() = default;
+
+		virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate);
+		virtual ~FPhysicsModel() override;
 
 		virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep);
 
@@ -23,7 +27,8 @@ namespace ClientPrediction {
 		virtual int32 GetRewindTickNumber(int32 CurrentTickNumber) override;
 
 	private:
-		UWorld* CachedWorld = nullptr;
+		struct FWorldManager* CachedWorldManager = nullptr;
 		TUniquePtr<IModelDriver> ModelDriver = nullptr;
+		IPhysicsModelDelegate* Delegate = nullptr;
 	};
 }
