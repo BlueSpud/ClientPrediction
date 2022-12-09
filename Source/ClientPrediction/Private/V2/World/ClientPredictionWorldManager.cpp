@@ -142,7 +142,12 @@ namespace ClientPrediction {
 
 		int32 RewindTickNumber = INDEX_NONE;
 		for (ITickCallback* Callback : TickCallbacks) {
-			RewindTickNumber = FMath::Min(RewindTickNumber, Callback->GetRewindTickNumber(CurrentTickNumber, RewindData));
+			const int32 CallbackTickNumber = Callback->GetRewindTickNumber(CurrentTickNumber, RewindData);
+
+			if (CallbackTickNumber != INDEX_NONE) {
+				if (RewindTickNumber == INDEX_NONE) { RewindTickNumber = CallbackTickNumber; }
+				else { RewindTickNumber = FMath::Min(RewindTickNumber, CallbackTickNumber); }
+			}
 		}
 
 		return RewindTickNumber;

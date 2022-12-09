@@ -75,5 +75,5 @@ void UClientPredictionComponent::EmitInputPackets(FNetSerializationProxy& Proxy)
 }
 
 void UClientPredictionComponent::RecvInputPacket_Implementation(FNetSerializationProxy Proxy) {
-
+	TestPhysicsModel.ReceiveInputPackets(Proxy);
 }

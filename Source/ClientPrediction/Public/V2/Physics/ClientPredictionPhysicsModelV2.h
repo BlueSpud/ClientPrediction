@@ -13,13 +13,13 @@ namespace ClientPrediction {
 	};
 
 	struct FPhysicsModel {
-		FPhysicsModel() = default;
 		virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate);
 
 		virtual ~FPhysicsModel() = default;
 		void Cleanup();
 
-		virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep);
+		void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep);
+		void ReceiveInputPackets(FNetSerializationProxy& Proxy) const;
 
 	private:
 		class UPrimitiveComponent* CachedComponent = nullptr;

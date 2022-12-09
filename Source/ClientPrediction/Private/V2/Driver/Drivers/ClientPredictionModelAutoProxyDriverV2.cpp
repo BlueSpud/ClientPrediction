@@ -3,7 +3,7 @@
 #include "PhysicsProxy/SingleParticlePhysicsProxy.h"
 
 CLIENTPREDICTION_API int32 ClientPredictionInputSlidingWindowSize = 3;
-FAutoConsoleVariableRef CVarClientPredictionFixedDt(TEXT("cp.SlidingWindowSize"), ClientPredictionInputSlidingWindowSize, TEXT("The max size of the sliding window of inputs that is sent to the authority"));
+FAutoConsoleVariableRef CVarClientPredictionSlidingWindowSize(TEXT("cp.SlidingWindowSize"), ClientPredictionInputSlidingWindowSize, TEXT("The max size of the sliding window of inputs that is sent to the authority"));
 
 namespace ClientPrediction {
 	FModelAutoProxyDriver::FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent,
@@ -34,9 +34,9 @@ namespace ClientPrediction {
 		InputBuf.QueueInputPacket(Packet);
 
 		// Bundle it up with the most recent inputs and send it to the authority
-		InputSlidingWindow.Push(Packet);
-		while (InputSlidingWindow.Num() >= ClientPredictionInputSlidingWindowSize) {
-			InputSlidingWindow.Pop();
+		InputSlidingWindow.Add(Packet);
+		while (InputSlidingWindow.Num() > ClientPredictionInputSlidingWindowSize) {
+			InputSlidingWindow.RemoveAt(0);
 		}
 
 		FNetSerializationProxy Proxy([=](FArchive& Ar) mutable {
@@ -47,7 +47,19 @@ namespace ClientPrediction {
 	}
 
 	void FModelAutoProxyDriver::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
-		check(InputBuf.InputForTick(TickNumber, CurrentInputPacket));
+		check(InputBuf.InputForTick(TickNumber, CurrentInputPacket))
+
+		const auto Handle = UpdatedComponent->GetBodyInstance()->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
+		if (PendingCorrection.InputPacketTickNumber == TickNumber) {
+			Handle->SetX(PendingCorrection.X);
+			Handle->SetV(PendingCorrection.V);
+			Handle->SetR(PendingCorrection.R);
+			Handle->SetW(PendingCorrection.W);
+			Handle->SetObjectState(PendingCorrection.ObjectState);
+
+			PendingCorrection = {};
+			UE_LOG(LogTemp, Display, TEXT("Applied correction on %d"), TickNumber);
+		}
 
 		// Apply input
 	}
@@ -57,15 +69,33 @@ namespace ClientPrediction {
 	}
 
 	int32 FModelAutoProxyDriver::GetRewindTickNumber(int32 CurrentTickNumber, const Chaos::FRewindData& RewindData) {
-		if (CurrentTickNumber <= LastAckedTick ) { return INDEX_NONE; }
-
 		const FPhysicsState CurrentLastAuthorityState = LastAuthorityState;
 		const int32 LocalTickNumber = CurrentLastAuthorityState.InputPacketTickNumber;
+
 		if (LocalTickNumber == INDEX_NONE) { return INDEX_NONE; }
+		if (LocalTickNumber <= LastAckedTick ) { return INDEX_NONE; }
 
 		// TODO Both of these cases should be handled gracefully
 		check(LocalTickNumber <= CurrentTickNumber)
 		check(LocalTickNumber >= CurrentTickNumber - RewindBufferSize)
+
+		// Check against the historic state
+		const auto Handle = UpdatedComponent->GetBodyInstance()->GetPhysicsActorHandle()->GetHandle_LowLevel();
+		const Chaos::FGeometryParticleState PreviousState = RewindData.GetPastStateAtFrame(*Handle, LocalTickNumber, Chaos::FFrameAndPhase::PostCallbacks);
+
+		LastAckedTick = LocalTickNumber;
+		UE_LOG(LogTemp, Display, TEXT("Acked up until tick %d"), LocalTickNumber);
+
+		UE_LOG(LogTemp, Warning, TEXT("%f"), (PreviousState.X() - CurrentLastAuthorityState.X).Size());
+		UE_LOG(LogTemp, Warning, TEXT("%f"), (PreviousState.V() - CurrentLastAuthorityState.V).Size());
+		UE_LOG(LogTemp, Warning, TEXT("%f"), (PreviousState.W() - CurrentLastAuthorityState.W).Size());
+
+		if (CurrentLastAuthorityState.ShouldReconcile(PreviousState)) {
+			PendingCorrection = LastAuthorityState;
+
+			UE_LOG(LogTemp, Error, TEXT("Rewinding and rolling back to %d"), LocalTickNumber);
+			return LocalTickNumber;
+		}
 
 		return INDEX_NONE;
 	}

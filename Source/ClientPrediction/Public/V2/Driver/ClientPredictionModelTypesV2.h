@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include "RewindData.h"
+
 namespace ClientPrediction {
 	struct FPhysicsState {
 		// TODO this probably needs some re-working since we probably want to sync the proxies / authority somehow
@@ -19,6 +21,7 @@ namespace ClientPrediction {
 		Chaos::FVec3 W = Chaos::FVec3::ZeroVector;
 
 		void NetSerialize(FArchive& Ar);
+		bool ShouldReconcile(const Chaos::FGeometryParticleState& State) const;
 	};
 
 	inline void FPhysicsState::NetSerialize(FArchive& Ar) {
@@ -33,4 +36,13 @@ namespace ClientPrediction {
 		Ar << W;
 	}
 
+	inline bool FPhysicsState::ShouldReconcile(const Chaos::FGeometryParticleState& State) const {
+		if (State.ObjectState() != ObjectState) { return true; }
+		if ((State.X() - X).Size() > 0.1) { return true; }
+		if ((State.V() - V).Size() > 0.1) { return true; }
+		if ((State.R() - R).Size() > 0.1) { return true; }
+		if ((State.W() - W).Size() > 0.1) { return true; }
+
+		return false;
+	}
 }

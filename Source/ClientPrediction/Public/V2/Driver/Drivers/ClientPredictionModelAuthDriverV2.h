@@ -3,6 +3,7 @@
 #include "V2/Driver/ClientPredictionModelDriverV2.h"
 #include "Driver/ClientPredictionRepProxy.h"
 #include "V2/Driver/ClientPredictionModelTypesV2.h"
+#include "V2/Driver/Input/ClientPredictionAuthInputBuf.h"
 #include "V2/Driver/Input/ClientPredictionInput.h"
 
 namespace ClientPrediction {
@@ -12,10 +13,12 @@ namespace ClientPrediction {
 		virtual ~FModelAuthDriver() override = default;
 
 		// Ticking
-		virtual void PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) override;
 		virtual void PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) override;
 		virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) override;
 		virtual void PostPhysicsGameThread() override;
+
+		// Called on game thread
+		virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override;
 
 	private:
 		UPrimitiveComponent* UpdatedComponent = nullptr;
@@ -24,6 +27,7 @@ namespace ClientPrediction {
 		FClientPredictionRepProxy& AutoProxyRep;
 		FClientPredictionRepProxy& SimProxyRep;
 
+		FAuthInputBuf InputBuf; // Written to on game thread, read from physics thread
 		FInputPacketWrapper LastInput{}; // Physics thread only
 
 		std::atomic<FPhysicsState> LastState; // Written from physics thread, read on game thread

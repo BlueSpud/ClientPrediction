@@ -56,4 +56,10 @@ namespace ClientPrediction {
 			CachedWorldManager->AddTickCallback(ModelDriver.Get());
 		}
 	}
+
+	void FPhysicsModel::ReceiveInputPackets(FNetSerializationProxy& Proxy) const {
+		if (ModelDriver != nullptr) {
+			ModelDriver->ReceiveInputPackets(Proxy);
+		}
+	}
 }

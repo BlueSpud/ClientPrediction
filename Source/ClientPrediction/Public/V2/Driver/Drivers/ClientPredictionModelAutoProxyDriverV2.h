@@ -33,9 +33,10 @@ namespace ClientPrediction {
 
 		FAutoProxyInputBuf InputBuf; // Written to on game thread, read from physics thread
 		FInputPacketWrapper CurrentInputPacket{}; // Only used on physics thread
+		FPhysicsState PendingCorrection{}; // Only used on physics thread
 
 		std::atomic<FPhysicsState> LastAuthorityState; // Written to from the game thread, read by the physics thread
-		int32 LastAckedTick = INDEX_NONE;
+		int32 LastAckedTick = INDEX_NONE; // Only used on the physics thread but might be used on the game thread later
 
 		// Game thread
 		TArray<FInputPacketWrapper> InputSlidingWindow;

@@ -2,6 +2,9 @@
 
 #include "PhysicsProxy/SingleParticlePhysicsProxy.h"
 
+CLIENTPREDICTION_API int32 ClientPredictionDesiredInputBufferSize = 3;
+FAutoConsoleVariableRef CVarClientPredictionDesiredInputBufferSize(TEXT("cp.DesiredInputBufferSize"), ClientPredictionDesiredInputBufferSize, TEXT("The desired size of the input buffer on the authority"));
+
 namespace ClientPrediction {
 	FModelAuthDriver::FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate* Delegate,
 	                                   FClientPredictionRepProxy& AutoProxyRep,
@@ -11,16 +14,17 @@ namespace ClientPrediction {
 		check(Delegate)
 	}
 
-	void FModelAuthDriver::PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) {
-
-	}
-
 	void FModelAuthDriver::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
+		if (LastInput.PacketNumber == INDEX_NONE && InputBuf.GetBufferSize() < static_cast<uint32>(ClientPredictionDesiredInputBufferSize)) { return; }
 
+		const bool bHadPacketInInputBuffer = InputBuf.GetNextInputPacket(LastInput);
+		if (!bHadPacketInInputBuffer) {
+			UE_LOG(LogTemp, Warning, TEXT("Dropped an input packet %d on the authority"), LastInput.PacketNumber);
+		}
 	}
 
 	void FModelAuthDriver::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) {
-		const auto* Handle = UpdatedComponent->GetBodyInstance()->ActorHandle->GetPhysicsThreadAPI();
+		const auto Handle = UpdatedComponent->GetBodyInstance()->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
 
 		FPhysicsState CurrentState;
 		CurrentState.TickNumber = TickNumber;
@@ -46,5 +50,15 @@ namespace ClientPrediction {
 
 			LastEmittedState = CurrentLastState.TickNumber;
 		}
+	}
+
+	void FModelAuthDriver::ReceiveInputPackets(FNetSerializationProxy& Proxy) {
+		TArray<FInputPacketWrapper> Packets;
+		Proxy.NetSerializeFunc = [&Packets](FArchive& Ar) {
+			Ar << Packets;
+		};
+
+		Proxy.Deserialize();
+		InputBuf.QueueInputPackets(Packets);
 	}
 }
