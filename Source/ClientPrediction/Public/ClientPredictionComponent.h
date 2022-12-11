@@ -7,6 +7,11 @@
 
 #include "ClientPredictionComponent.generated.h"
 
+struct CLIENTPREDICTION_API FTestInputPacket : public ClientPrediction::IInputPacket {
+	virtual ~FTestInputPacket() override = default;
+	virtual void NetSerialize(FArchive& Ar) override {}
+};
+
 UCLASS( ClassGroup=(ClientPrediction), meta=(BlueprintSpawnableComponent) )
 class CLIENTPREDICTION_API UClientPredictionComponent : public UActorComponent, public ClientPrediction::IPhysicsModelDelegate {
 
@@ -49,6 +54,6 @@ private:
 	ENetRole CachedRole = ENetRole::ROLE_None;
 	uint8 bCachedAuthorityTakesInput = -1;
 
-	ClientPrediction::FPhysicsModel TestPhysicsModel;
+	ClientPrediction::FPhysicsModel<FTestInputPacket> TestPhysicsModel;
 
 };

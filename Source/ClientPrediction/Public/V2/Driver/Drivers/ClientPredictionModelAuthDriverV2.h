@@ -4,7 +4,7 @@
 #include "Driver/ClientPredictionRepProxy.h"
 #include "V2/ClientPredictionModelTypesV2.h"
 #include "V2/Driver/Input/ClientPredictionAuthInputBuf.h"
-#include "V2/Driver/Input/ClientPredictionInput.h"
+#include "V2/ClientPredictionInput.h"
 
 namespace ClientPrediction {
 	extern CLIENTPREDICTION_API int32 ClientPredictionDesiredInputBufferSize;
@@ -20,7 +20,7 @@ namespace ClientPrediction {
 		virtual void PostPhysicsGameThread() override;
 
 		// Called on game thread
-		virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) override;
+		virtual void ReceiveInputPackets(const TArray<FInputPacketWrapper>& Packets) override;
 
 	private:
 		UPrimitiveComponent* UpdatedComponent = nullptr;

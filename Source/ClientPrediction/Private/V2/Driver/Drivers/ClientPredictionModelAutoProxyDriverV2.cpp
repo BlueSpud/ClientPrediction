@@ -30,6 +30,7 @@ namespace ClientPrediction {
 		// Sample a new input packet
 		FInputPacketWrapper Packet;
 		Packet.PacketNumber = TickNumber;
+		Delegate->ProduceInput(Packet);
 
 		InputBuf.QueueInputPacket(Packet);
 
@@ -39,11 +40,8 @@ namespace ClientPrediction {
 			InputSlidingWindow.RemoveAt(0);
 		}
 
-		FNetSerializationProxy Proxy([=](FArchive& Ar) mutable {
-			Ar << InputSlidingWindow;
-		});
-
-		Delegate->EmitInputPackets(Proxy);
+		check(InputSlidingWindow.Num() <= TNumericLimits<uint8>::Max())
+		Delegate->EmitInputPackets(InputSlidingWindow);
 	}
 
 	void FModelAutoProxyDriver::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {

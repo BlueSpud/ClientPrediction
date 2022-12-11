@@ -4,8 +4,8 @@
 
 #include "V2/Driver/ClientPredictionModelDriverV2.h"
 #include "V2/Driver/Input/ClientPredictionAutoProxyInputBuf.h"
-#include "V2/Driver/Input/ClientPredictionInput.h"
 #include "Driver/ClientPredictionRepProxy.h"
+#include "V2/ClientPredictionInput.h"
 #include "V2/ClientPredictionModelTypesV2.h"
 
 namespace ClientPrediction {

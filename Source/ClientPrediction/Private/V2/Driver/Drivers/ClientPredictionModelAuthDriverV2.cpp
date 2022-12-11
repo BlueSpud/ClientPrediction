@@ -47,13 +47,7 @@ namespace ClientPrediction {
 		}
 	}
 
-	void FModelAuthDriver::ReceiveInputPackets(FNetSerializationProxy& Proxy) {
-		TArray<FInputPacketWrapper> Packets;
-		Proxy.NetSerializeFunc = [&Packets](FArchive& Ar) {
-			Ar << Packets;
-		};
-
-		Proxy.Deserialize();
+	void FModelAuthDriver::ReceiveInputPackets(const TArray<FInputPacketWrapper>& Packets) {
 		InputBuf.QueueInputPackets(Packets);
 	}
 }

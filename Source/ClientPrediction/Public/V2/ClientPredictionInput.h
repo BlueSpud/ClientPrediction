@@ -1,20 +1,22 @@
 ﻿#pragma once
 
 namespace ClientPrediction {
+    struct CLIENTPREDICTION_API IInputPacket {
+        virtual ~IInputPacket() = default;
+        virtual void NetSerialize(FArchive& Ar) = 0;
+    };
+
     struct FInputPacketWrapper {
         int32 PacketNumber = INDEX_NONE;
+        TSharedPtr<IInputPacket> Body = nullptr;
 
         void NetSerialize(FArchive& Ar);
-        friend FArchive& operator<<(FArchive& Ar, FInputPacketWrapper& Wrapper);
-
     };
 
     inline void FInputPacketWrapper::NetSerialize(FArchive& Ar) {
-        Ar << PacketNumber;
-    }
+        check(Body);
 
-    inline FArchive& operator<<(FArchive& Ar, FInputPacketWrapper& Wrapper) {
-        Wrapper.NetSerialize(Ar);
-        return Ar;
+        Ar << PacketNumber;
+        Body->NetSerialize(Ar);
     }
 }

@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include "V2/Driver/Input/ClientPredictionInput.h"
+#include "V2/ClientPredictionInput.h"
 
 namespace ClientPrediction {
 		struct FAutoProxyInputBuf {

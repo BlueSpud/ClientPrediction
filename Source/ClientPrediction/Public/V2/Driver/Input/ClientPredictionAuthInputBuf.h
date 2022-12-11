@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include "ClientPredictionInput.h"
+#include "V2/ClientPredictionInput.h"
 
 namespace ClientPrediction {
 	struct FAuthInputBuf {
