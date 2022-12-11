@@ -11,7 +11,7 @@
 namespace ClientPrediction {
 	extern CLIENTPREDICTION_API int32 ClientPredictionInputSlidingWindowSize;
 
-	class FModelAutoProxyDriver : public IModelDriver  {
+	class CLIENTPREDICTION_API FModelAutoProxyDriver : public IModelDriver  {
 	public:
 		FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate* InDelegate, FClientPredictionRepProxy& AutoProxyRep, int32 RewindBufferSize);
 		virtual ~FModelAutoProxyDriver() override = default;

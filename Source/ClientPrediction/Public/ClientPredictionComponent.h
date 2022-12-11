@@ -7,11 +7,6 @@
 
 #include "ClientPredictionComponent.generated.h"
 
-struct CLIENTPREDICTION_API FTestInputPacket : public ClientPrediction::IInputPacket {
-	virtual ~FTestInputPacket() override = default;
-	virtual void NetSerialize(FArchive& Ar) override {}
-};
-
 UCLASS( ClassGroup=(ClientPrediction), meta=(BlueprintSpawnableComponent) )
 class CLIENTPREDICTION_API UClientPredictionComponent : public UActorComponent, public ClientPrediction::IPhysicsModelDelegate {
 
@@ -29,6 +24,9 @@ public:
 
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	template <typename ModelType>
+	ModelType* CreateModel();
 
 private:
 
@@ -54,6 +52,13 @@ private:
 	ENetRole CachedRole = ENetRole::ROLE_None;
 	uint8 bCachedAuthorityTakesInput = -1;
 
-	ClientPrediction::FPhysicsModel<FTestInputPacket> TestPhysicsModel;
-
+	TUniquePtr<ClientPrediction::FPhysicsModelBase> PhysicsModel;
 };
+
+template <typename ModelType>
+ModelType* UClientPredictionComponent::CreateModel() {
+	ModelType* Model = new ModelType();
+	PhysicsModel = TUniquePtr<ClientPrediction::FPhysicsModelBase>(Model);
+
+	return Model;
+}

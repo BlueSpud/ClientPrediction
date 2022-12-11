@@ -9,7 +9,7 @@
 namespace ClientPrediction {
 	extern CLIENTPREDICTION_API int32 ClientPredictionDesiredInputBufferSize;
 
-	class FModelAuthDriver : public IModelDriver  {
+	class CLIENTPREDICTION_API FModelAuthDriver : public IModelDriver  {
 	public:
 		FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate* InDelegate, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep);
 		virtual ~FModelAuthDriver() override = default;

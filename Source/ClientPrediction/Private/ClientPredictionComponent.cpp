@@ -1,11 +1,5 @@
 ﻿#include "ClientPredictionComponent.h"
-
 #include "Net/UnrealNetwork.h"
-
-#include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsActorHandle_Chaos.h"
-#include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsSimulation_Chaos.h"
-
-#include "Declares.h"
 
 UClientPredictionComponent::UClientPredictionComponent() {
 	SetIsReplicatedByDefault(true);
@@ -28,7 +22,9 @@ void UClientPredictionComponent::InitializeComponent() {
 
 	UpdatedComponent = Cast<UPrimitiveComponent>(GetOwner()->GetRootComponent());
 	check(UpdatedComponent);
-	TestPhysicsModel.Initialize(UpdatedComponent, this);
+
+	check(PhysicsModel);
+	PhysicsModel->Initialize(UpdatedComponent, this);
 
 	CheckOwnerRoleChanged();
 }
@@ -53,7 +49,7 @@ void UClientPredictionComponent::CheckOwnerRoleChanged() {
 	CachedRole = CurrentRole;
 	bCachedAuthorityTakesInput = bAuthorityTakesInput;
 
-	TestPhysicsModel.SetNetRole(CurrentRole, bAuthorityTakesInput, AutoProxyRep, SimProxyRep);
+	PhysicsModel->SetNetRole(CurrentRole, bAuthorityTakesInput, AutoProxyRep, SimProxyRep);
 }
 
 void UClientPredictionComponent::BeginPlay() {
@@ -63,7 +59,7 @@ void UClientPredictionComponent::BeginPlay() {
 
 void UClientPredictionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
 	Super::EndPlay(EndPlayReason);
-	TestPhysicsModel.Cleanup();
+	PhysicsModel->Cleanup();
 }
 
 void UClientPredictionComponent::RecvReliableAuthorityState_Implementation(FNetSerializationProxy Proxy) {
@@ -75,5 +71,5 @@ void UClientPredictionComponent::EmitInputPackets(FNetSerializationProxy& Proxy)
 }
 
 void UClientPredictionComponent::RecvInputPacket_Implementation(FNetSerializationProxy Proxy) {
-	TestPhysicsModel.ReceiveInputPackets(Proxy);
+	PhysicsModel->ReceiveInputPackets(Proxy);
 }
