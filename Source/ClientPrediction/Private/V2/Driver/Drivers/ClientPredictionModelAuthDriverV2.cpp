@@ -2,10 +2,10 @@
 
 #include "PhysicsProxy/SingleParticlePhysicsProxy.h"
 
-CLIENTPREDICTION_API int32 ClientPredictionDesiredInputBufferSize = 3;
-FAutoConsoleVariableRef CVarClientPredictionDesiredInputBufferSize(TEXT("cp.DesiredInputBufferSize"), ClientPredictionDesiredInputBufferSize, TEXT("The desired size of the input buffer on the authority"));
-
 namespace ClientPrediction {
+	CLIENTPREDICTION_API int32 ClientPredictionDesiredInputBufferSize = 3;
+	FAutoConsoleVariableRef CVarClientPredictionDesiredInputBufferSize(TEXT("cp.DesiredInputBufferSize"), ClientPredictionDesiredInputBufferSize, TEXT("The desired size of the input buffer on the authority"));
+
 	FModelAuthDriver::FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate* Delegate,
 	                                   FClientPredictionRepProxy& AutoProxyRep,
 	                                   FClientPredictionRepProxy& SimProxyRep) :
@@ -19,7 +19,7 @@ namespace ClientPrediction {
 
 		const bool bHadPacketInInputBuffer = InputBuf.GetNextInputPacket(LastInput);
 		if (!bHadPacketInInputBuffer) {
-			UE_LOG(LogTemp, Warning, TEXT("Dropped an input packet %d on the authority"), LastInput.PacketNumber);
+			UE_LOG(LogTemp, Error, TEXT("Dropped an input packet %d on the authority"), LastInput.PacketNumber);
 		}
 	}
 
@@ -29,12 +29,7 @@ namespace ClientPrediction {
 		FPhysicsState CurrentState;
 		CurrentState.TickNumber = TickNumber;
 		CurrentState.InputPacketTickNumber = LastInput.PacketNumber;
-
-		CurrentState.X = Handle->X();
-		CurrentState.V = Handle->V();
-		CurrentState.R = Handle->R();
-		CurrentState.W = Handle->W();
-		CurrentState.ObjectState = Handle->ObjectState();
+		CurrentState.FillState(Handle);
 
 		LastState = CurrentState;
 	}

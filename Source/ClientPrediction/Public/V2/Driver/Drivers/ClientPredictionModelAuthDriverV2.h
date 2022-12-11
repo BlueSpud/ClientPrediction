@@ -2,11 +2,13 @@
 
 #include "V2/Driver/ClientPredictionModelDriverV2.h"
 #include "Driver/ClientPredictionRepProxy.h"
-#include "V2/Driver/ClientPredictionModelTypesV2.h"
+#include "V2/ClientPredictionModelTypesV2.h"
 #include "V2/Driver/Input/ClientPredictionAuthInputBuf.h"
 #include "V2/Driver/Input/ClientPredictionInput.h"
 
 namespace ClientPrediction {
+	extern CLIENTPREDICTION_API int32 ClientPredictionDesiredInputBufferSize;
+
 	class FModelAuthDriver : public IModelDriver  {
 	public:
 		FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate* InDelegate, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep);

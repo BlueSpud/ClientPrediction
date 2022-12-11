@@ -6,9 +6,11 @@
 #include "V2/Driver/Input/ClientPredictionAutoProxyInputBuf.h"
 #include "V2/Driver/Input/ClientPredictionInput.h"
 #include "Driver/ClientPredictionRepProxy.h"
-#include "V2/Driver/ClientPredictionModelTypesV2.h"
+#include "V2/ClientPredictionModelTypesV2.h"
 
 namespace ClientPrediction {
+	extern CLIENTPREDICTION_API int32 ClientPredictionInputSlidingWindowSize;
+
 	class FModelAutoProxyDriver : public IModelDriver  {
 	public:
 		FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate* InDelegate, FClientPredictionRepProxy& AutoProxyRep, int32 RewindBufferSize);

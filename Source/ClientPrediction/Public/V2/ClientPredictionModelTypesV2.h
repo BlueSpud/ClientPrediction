@@ -3,6 +3,12 @@
 #include "RewindData.h"
 
 namespace ClientPrediction {
+
+	extern CLIENTPREDICTION_API float ClientPredictionPositionTolerance;
+	extern CLIENTPREDICTION_API float ClientPredictionVelocityTolerance;
+	extern CLIENTPREDICTION_API float ClientPredictionRotationTolerance;
+	extern CLIENTPREDICTION_API float ClientPredictionAngularVelTolerance;
+
 	struct FPhysicsState {
 		// TODO this probably needs some re-working since we probably want to sync the proxies / authority somehow
 		/** The tick number that the state was generated on. So if receiving from the authority, this is the index according to the authority. */
@@ -22,27 +28,8 @@ namespace ClientPrediction {
 
 		void NetSerialize(FArchive& Ar);
 		bool ShouldReconcile(const Chaos::FGeometryParticleState& State) const;
+
+		void FillState(const class Chaos::FRigidBodyHandle_Internal* Handle);
+		void Reconcile(class Chaos::FRigidBodyHandle_Internal* Handle) const;
 	};
-
-	inline void FPhysicsState::NetSerialize(FArchive& Ar) {
-		Ar << TickNumber;
-		Ar << InputPacketTickNumber;
-		Ar << ObjectState;
-
-		Ar << X;
-		Ar << V;
-
-		Ar << R;
-		Ar << W;
-	}
-
-	inline bool FPhysicsState::ShouldReconcile(const Chaos::FGeometryParticleState& State) const {
-		if (State.ObjectState() != ObjectState) { return true; }
-		if ((State.X() - X).Size() > 0.1) { return true; }
-		if ((State.V() - V).Size() > 0.1) { return true; }
-		if ((State.R() - R).Size() > 0.1) { return true; }
-		if ((State.W() - W).Size() > 0.1) { return true; }
-
-		return false;
-	}
 }

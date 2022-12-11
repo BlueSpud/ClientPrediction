@@ -2,10 +2,10 @@
 
 #include "PhysicsProxy/SingleParticlePhysicsProxy.h"
 
-CLIENTPREDICTION_API int32 ClientPredictionInputSlidingWindowSize = 3;
-FAutoConsoleVariableRef CVarClientPredictionSlidingWindowSize(TEXT("cp.SlidingWindowSize"), ClientPredictionInputSlidingWindowSize, TEXT("The max size of the sliding window of inputs that is sent to the authority"));
-
 namespace ClientPrediction {
+	CLIENTPREDICTION_API int32 ClientPredictionInputSlidingWindowSize = 1;
+	FAutoConsoleVariableRef CVarClientPredictionSlidingWindowSize(TEXT("cp.SlidingWindowSize"), ClientPredictionInputSlidingWindowSize, TEXT("The max size of the sliding window of inputs that is sent to the authority"));
+
 	FModelAutoProxyDriver::FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent,
 	                                             IModelDriverDelegate* Delegate,
 	                                             FClientPredictionRepProxy& AutoProxyRep,
@@ -51,13 +51,9 @@ namespace ClientPrediction {
 
 		const auto Handle = UpdatedComponent->GetBodyInstance()->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
 		if (PendingCorrection.InputPacketTickNumber == TickNumber) {
-			Handle->SetX(PendingCorrection.X);
-			Handle->SetV(PendingCorrection.V);
-			Handle->SetR(PendingCorrection.R);
-			Handle->SetW(PendingCorrection.W);
-			Handle->SetObjectState(PendingCorrection.ObjectState);
-
+			PendingCorrection.Reconcile(Handle);
 			PendingCorrection = {};
+
 			UE_LOG(LogTemp, Display, TEXT("Applied correction on %d"), TickNumber);
 		}
 
@@ -84,12 +80,6 @@ namespace ClientPrediction {
 		const Chaos::FGeometryParticleState PreviousState = RewindData.GetPastStateAtFrame(*Handle, LocalTickNumber, Chaos::FFrameAndPhase::PostCallbacks);
 
 		LastAckedTick = LocalTickNumber;
-		UE_LOG(LogTemp, Display, TEXT("Acked up until tick %d"), LocalTickNumber);
-
-		UE_LOG(LogTemp, Warning, TEXT("%f"), (PreviousState.X() - CurrentLastAuthorityState.X).Size());
-		UE_LOG(LogTemp, Warning, TEXT("%f"), (PreviousState.V() - CurrentLastAuthorityState.V).Size());
-		UE_LOG(LogTemp, Warning, TEXT("%f"), (PreviousState.W() - CurrentLastAuthorityState.W).Size());
-
 		if (CurrentLastAuthorityState.ShouldReconcile(PreviousState)) {
 			PendingCorrection = LastAuthorityState;
 
