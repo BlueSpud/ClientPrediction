@@ -14,22 +14,38 @@ namespace ClientPrediction {
 		check(Delegate)
 	}
 
-	void FModelAuthDriver::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
-		if (LastInput.PacketNumber == INDEX_NONE && InputBuf.GetBufferSize() < static_cast<uint32>(ClientPredictionDesiredInputBufferSize)) { return; }
+	Chaos::FRigidBodyHandle_Internal* FModelAuthDriver::GetPhysicsHandle() const {
+		FBodyInstance* BodyInstance = UpdatedComponent->GetBodyInstance();
+		check(BodyInstance)
 
-		const bool bHadPacketInInputBuffer = InputBuf.GetNextInputPacket(LastInput);
+		Chaos::FRigidBodyHandle_Internal* PhysicsHandle = BodyInstance->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
+		check(PhysicsHandle);
+
+		return PhysicsHandle;
+	}
+
+	void FModelAuthDriver::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
+		if (CurrentInput.PacketNumber == INDEX_NONE && InputBuf.GetBufferSize() < static_cast<uint32>(ClientPredictionDesiredInputBufferSize)) { return; }
+
+		const bool bHadPacketInInputBuffer = InputBuf.GetNextInputPacket(CurrentInput);
 		if (!bHadPacketInInputBuffer) {
-			UE_LOG(LogTemp, Error, TEXT("Dropped an input packet %d on the authority"), LastInput.PacketNumber);
+			UE_LOG(LogTemp, Error, TEXT("Dropped an input packet %d on the authority"), CurrentInput.PacketNumber);
 		}
+
+		auto* Handle = GetPhysicsHandle();
+		CurrentState.TickNumber = TickNumber;
+		CurrentState.InputPacketTickNumber = CurrentInput.PacketNumber;
+
+		FPhysicsContext Context(Handle);
+		Delegate->SimulatePrePhysics(CurrentInput.Body.Get(), Context);
 	}
 
 	void FModelAuthDriver::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) {
 		const auto Handle = UpdatedComponent->GetBodyInstance()->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
-
-		FPhysicsState CurrentState;
-		CurrentState.TickNumber = TickNumber;
-		CurrentState.InputPacketTickNumber = LastInput.PacketNumber;
 		CurrentState.FillState(Handle);
+
+		const FPhysicsContext Context(Handle);
+		Delegate->SimulatePostPhysics(CurrentInput.Body.Get(), Context);
 
 		LastState = CurrentState;
 	}

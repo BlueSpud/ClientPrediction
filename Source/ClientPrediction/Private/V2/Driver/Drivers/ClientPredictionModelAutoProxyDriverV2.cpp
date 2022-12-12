@@ -3,7 +3,7 @@
 #include "PhysicsProxy/SingleParticlePhysicsProxy.h"
 
 namespace ClientPrediction {
-	CLIENTPREDICTION_API int32 ClientPredictionInputSlidingWindowSize = 1;
+	CLIENTPREDICTION_API int32 ClientPredictionInputSlidingWindowSize = 3;
 	FAutoConsoleVariableRef CVarClientPredictionSlidingWindowSize(TEXT("cp.SlidingWindowSize"), ClientPredictionInputSlidingWindowSize, TEXT("The max size of the sliding window of inputs that is sent to the authority"));
 
 	FModelAutoProxyDriver::FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent,
@@ -26,6 +26,16 @@ namespace ClientPrediction {
 		};
 	}
 
+	Chaos::FRigidBodyHandle_Internal* FModelAutoProxyDriver::GetPhysicsHandle() const {
+		FBodyInstance* BodyInstance = UpdatedComponent->GetBodyInstance();
+		check(BodyInstance)
+
+		Chaos::FRigidBodyHandle_Internal* PhysicsHandle = BodyInstance->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
+		check(PhysicsHandle);
+
+		return PhysicsHandle;
+	}
+
 	void FModelAutoProxyDriver::PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) {
 		// Sample a new input packet
 		FInputPacketWrapper Packet;
@@ -45,21 +55,45 @@ namespace ClientPrediction {
 	}
 
 	void FModelAutoProxyDriver::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
-		check(InputBuf.InputForTick(TickNumber, CurrentInputPacket))
+		auto* PhysicsHandle = GetPhysicsHandle();
+		if (PendingPhysicsCorrectionFrame == TickNumber) {
+			PendingCorrection.Reconcile(PhysicsHandle);
+			CurrentState = MoveTemp(PendingCorrection);
 
-		const auto Handle = UpdatedComponent->GetBodyInstance()->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
-		if (PendingCorrection.InputPacketTickNumber == TickNumber) {
-			PendingCorrection.Reconcile(Handle);
 			PendingCorrection = {};
-
-			UE_LOG(LogTemp, Display, TEXT("Applied correction on %d"), TickNumber);
+			PendingPhysicsCorrectionFrame = INDEX_NONE;
 		}
 
-		// Apply input
+		check(InputBuf.InputForTick(TickNumber, CurrentInput))
+		CurrentState.TickNumber = TickNumber;
+		CurrentState.InputPacketTickNumber = CurrentInput.PacketNumber;
+
+		FPhysicsContext Context(PhysicsHandle);
+		Delegate->SimulatePrePhysics(CurrentInput.Body.Get(), Context);
 	}
 
 	void FModelAutoProxyDriver::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) {
-		// Generate state and marshall it to the game thread
+		auto* PhysicsHandle = GetPhysicsHandle();
+		CurrentState.FillState(PhysicsHandle);
+
+		const FPhysicsContext Context(PhysicsHandle);
+		Delegate->SimulatePostPhysics(CurrentInput.Body.Get(), Context);
+
+		UpdateHistory();
+	}
+
+	void FModelAutoProxyDriver::UpdateHistory() {
+		if (History.IsEmpty() || History.Last().TickNumber < CurrentState.TickNumber) {
+			History.Add(MoveTemp(CurrentState));
+		} else {
+			const int32 StartingTickNumber = History[0].TickNumber;
+			History[CurrentState.TickNumber - StartingTickNumber] = MoveTemp(CurrentState);
+		}
+
+		// Trim the history buffer
+		while (History.Num() > RewindBufferSize) {
+			History.RemoveAt(0);
+		}
 	}
 
 	int32 FModelAutoProxyDriver::GetRewindTickNumber(int32 CurrentTickNumber, const Chaos::FRewindData& RewindData) {
@@ -74,15 +108,27 @@ namespace ClientPrediction {
 		check(LocalTickNumber >= CurrentTickNumber - RewindBufferSize)
 
 		// Check against the historic state
-		const auto Handle = UpdatedComponent->GetBodyInstance()->GetPhysicsActorHandle()->GetHandle_LowLevel();
-		const Chaos::FGeometryParticleState PreviousState = RewindData.GetPastStateAtFrame(*Handle, LocalTickNumber, Chaos::FFrameAndPhase::PostCallbacks);
+		const FPhysicsState* HistoricState = nullptr;
+		for (const FPhysicsState& State : History) {
+			if (State.TickNumber == LocalTickNumber) {
+				HistoricState = &State;
+				break;
+			}
+		}
 
+		check(HistoricState);
 		LastAckedTick = LocalTickNumber;
-		if (CurrentLastAuthorityState.ShouldReconcile(PreviousState)) {
+
+		if (CurrentLastAuthorityState.ShouldReconcile(*HistoricState)) {
+
+			// When we perform a correction, we add one to the frame, since LastAuthorityState will be the state
+			// of the simulation during PostTickPhysicsThread (after physics has been simulated), so it is the beginning
+			// state for LocalTickNumber + 1
+			PendingPhysicsCorrectionFrame = LocalTickNumber + 1;
 			PendingCorrection = LastAuthorityState;
 
 			UE_LOG(LogTemp, Error, TEXT("Rewinding and rolling back to %d"), LocalTickNumber);
-			return LocalTickNumber;
+			return LocalTickNumber + 1;
 		}
 
 		return INDEX_NONE;

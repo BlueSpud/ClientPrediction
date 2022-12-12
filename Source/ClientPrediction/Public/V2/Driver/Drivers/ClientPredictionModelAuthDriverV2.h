@@ -14,6 +14,11 @@ namespace ClientPrediction {
 		FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate* InDelegate, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep);
 		virtual ~FModelAuthDriver() override = default;
 
+	private:
+		class Chaos::FRigidBodyHandle_Internal* GetPhysicsHandle() const;
+
+	public:
+
 		// Ticking
 		virtual void PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) override;
 		virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) override;
@@ -30,9 +35,10 @@ namespace ClientPrediction {
 		FClientPredictionRepProxy& SimProxyRep;
 
 		FAuthInputBuf InputBuf; // Written to on game thread, read from physics thread
-		FInputPacketWrapper LastInput{}; // Physics thread only
+		FInputPacketWrapper CurrentInput{}; // Only used on physics thread
+		FPhysicsState CurrentState{}; // Only used on physics thread
 
 		std::atomic<FPhysicsState> LastState; // Written from physics thread, read on game thread
-		int32 LastEmittedState = INDEX_NONE; // Game thread only
+		int32 LastEmittedState = INDEX_NONE; // Only used on game thread
 	};
 }

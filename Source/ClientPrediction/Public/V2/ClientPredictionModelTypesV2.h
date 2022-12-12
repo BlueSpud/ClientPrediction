@@ -1,7 +1,5 @@
 ﻿#pragma once
 
-#include "RewindData.h"
-
 namespace ClientPrediction {
 
 	extern CLIENTPREDICTION_API float ClientPredictionPositionTolerance;
@@ -27,7 +25,7 @@ namespace ClientPrediction {
 		Chaos::FVec3 W = Chaos::FVec3::ZeroVector;
 
 		void NetSerialize(FArchive& Ar);
-		bool ShouldReconcile(const Chaos::FGeometryParticleState& State) const;
+		bool ShouldReconcile(const FPhysicsState& State) const;
 
 		void FillState(const class Chaos::FRigidBodyHandle_Internal* Handle);
 		void Reconcile(class Chaos::FRigidBodyHandle_Internal* Handle) const;

@@ -40,12 +40,12 @@ namespace ClientPrediction {
 		Ar << W.Z;
 	}
 
-	bool FPhysicsState::ShouldReconcile(const Chaos::FGeometryParticleState& State) const {
-		if (State.ObjectState() != ObjectState) { return true; }
-		if ((State.X() - X).Size() > ClientPredictionPositionTolerance) { return true; }
-		if ((State.V() - V).Size() > ClientPredictionVelocityTolerance) { return true; }
-		if ((State.R() - R).Size() > ClientPredictionRotationTolerance) { return true; }
-		if ((State.W() - W).Size() > ClientPredictionAngularVelTolerance) { return true; }
+	bool FPhysicsState::ShouldReconcile(const FPhysicsState& State) const {
+		if (State.ObjectState != ObjectState) { return true; }
+		if ((State.X - X).Size() > ClientPredictionPositionTolerance) { return true; }
+		if ((State.V - V).Size() > ClientPredictionVelocityTolerance) { return true; }
+		if ((State.R - R).Size() > ClientPredictionRotationTolerance) { return true; }
+		if ((State.W - W).Size() > ClientPredictionAngularVelTolerance) { return true; }
 
 		return false;
 	}

@@ -38,6 +38,13 @@ namespace ClientPrediction {
 
 	template <typename InputPacketType>
 	struct FPhysicsModel : public FPhysicsModelBase {
+
+		// Should be implemented by child classes
+
+		virtual void SimulatePrePhysics(const InputPacketType& Input, FPhysicsContext& Context) = 0;
+		virtual void SimulatePostPhysics(const InputPacketType& Input, const FPhysicsContext& Context) = 0;
+
+		// FPhysicsModelBase
 		virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) override final;
 
 		virtual ~FPhysicsModel() override = default;
@@ -47,8 +54,11 @@ namespace ClientPrediction {
 		virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) const override final;
 
 		// IModelDriverDelegate
-		virtual void EmitInputPackets(TArray<FInputPacketWrapper>& Packets) override;
-		virtual void ProduceInput(FInputPacketWrapper& Packet) override;
+		virtual void EmitInputPackets(TArray<FInputPacketWrapper>& Packets) override final;
+		virtual void ProduceInput(FInputPacketWrapper& Packet) override final;
+
+		virtual void SimulatePrePhysics(IInputPacket* Input, FPhysicsContext& Context) override final;
+		virtual void SimulatePostPhysics(IInputPacket* Input, const FPhysicsContext& Context) override final;
 
 	public:
 
@@ -165,5 +175,17 @@ namespace ClientPrediction {
 		ProduceInputDelegate.ExecuteIfBound(*Body.Get());
 
 		Packet.Body = MoveTemp(Body);
+	}
+
+	template <typename InputPacketType>
+	void FPhysicsModel<InputPacketType>::SimulatePrePhysics(IInputPacket* Input, FPhysicsContext& Context) {
+		InputPacketType* PacketBody = reinterpret_cast<InputPacketType*>(Input);
+		SimulatePrePhysics(*PacketBody, Context);
+	}
+
+	template <typename InputPacketType>
+	void FPhysicsModel<InputPacketType>::SimulatePostPhysics(IInputPacket* Input, const FPhysicsContext& Context) {
+		InputPacketType* PacketBody = reinterpret_cast<InputPacketType*>(Input);
+		SimulatePostPhysics(*PacketBody, Context);
 	}
 }

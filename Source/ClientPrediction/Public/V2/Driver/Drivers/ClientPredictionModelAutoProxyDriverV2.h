@@ -18,13 +18,17 @@ namespace ClientPrediction {
 
 	private:
 		void BindToRepProxy(FClientPredictionRepProxy& AutoProxyRep);
+		class Chaos::FRigidBodyHandle_Internal* GetPhysicsHandle() const;
 
 	public:
 
 		// Ticking
 		virtual void PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) override;
 		virtual void PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) override;
+
 		virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) override;
+		void UpdateHistory();
+
 		virtual int32 GetRewindTickNumber(int32 CurrentTickNumber, const class Chaos::FRewindData& RewindData) override;
 		virtual void PostPhysicsGameThread() override;
 
@@ -33,9 +37,14 @@ namespace ClientPrediction {
 		IModelDriverDelegate* Delegate = nullptr;
 		int32 RewindBufferSize = 0;
 
+		FInputPacketWrapper CurrentInput{}; // Only used on physics thread
+		FPhysicsState CurrentState{}; // Only used on physics thread
+
 		FAutoProxyInputBuf InputBuf; // Written to on game thread, read from physics thread
-		FInputPacketWrapper CurrentInputPacket{}; // Only used on physics thread
+		TArray<FPhysicsState> History; // Only used on physics thread
+
 		FPhysicsState PendingCorrection{}; // Only used on physics thread
+		int32 PendingPhysicsCorrectionFrame = INDEX_NONE; // Only used on physics thread
 
 		std::atomic<FPhysicsState> LastAuthorityState; // Written to from the game thread, read by the physics thread
 		int32 LastAckedTick = INDEX_NONE; // Only used on the physics thread but might be used on the game thread later
