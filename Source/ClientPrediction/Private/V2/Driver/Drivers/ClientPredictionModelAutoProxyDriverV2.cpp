@@ -15,14 +15,15 @@ namespace ClientPrediction {
 		check(Delegate);
 
 		BindToRepProxy(AutoProxyRep);
+
+		Delegate->GenerateInitialState(CurrentState);
+		LastState = CurrentState;
 	}
 
 	void FModelAutoProxyDriver::BindToRepProxy(FClientPredictionRepProxy& AutoProxyRep) {
 		AutoProxyRep.SerializeFunc = [&](FArchive& Ar) {
-			FPhysicsState AuthorityState;
-			AuthorityState.NetSerialize(Ar);
-
-			LastAuthorityState = AuthorityState;
+			Delegate->NewState(LastAuthorityState);
+			Delegate->NetSerialize(LastAuthorityState, Ar);
 		};
 	}
 
@@ -64,6 +65,9 @@ namespace ClientPrediction {
 			PendingPhysicsCorrectionFrame = INDEX_NONE;
 		}
 
+		LastState = CurrentState;
+		Delegate->NewState(CurrentState);
+
 		check(InputBuf.InputForTick(TickNumber, CurrentInput))
 		CurrentState.TickNumber = TickNumber;
 		CurrentState.InputPacketTickNumber = CurrentInput.PacketNumber;
@@ -97,8 +101,8 @@ namespace ClientPrediction {
 	}
 
 	int32 FModelAutoProxyDriver::GetRewindTickNumber(int32 CurrentTickNumber, const Chaos::FRewindData& RewindData) {
-		const FPhysicsState CurrentLastAuthorityState = LastAuthorityState;
-		const int32 LocalTickNumber = CurrentLastAuthorityState.InputPacketTickNumber;
+		FScopeLock Lock(&LastAuthorityMutex);
+		const int32 LocalTickNumber = LastAuthorityState.InputPacketTickNumber;
 
 		if (LocalTickNumber == INDEX_NONE) { return INDEX_NONE; }
 		if (LocalTickNumber <= LastAckedTick ) { return INDEX_NONE; }
@@ -119,7 +123,7 @@ namespace ClientPrediction {
 		check(HistoricState);
 		LastAckedTick = LocalTickNumber;
 
-		if (CurrentLastAuthorityState.ShouldReconcile(*HistoricState)) {
+		if (LastAuthorityState.ShouldReconcile(*HistoricState)) {
 
 			// When we perform a correction, we add one to the frame, since LastAuthorityState will be the state
 			// of the simulation during PostTickPhysicsThread (after physics has been simulated), so it is the beginning

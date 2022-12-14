@@ -37,8 +37,10 @@ namespace ClientPrediction {
 		FAuthInputBuf InputBuf; // Written to on game thread, read from physics thread
 		FInputPacketWrapper CurrentInput{}; // Only used on physics thread
 		FPhysicsState CurrentState{}; // Only used on physics thread
+		FPhysicsState LastState{}; // Only used on physics thread
 
-		std::atomic<FPhysicsState> LastState; // Written from physics thread, read on game thread
+		FCriticalSection LastStateGtMutex;
+		FPhysicsState LastStateGt; // Written from physics thread, read on game thread
 		int32 LastEmittedState = INDEX_NONE; // Only used on game thread
 	};
 }

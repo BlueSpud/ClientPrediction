@@ -58,7 +58,7 @@ private:
 template <typename ModelType>
 ModelType* UClientPredictionComponent::CreateModel() {
 	ModelType* Model = new ModelType();
-	PhysicsModel = TUniquePtr<ClientPrediction::FPhysicsModelBase>(Model);
+	PhysicsModel = TUniquePtr<ModelType>(Model);
 
 	return Model;
 }

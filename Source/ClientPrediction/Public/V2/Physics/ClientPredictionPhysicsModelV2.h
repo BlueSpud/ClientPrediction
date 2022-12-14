@@ -36,7 +36,7 @@ namespace ClientPrediction {
 	// Model declaration
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-	template <typename InputPacketType>
+	template <typename InputPacketType, typename StateType>
 	struct FPhysicsModel : public FPhysicsModelBase {
 
 		// Should be implemented by child classes
@@ -57,8 +57,12 @@ namespace ClientPrediction {
 		virtual void EmitInputPackets(TArray<FInputPacketWrapper>& Packets) override final;
 		virtual void ProduceInput(FInputPacketWrapper& Packet) override final;
 
-		virtual void SimulatePrePhysics(IInputPacket* Input, FPhysicsContext& Context) override final;
-		virtual void SimulatePostPhysics(IInputPacket* Input, const FPhysicsContext& Context) override final;
+		virtual void SimulatePrePhysics(void* Input, FPhysicsContext& Context) override final;
+		virtual void SimulatePostPhysics(void* Input, const FPhysicsContext& Context) override final;
+
+		virtual void GenerateInitialState(FPhysicsState& State) override final;
+		virtual void NewState(FPhysicsState& State) override final;
+		virtual void NetSerialize(FPhysicsState& State, FArchive& Ar) override final;
 
 	public:
 
@@ -75,8 +79,8 @@ namespace ClientPrediction {
 	// Implementation
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-	template <typename InputPacketType>
-	void FPhysicsModel<InputPacketType>::Initialize(UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) {
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::Initialize(UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) {
 		CachedComponent = Component;
 		check(CachedComponent);
 
@@ -90,8 +94,8 @@ namespace ClientPrediction {
 		check(CachedWorldManager)
 	}
 
-	template <typename InputPacketType>
-	void FPhysicsModel<InputPacketType>::Cleanup() {
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::Cleanup() {
 		if (CachedWorldManager != nullptr && ModelDriver != nullptr) {
 			CachedWorldManager->RemoveTickCallback(ModelDriver.Get());
 		}
@@ -100,11 +104,12 @@ namespace ClientPrediction {
 		ModelDriver = nullptr;
 	}
 
-	template <typename InputPacketType>
-	void FPhysicsModel<InputPacketType>::SetNetRole(ENetRole Role, bool bShouldTakeInput,
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::SetNetRole(ENetRole Role, bool bShouldTakeInput,
 		FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) {
-		check(CachedWorldManager);
-		check(Delegate);
+		check(CachedWorldManager)
+		check(CachedComponent)
+		check(Delegate)
 
 		if (ModelDriver != nullptr) {
 			CachedWorldManager->RemoveTickCallback(ModelDriver.Get());
@@ -130,8 +135,8 @@ namespace ClientPrediction {
 		}
 	}
 
-	template <typename InputPacketType>
-	void FPhysicsModel<InputPacketType>::ReceiveInputPackets(FNetSerializationProxy& Proxy) const {
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::ReceiveInputPackets(FNetSerializationProxy& Proxy) const {
 		if (ModelDriver == nullptr) { return; }
 
 		TArray<FInputPacketWrapper> Packets;
@@ -142,8 +147,11 @@ namespace ClientPrediction {
 			for (uint8 i = 0; i < Size; i++) {
 				Packets.Emplace();
 				FInputPacketWrapper& Packet = Packets.Last();
-				Packet.Body = MakeShared<InputPacketType>();
 				Packet.NetSerialize(Ar);
+
+				TSharedPtr<InputPacketType> Body = MakeShared<InputPacketType>();
+				Body->NetSerialize(Ar);
+				Packet.Body = MoveTemp(Body);
 			}
 		};
 
@@ -151,8 +159,8 @@ namespace ClientPrediction {
 		ModelDriver->ReceiveInputPackets(Packets);
 	}
 
-	template <typename InputPacketType>
-	void FPhysicsModel<InputPacketType>::EmitInputPackets(TArray<FInputPacketWrapper>& Packets) {
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::EmitInputPackets(TArray<FInputPacketWrapper>& Packets) {
 		check(Delegate);
 
 		FNetSerializationProxy Proxy;
@@ -162,6 +170,9 @@ namespace ClientPrediction {
 
 			for (uint8 i = 0; i < Size; i++) {
 				Packets[i].NetSerialize(Ar);
+
+				check(Packets[i].Body)
+				static_cast<InputPacketType*>(Packets[i].Body.Get())->NetSerialize(Ar);
 			}
 		};
 
@@ -169,23 +180,44 @@ namespace ClientPrediction {
 		Delegate->EmitInputPackets(Proxy);
 	}
 
-	template <typename InputPacketType>
-	void FPhysicsModel<InputPacketType>::ProduceInput(FInputPacketWrapper& Packet) {
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::ProduceInput(FInputPacketWrapper& Packet) {
 		TSharedPtr<InputPacketType> Body = MakeShared<InputPacketType>();
 		ProduceInputDelegate.ExecuteIfBound(*Body.Get());
 
 		Packet.Body = MoveTemp(Body);
 	}
 
-	template <typename InputPacketType>
-	void FPhysicsModel<InputPacketType>::SimulatePrePhysics(IInputPacket* Input, FPhysicsContext& Context) {
-		InputPacketType* PacketBody = reinterpret_cast<InputPacketType*>(Input);
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::SimulatePrePhysics(void* Input, FPhysicsContext& Context) {
+		InputPacketType* PacketBody = static_cast<InputPacketType*>(Input);
 		SimulatePrePhysics(*PacketBody, Context);
 	}
 
-	template <typename InputPacketType>
-	void FPhysicsModel<InputPacketType>::SimulatePostPhysics(IInputPacket* Input, const FPhysicsContext& Context) {
-		InputPacketType* PacketBody = reinterpret_cast<InputPacketType*>(Input);
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::SimulatePostPhysics(void* Input, const FPhysicsContext& Context) {
+		InputPacketType* PacketBody = static_cast<InputPacketType*>(Input);
 		SimulatePostPhysics(*PacketBody, Context);
+	}
+
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::GenerateInitialState(FPhysicsState& State) {
+		NewState(State);
+
+		// Actually generate initial state
+	}
+
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::NewState(FPhysicsState& State) {
+		State = {};
+		State.Body = MakeShared<StateType>();
+	}
+
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::NetSerialize(FPhysicsState& State, FArchive& Ar) {
+		State.NetSerialize(Ar);
+
+		check(State.Body)
+		static_cast<StateType*>(State.Body.Get())->NetSerialize(Ar);
 	}
 }

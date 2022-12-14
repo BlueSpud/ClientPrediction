@@ -12,6 +12,9 @@ namespace ClientPrediction {
 		UpdatedComponent(UpdatedComponent), Delegate(Delegate), AutoProxyRep(AutoProxyRep), SimProxyRep(SimProxyRep) {
 		check(UpdatedComponent)
 		check(Delegate)
+
+		Delegate->GenerateInitialState(CurrentState);
+		LastState = CurrentState;
 	}
 
 	Chaos::FRigidBodyHandle_Internal* FModelAuthDriver::GetPhysicsHandle() const {
@@ -32,34 +35,41 @@ namespace ClientPrediction {
 			UE_LOG(LogTemp, Error, TEXT("Dropped an input packet %d on the authority"), CurrentInput.PacketNumber);
 		}
 
-		auto* Handle = GetPhysicsHandle();
+		LastState = CurrentState;
+		Delegate->NewState(CurrentState);
+
 		CurrentState.TickNumber = TickNumber;
 		CurrentState.InputPacketTickNumber = CurrentInput.PacketNumber;
 
+		auto* Handle = GetPhysicsHandle();
 		FPhysicsContext Context(Handle);
 		Delegate->SimulatePrePhysics(CurrentInput.Body.Get(), Context);
 	}
 
 	void FModelAuthDriver::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) {
-		const auto Handle = UpdatedComponent->GetBodyInstance()->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
+		const auto Handle = GetPhysicsHandle();
 		CurrentState.FillState(Handle);
 
 		const FPhysicsContext Context(Handle);
 		Delegate->SimulatePostPhysics(CurrentInput.Body.Get(), Context);
 
-		LastState = CurrentState;
+		FScopeLock Lock(&LastStateGtMutex);
+		LastStateGt = CurrentState;
 	}
 
 	void FModelAuthDriver::PostPhysicsGameThread() {
-		FPhysicsState CurrentLastState = LastState;
-		if (CurrentLastState.TickNumber != INDEX_NONE && CurrentLastState.TickNumber != LastEmittedState) {
-			AutoProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { CurrentLastState.NetSerialize(Ar); };
-			SimProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { CurrentLastState.NetSerialize(Ar); };
+		FScopeLock Lock(&LastStateGtMutex);
+
+		if (LastStateGt.TickNumber != INDEX_NONE && LastStateGt.TickNumber != LastEmittedState) {
+
+			FPhysicsState SendingState = LastStateGt;
+			AutoProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { Delegate->NetSerialize(SendingState, Ar); };
+			SimProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { Delegate->NetSerialize(SendingState, Ar); };
 
 			AutoProxyRep.Dispatch();
 			SimProxyRep.Dispatch();
 
-			LastEmittedState = CurrentLastState.TickNumber;
+			LastEmittedState = LastStateGt.TickNumber;
 		}
 	}
 
