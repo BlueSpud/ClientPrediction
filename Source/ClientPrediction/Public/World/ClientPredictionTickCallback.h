@@ -39,15 +39,17 @@ namespace ClientPrediction {
 		 * Called after a tick on the physics thread.
 		 * @param [in] TickNumber The index of the current tick.
 		 * @param [in] Dt The delta time for the tick that has just run.
-		 * @param [in] Time The absolute time of the finished tick.
+		 * @param [in] StartTime The absolute start time of the finished tick.
+		 * @param [in] EndTime The absolute end time of the finished tick.
 		 */
-		virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) {}
+		virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {}
 
 		/**
 		 * @brief Called after physics finishes on the game thread. It's possible that none, one or many physics ticks were executed.
 		 * At this point, physics results have been marshalled to the game thread.
+		 * @param [in] SimTime The absolute time of the simulation. This should be used for interpolation between two states generated on the physics thread.
 		 */
-		virtual void PostPhysicsGameThread() {}
+		virtual void PostPhysicsGameThread(Chaos::FReal SimTime) {}
 	};
 
 	class IRewindCallback {

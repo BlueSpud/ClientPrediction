@@ -13,7 +13,7 @@ namespace ClientPrediction {
 		class Chaos::FRigidBodyHandle_Internal* GetPhysicsHandle() const;
 
 		void PreTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt);
-		void PostTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time);
+		void PostTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime);
 
 	protected:
 		UPrimitiveComponent* UpdatedComponent = nullptr;
@@ -60,9 +60,12 @@ namespace ClientPrediction {
 	}
 
 	template <typename InputType, typename StateType>
-	void FSimulatedModelDriver<InputType, StateType>::PostTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) {
+	void FSimulatedModelDriver<InputType, StateType>::PostTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
 		const auto Handle = GetPhysicsHandle();
+
 		CurrentState.FillState(Handle);
+		CurrentState.StartTime = StartTime;
+		CurrentState.EndTime = EndTime;
 
 		const FPhysicsContext Context(Handle, UpdatedComponent);
 		Delegate->SimulatePostPhysics(Dt, Context, CurrentInput.Body, LastState, CurrentState);

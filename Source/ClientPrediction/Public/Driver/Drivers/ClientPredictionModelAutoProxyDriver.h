@@ -28,11 +28,11 @@ namespace ClientPrediction {
 		virtual void PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) override;
 		void ApplyCorrectionIfNeeded(int32 TickNumber);
 
-		virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) override;
+		virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) override;
 		void UpdateHistory();
 
 		virtual int32 GetRewindTickNumber(int32 CurrentTickNumber, const class Chaos::FRewindData& RewindData) override;
-		virtual void PostPhysicsGameThread() override;
+		virtual void PostPhysicsGameThread(Chaos::FReal SimTime) override;
 
 	private:
 		FAutoProxyInputBuf<InputType> InputBuf; // Written to on game thread, read from physics thread
@@ -106,18 +106,18 @@ namespace ClientPrediction {
     }
 
 	template <typename InputType, typename StateType>
-    void FModelAutoProxyDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) {
-    	PostTickSimulateWithCurrentInput(TickNumber, Dt, Time);
+    void FModelAutoProxyDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
+    	PostTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
     	UpdateHistory();
     }
 
 	template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::UpdateHistory() {
     	if (History.IsEmpty() || History.Last().TickNumber < CurrentState.TickNumber) {
-    		History.Add(MoveTemp(CurrentState));
+    		History.Add(CurrentState);
     	} else {
     		const int32 StartingTickNumber = History[0].TickNumber;
-    		History[CurrentState.TickNumber - StartingTickNumber] = MoveTemp(CurrentState);
+    		History[CurrentState.TickNumber - StartingTickNumber] = CurrentState;
     	}
 
     	// Trim the history buffer
@@ -166,5 +166,5 @@ namespace ClientPrediction {
     }
 
 	template <typename InputType, typename StateType>
-    void FModelAutoProxyDriver<InputType, StateType>::PostPhysicsGameThread() {}
+    void FModelAutoProxyDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime) {}
 }

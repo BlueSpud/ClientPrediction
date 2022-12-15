@@ -79,6 +79,8 @@ namespace ClientPrediction {
 		FDelegateHandle PostPhysSceneTickDelegate;
 
 		int32 CachedLastTickNumber = INDEX_NONE;
+		Chaos::FReal CachedSolverStartTime = 0.0;
+
 		TSet<class ITickCallback*> TickCallbacks;
 		class IRewindCallback* RewindCallback = nullptr;
 	};

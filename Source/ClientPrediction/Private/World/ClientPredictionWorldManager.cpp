@@ -132,19 +132,22 @@ namespace ClientPrediction {
 		}
 
 		CachedLastTickNumber = PhysicsStep;
+		CachedSolverStartTime = Solver->GetSolverTime();
 	}
 
 	void FWorldManager::PostAdvance_Internal(Chaos::FReal Dt) {
-		const Chaos::FReal TickTime = Solver->GetSolverTime();
+		const Chaos::FReal TickEndTime = CachedSolverStartTime + Dt;
 
 		for (ITickCallback* Callback : TickCallbacks) {
-			Callback->PostTickPhysicsThread(CachedLastTickNumber, Dt, TickTime);
+			Callback->PostTickPhysicsThread(CachedLastTickNumber, Dt, CachedSolverStartTime, TickEndTime);
 		}
 	}
 
 	void FWorldManager::OnPhysScenePostTick(FChaosScene* /*TickedPhysScene*/) {
+		const Chaos::FReal ResultsTime = Solver->GetPhysicsResultsTime_External();
+
 		for (ITickCallback* Callback : TickCallbacks) {
-			Callback->PostPhysicsGameThread();
+			Callback->PostPhysicsGameThread(ResultsTime);
 		}
 	}
 

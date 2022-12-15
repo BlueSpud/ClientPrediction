@@ -20,8 +20,8 @@ namespace ClientPrediction {
 
 		// Ticking
 		virtual void PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) override;
-		virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) override;
-		virtual void PostPhysicsGameThread() override;
+		virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) override;
+		virtual void PostPhysicsGameThread(Chaos::FReal SimTime) override;
 
 		// Called on game thread
 		virtual void ReceiveInputPackets(const TArray<FInputPacketWrapper<InputType>>& Packets) override;
@@ -54,15 +54,15 @@ namespace ClientPrediction {
 	}
 
 	template <typename InputType, typename StateType>
-	void FModelAuthDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) {
-		PostTickSimulateWithCurrentInput(TickNumber, Dt, Time);
+	void FModelAuthDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
+		PostTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
 
 		FScopeLock Lock(&LastStateGtMutex);
 		LastStateGt = CurrentState;
 	}
 
 	template <typename InputType, typename StateType>
-	void FModelAuthDriver<InputType, StateType>::PostPhysicsGameThread() {
+	void FModelAuthDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime) {
 		FScopeLock Lock(&LastStateGtMutex);
 
 		if (LastStateGt.TickNumber != INDEX_NONE && LastStateGt.TickNumber != LastEmittedState) {

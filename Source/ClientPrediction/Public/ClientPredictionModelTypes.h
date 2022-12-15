@@ -29,6 +29,10 @@ namespace ClientPrediction {
 
 		StateType Body{};
 
+		// These are not sent over the network, they're used for local interpolation only
+		float StartTime = 0.0;
+		float EndTime = 0.0;
+
 		void NetSerialize(FArchive& Ar);
 		bool ShouldReconcile(const FPhysicsState& State) const;
 
