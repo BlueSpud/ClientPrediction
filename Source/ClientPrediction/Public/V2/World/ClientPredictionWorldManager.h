@@ -26,7 +26,11 @@ namespace ClientPrediction {
 	public:
 
 		void AddTickCallback(class ITickCallback* Callback);
+		void AddRewindCallback(class IRewindCallback* Callback);
+
 		void RemoveTickCallback(const class ITickCallback* Callback);
+		void RemoveRewindCallback(const class IRewindCallback* Callback);
+
 		int32 GetRewindBufferSize() const { return RewindBufferSize; }
 
 	private:
@@ -34,7 +38,7 @@ namespace ClientPrediction {
 		DECLARE_DELEGATE_OneParam(FTickCallback, int32);
 		DECLARE_DELEGATE_RetVal_OneParam(int32, FRewindTickCallback, int32);
 
-		struct FRewindCallback : public Chaos::IRewindCallback {
+		struct FChaosRewindCallback : public Chaos::IRewindCallback {
 
 			/** [Game thread] Called before each tick */
 			virtual void ProcessInputs_External(int32 PhysicsStep, const TArray<Chaos::FSimCallbackInputAndObject>& SimCallbackInputs) override;
@@ -64,11 +68,11 @@ namespace ClientPrediction {
 		void OnPhysScenePostTick(FChaosScene* TickedPhysScene);
 
 		/** [Physics thread] Called to determine if a rewind is needed, INDEX_NONE is no rewind. */
-		int32 TriggerRewindIfNeeded_Internal(int32 CurrentTickNumber);
+		int32 TriggerRewindIfNeeded_Internal(int32 CurrentTickNumber) const;
 
 		FPhysScene* PhysScene = nullptr;
 		Chaos::FPhysicsSolver* Solver = nullptr;
-		FRewindCallback* RewindCallback = nullptr;
+		FChaosRewindCallback* ChaosRewindCallback = nullptr;
 		int32 RewindBufferSize = 0;
 
 		FDelegateHandle PostAdvanceDelegate;
@@ -76,5 +80,6 @@ namespace ClientPrediction {
 
 		int32 CachedLastTickNumber = INDEX_NONE;
 		TSet<class ITickCallback*> TickCallbacks;
+		class IRewindCallback* RewindCallback = nullptr;
 	};
 }

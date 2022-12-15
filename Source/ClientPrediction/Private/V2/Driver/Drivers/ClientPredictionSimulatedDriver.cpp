@@ -25,7 +25,7 @@ namespace ClientPrediction {
 	}
 
 	void FSimulatedModelDriver::PreTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt) {
-		LastState = CurrentState;
+		LastState = MoveTemp(CurrentState);
 		Delegate->NewState(CurrentState);
 
 		CurrentState.TickNumber = TickNumber;

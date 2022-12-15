@@ -48,6 +48,11 @@ namespace ClientPrediction {
 		 * At this point, physics results have been marshalled to the game thread.
 		 */
 		virtual void PostPhysicsGameThread() {}
+	};
+
+	class IRewindCallback {
+	public:
+		virtual ~IRewindCallback() = default;
 
 		/**
 		 * Gets the tick to rewind to. Called on the physics thread.

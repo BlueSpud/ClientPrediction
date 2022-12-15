@@ -12,7 +12,7 @@
 namespace ClientPrediction {
 	extern CLIENTPREDICTION_API int32 ClientPredictionInputSlidingWindowSize;
 
-	class CLIENTPREDICTION_API FModelAutoProxyDriver : public FSimulatedModelDriver  {
+	class CLIENTPREDICTION_API FModelAutoProxyDriver : public FSimulatedModelDriver, public IRewindCallback  {
 	public:
 		FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate* InDelegate, FClientPredictionRepProxy& AutoProxyRep, int32 RewindBufferSize);
 		virtual ~FModelAutoProxyDriver() override = default;
@@ -25,7 +25,7 @@ namespace ClientPrediction {
 		// Ticking
 		virtual void PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) override;
 		virtual void PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) override;
-		void ApplyCorrection(int32 TickNumber);
+		void ApplyCorrectionIfNeeded(int32 TickNumber);
 
 		virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) override;
 		void UpdateHistory();

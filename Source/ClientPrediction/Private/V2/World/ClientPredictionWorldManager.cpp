@@ -57,26 +57,37 @@ namespace ClientPrediction {
 
 		// TODO Investigate if InUseCollisionResimCache can be used
 		RewindBufferSize = FMath::CeilToInt32(static_cast<float>(ClientPredictionHistoryTimeMs) / 1000.0 / ClientPredictionFixedDt);
-		Solver->EnableRewindCapture(RewindBufferSize, false, MakeUnique<FRewindCallback>());
+		Solver->EnableRewindCapture(RewindBufferSize, false, MakeUnique<FChaosRewindCallback>());
 		check(Solver->IsDetemerministic());
 	}
 
 	void FWorldManager::CreateCallbacks() {
-		RewindCallback = static_cast<FRewindCallback*>(Solver->GetRewindCallback());
-		check(RewindCallback);
+		ChaosRewindCallback = static_cast<FChaosRewindCallback*>(Solver->GetRewindCallback());
+		check(ChaosRewindCallback);
 
-		RewindCallback->ProcessInputs_ExternalDelegate.BindRaw(this, &FWorldManager::ProcessInputs_External);
-		RewindCallback->ProcessInputs_InternalDelegate.BindRaw(this, &FWorldManager::ProcessInputs_Internal);
-		RewindCallback->TriggerRewindIfNeeded_InternalDelegate.BindRaw(this, &FWorldManager::TriggerRewindIfNeeded_Internal);
+		ChaosRewindCallback->ProcessInputs_ExternalDelegate.BindRaw(this, &FWorldManager::ProcessInputs_External);
+		ChaosRewindCallback->ProcessInputs_InternalDelegate.BindRaw(this, &FWorldManager::ProcessInputs_Internal);
+		ChaosRewindCallback->TriggerRewindIfNeeded_InternalDelegate.BindRaw(this, &FWorldManager::TriggerRewindIfNeeded_Internal);
 
 		PostAdvanceDelegate = Solver->AddPostAdvanceCallback(FSolverPostAdvance::FDelegate::CreateRaw(this, &FWorldManager::PostAdvance_Internal));
 		PostPhysSceneTickDelegate = PhysScene->OnPhysScenePostTick.AddRaw(this, &FWorldManager::OnPhysScenePostTick);
 	}
 
 	void FWorldManager::AddTickCallback(ITickCallback* Callback) { TickCallbacks.Add(Callback); }
+	void FWorldManager::AddRewindCallback(IRewindCallback* Callback) {
+		check(RewindCallback == nullptr);
+		RewindCallback = Callback;
+	}
+
 	void FWorldManager::RemoveTickCallback(const ITickCallback* Callback) {
 		if (TickCallbacks.Contains(Callback)) {
 			TickCallbacks.Remove(Callback);
+		}
+	}
+
+	void FWorldManager::RemoveRewindCallback(const IRewindCallback* Callback) {
+		if (RewindCallback == Callback) {
+			RewindCallback = nullptr;
 		}
 	}
 
@@ -90,15 +101,15 @@ namespace ClientPrediction {
 
 	// Rewind callbacks
 
-	void FWorldManager::FRewindCallback::ProcessInputs_External(int32 PhysicsStep, const TArray<Chaos::FSimCallbackInputAndObject>& SimCallbackInputs) {
+	void FWorldManager::FChaosRewindCallback::ProcessInputs_External(int32 PhysicsStep, const TArray<Chaos::FSimCallbackInputAndObject>& SimCallbackInputs) {
 		ProcessInputs_ExternalDelegate.ExecuteIfBound(PhysicsStep);
 	}
 
-	void FWorldManager::FRewindCallback::ProcessInputs_Internal(int32 PhysicsStep, const TArray<Chaos::FSimCallbackInputAndObject>& SimCallbackInputs) {
+	void FWorldManager::FChaosRewindCallback::ProcessInputs_Internal(int32 PhysicsStep, const TArray<Chaos::FSimCallbackInputAndObject>& SimCallbackInputs) {
 		ProcessInputs_InternalDelegate.ExecuteIfBound(PhysicsStep);
 	}
 
-	int32 FWorldManager::FRewindCallback::TriggerRewindIfNeeded_Internal(int32 LatestStepCompleted) {
+	int32 FWorldManager::FChaosRewindCallback::TriggerRewindIfNeeded_Internal(int32 LatestStepCompleted) {
 		if (!TriggerRewindIfNeeded_InternalDelegate.IsBound()) { return INDEX_NONE; }
 		return TriggerRewindIfNeeded_InternalDelegate.Execute(LatestStepCompleted);
 	}
@@ -137,19 +148,10 @@ namespace ClientPrediction {
 		}
 	}
 
-	int32 FWorldManager::TriggerRewindIfNeeded_Internal(int32 CurrentTickNumber) {
+	int32 FWorldManager::TriggerRewindIfNeeded_Internal(int32 CurrentTickNumber) const {
+		if (RewindCallback == nullptr) { return INDEX_NONE; }
+
 		const Chaos::FRewindData& RewindData = *Solver->GetRewindData();
-
-		int32 RewindTickNumber = INDEX_NONE;
-		for (ITickCallback* Callback : TickCallbacks) {
-			const int32 CallbackTickNumber = Callback->GetRewindTickNumber(CurrentTickNumber, RewindData);
-
-			if (CallbackTickNumber != INDEX_NONE) {
-				if (RewindTickNumber == INDEX_NONE) { RewindTickNumber = CallbackTickNumber; }
-				else { RewindTickNumber = FMath::Min(RewindTickNumber, CallbackTickNumber); }
-			}
-		}
-
-		return RewindTickNumber;
+		return RewindCallback->GetRewindTickNumber(CurrentTickNumber, RewindData);
 	}
 }

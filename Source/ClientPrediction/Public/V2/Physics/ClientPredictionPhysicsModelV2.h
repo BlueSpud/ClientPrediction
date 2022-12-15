@@ -145,19 +145,19 @@ namespace ClientPrediction {
 		case ROLE_Authority:
 			// TODO pass bShouldTakeInput here
 			ModelDriver = MakeUnique<FModelAuthDriver>(CachedComponent, this, AutoProxyRep, SimProxyRep);
+			CachedWorldManager->AddTickCallback(ModelDriver.Get());
 			break;
-		case ROLE_AutonomousProxy:
-			ModelDriver = MakeUnique<FModelAutoProxyDriver>(CachedComponent, this, AutoProxyRep, CachedWorldManager->GetRewindBufferSize());
-			break;
+		case ROLE_AutonomousProxy: {
+			TUniquePtr<FModelAutoProxyDriver> NewDriver = MakeUnique<FModelAutoProxyDriver>(CachedComponent, this, AutoProxyRep, CachedWorldManager->GetRewindBufferSize());
+			CachedWorldManager->AddTickCallback(NewDriver.Get());
+			CachedWorldManager->AddRewindCallback(NewDriver.Get());
+			ModelDriver = MoveTemp(NewDriver);
+		} break;
 		case ROLE_SimulatedProxy:
 			// TODO add in the sim proxy
 			break;
 		default:
 			break;
-		}
-
-		if (ModelDriver != nullptr) {
-			CachedWorldManager->AddTickCallback(ModelDriver.Get());
 		}
 	}
 

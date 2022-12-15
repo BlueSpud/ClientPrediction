@@ -38,23 +38,20 @@ namespace ClientPrediction {
 	}
 
 	void FModelAutoProxyDriver::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
-		if (PendingPhysicsCorrectionFrame == TickNumber) {
-			ApplyCorrection(TickNumber);
-		}
+		ApplyCorrectionIfNeeded(TickNumber);
 
 		check(InputBuf.InputForTick(TickNumber, CurrentInput))
 		PreTickSimulateWithCurrentInput(TickNumber, Dt);
 	}
 
-	void FModelAutoProxyDriver::ApplyCorrection(int32 TickNumber) {
-		auto* PhysicsHandle = GetPhysicsHandle();
-		if (PendingPhysicsCorrectionFrame == TickNumber) {
-			PendingCorrection.Reconcile(PhysicsHandle);
-			CurrentState = MoveTemp(PendingCorrection);
+	void FModelAutoProxyDriver::ApplyCorrectionIfNeeded(int32 TickNumber) {
+		if (PendingPhysicsCorrectionFrame == INDEX_NONE) { return; }
+		check(PendingPhysicsCorrectionFrame == TickNumber);
 
-			PendingCorrection = {};
-			PendingPhysicsCorrectionFrame = INDEX_NONE;
-		}
+		auto* PhysicsHandle = GetPhysicsHandle();
+		PendingCorrection.Reconcile(PhysicsHandle);
+		LastState = MoveTemp(PendingCorrection);
+		PendingPhysicsCorrectionFrame = INDEX_NONE;
 	}
 
 	void FModelAutoProxyDriver::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) {
