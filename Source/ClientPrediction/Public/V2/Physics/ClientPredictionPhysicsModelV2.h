@@ -33,16 +33,41 @@ namespace ClientPrediction {
 		virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) const = 0;
 	};
 
+	// Sim output
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	template <typename StateType>
+	struct FSimOutput {
+		explicit FSimOutput(FPhysicsState& PhysState)
+			: PhysState(PhysState) {}
+
+		StateType& State() const { return *static_cast<StateType*>(PhysState.Body.Get()); }
+
+	private:
+		FPhysicsState& PhysState;
+	};
+
+
 	// Model declaration
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	template <typename InputPacketType, typename StateType>
 	struct FPhysicsModel : public FPhysicsModelBase {
+		using SimOutput = FSimOutput<StateType>;
 
-		// Should be implemented by child classes
+		/**
+		 * Simulates the model before physics has been run for this ticket.
+		 * WARNING: This is called on the physics thread, so any objects shared between the physics thread and the
+		 * game thread need to be properly synchronized.
+		 */
+		virtual void SimulatePrePhysics(Chaos::FReal Dt, FPhysicsContext& Context, const InputPacketType& Input, const StateType& PrevState, SimOutput& OutState) = 0;
 
-		virtual void SimulatePrePhysics(const InputPacketType& Input, FPhysicsContext& Context) = 0;
-		virtual void SimulatePostPhysics(const InputPacketType& Input, const FPhysicsContext& Context) = 0;
+		/**
+		 * Simulates the model after physics has been run for this ticket.
+		 * WARNING: This is called on the physics thread, so any objects shared between the physics thread and the
+		 * game thread need to be properly synchronized.
+		 */
+		virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, const InputPacketType& Input, const StateType& PrevState, SimOutput& OutState) = 0;
 
 		// FPhysicsModelBase
 		virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) override final;
@@ -57,8 +82,9 @@ namespace ClientPrediction {
 		virtual void EmitInputPackets(TArray<FInputPacketWrapper>& Packets) override final;
 		virtual void ProduceInput(FInputPacketWrapper& Packet) override final;
 
-		virtual void SimulatePrePhysics(void* Input, FPhysicsContext& Context) override final;
-		virtual void SimulatePostPhysics(void* Input, const FPhysicsContext& Context) override final;
+		virtual void SimulatePrePhysics(Chaos::FReal Dt, FPhysicsContext& Context, void* Input, const FPhysicsState& PrevState, FPhysicsState& OutState) override final;
+		virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, void* Input, const FPhysicsState& PrevState, FPhysicsState& OutState) override final;
+		virtual bool ShouldReconcile(const FPhysicsState& A, const FPhysicsState& B) override final;
 
 		virtual void GenerateInitialState(FPhysicsState& State) override final;
 		virtual void NewState(FPhysicsState& State) override final;
@@ -189,15 +215,31 @@ namespace ClientPrediction {
 	}
 
 	template <typename InputPacketType, typename StateType>
-	void FPhysicsModel<InputPacketType, StateType>::SimulatePrePhysics(void* Input, FPhysicsContext& Context) {
-		InputPacketType* PacketBody = static_cast<InputPacketType*>(Input);
-		SimulatePrePhysics(*PacketBody, Context);
+	void FPhysicsModel<InputPacketType, StateType>::SimulatePrePhysics(const Chaos::FReal Dt, FPhysicsContext& Context, void* Input, const FPhysicsState& PrevState, FPhysicsState& OutState) {
+		InputPacketType* InputBody = static_cast<InputPacketType*>(Input);
+		StateType* PrevStateBody = static_cast<StateType*>(PrevState.Body.Get());
+
+		SimOutput Output(OutState);
+		SimulatePrePhysics(Dt, Context, *InputBody, *PrevStateBody, Output);
 	}
 
 	template <typename InputPacketType, typename StateType>
-	void FPhysicsModel<InputPacketType, StateType>::SimulatePostPhysics(void* Input, const FPhysicsContext& Context) {
-		InputPacketType* PacketBody = static_cast<InputPacketType*>(Input);
-		SimulatePostPhysics(*PacketBody, Context);
+	void FPhysicsModel<InputPacketType, StateType>::SimulatePostPhysics(const Chaos::FReal Dt, const FPhysicsContext& Context, void* Input, const FPhysicsState& PrevState, FPhysicsState& OutState) {
+		InputPacketType* InputBody = static_cast<InputPacketType*>(Input);
+		StateType* PrevStateBody = static_cast<StateType*>(PrevState.Body.Get());
+
+		SimOutput Output(OutState);
+		SimulatePostPhysics(Dt, Context, *InputBody, *PrevStateBody, Output);
+	}
+
+	template <typename InputPacketType, typename StateType>
+	bool FPhysicsModel<InputPacketType, StateType>::ShouldReconcile(const FPhysicsState& A, const FPhysicsState& B) {
+		if (A.ShouldReconcile(B)) { return true; }
+
+		const StateType* ABody = static_cast<StateType*>(A.Body.Get());
+		const StateType* BBody = static_cast<StateType*>(A.Body.Get());
+
+		return ABody->ShouldReconcile(*BBody);
 	}
 
 	template <typename InputPacketType, typename StateType>

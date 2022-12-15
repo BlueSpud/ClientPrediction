@@ -2,8 +2,8 @@
 
 namespace ClientPrediction {
 	struct CLIENTPREDICTION_API FPhysicsContext {
-		FPhysicsContext(class Chaos::FRigidBodyHandle_Internal* BodyHandle)
-			: BodyHandle(BodyHandle) {}
+		FPhysicsContext(class Chaos::FRigidBodyHandle_Internal* BodyHandle, class UPrimitiveComponent* Component)
+			: BodyHandle(BodyHandle), Component(Component) {}
 
 		void AddForce(const FVector& Force, bool bAccelerateChange = false);
 		void AddTorqueInRadians(const FVector& Torque, bool bAccelerateChange = false);
@@ -20,12 +20,11 @@ namespace ClientPrediction {
 
 		// World query methods
 		// TODO add more
-		// bool LineTraceSingle(struct FHitResult& OutHit, const FVector& Start, const FVector& End) const;
+		bool LineTraceSingle(struct FHitResult& OutHit, const FVector& Start, const FVector& End) const;
 		// bool SweepSingle(struct FHitResult& OutHit, const FVector& Start, const FVector& End, const FCollisionShape& CollisionShape, const FQuat& Rotation) const;
 
 	private:
-
-		/** The handle to the actor in the simulation. */
 		class Chaos::FRigidBodyHandle_Internal* BodyHandle = nullptr;
+		class UPrimitiveComponent* Component = nullptr;
 	};
 }

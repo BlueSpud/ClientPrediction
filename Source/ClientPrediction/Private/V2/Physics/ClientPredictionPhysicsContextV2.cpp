@@ -55,11 +55,16 @@ namespace ClientPrediction {
 	FVector FPhysicsContext::GetLinearVelocity() const { return BodyHandle->V(); }
 	FVector FPhysicsContext::GetAngularVelocity() const { return BodyHandle->W(); }
 
-	// bool FPhysicsContext::LineTraceSingle(FHitResult& OutHit, const FVector& Start, const FVector& End) const {
-	//
-	// 	return false;
-	// }
-	//
+	bool FPhysicsContext::LineTraceSingle(FHitResult& OutHit, const FVector& Start, const FVector& End) const {
+		const UWorld* World = Component->GetWorld();
+		if (World == nullptr) { return false; }
+
+		FCollisionQueryParams QueryParams = FCollisionQueryParams::DefaultQueryParam;
+		QueryParams.AddIgnoredActor(Component->GetOwner());
+
+		return World->LineTraceSingleByChannel(OutHit, Start, End, ECC_WorldStatic, QueryParams);
+	}
+
 	// bool FPhysicsContext::SweepSingle(FHitResult& OutHit, const FVector& Start, const FVector& End, const FCollisionShape& CollisionShape, const FQuat& Rotation) const {
 	//
 	// 	return false;
