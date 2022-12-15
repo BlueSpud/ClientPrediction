@@ -1,4 +1,4 @@
-﻿#include "V2/Driver/Drivers/ClientPredictionModelAutoProxyDriverV2.h"
+﻿#include "Driver/Drivers/ClientPredictionModelAutoProxyDriver.h"
 
 namespace ClientPrediction {
 	CLIENTPREDICTION_API int32 ClientPredictionInputSlidingWindowSize = 3;

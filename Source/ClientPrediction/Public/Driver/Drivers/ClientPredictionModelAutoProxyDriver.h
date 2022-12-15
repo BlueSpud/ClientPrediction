@@ -2,12 +2,12 @@
 
 #include <atomic>
 
-#include "V2/Driver/ClientPredictionModelDriverV2.h"
-#include "V2/Driver/Input/ClientPredictionAutoProxyInputBuf.h"
-#include "V2/Driver/Drivers/ClientPredictionSimulatedDriver.h"
+#include "Driver/ClientPredictionModelDriver.h"
+#include "Driver/Input/ClientPredictionAutoProxyInputBuf.h"
+#include "Driver/Drivers/ClientPredictionSimulatedDriver.h"
 #include "Driver/ClientPredictionRepProxy.h"
-#include "V2/ClientPredictionInput.h"
-#include "V2/ClientPredictionModelTypesV2.h"
+#include "ClientPredictionInput.h"
+#include "ClientPredictionModelTypes.h"
 
 namespace ClientPrediction {
 	extern CLIENTPREDICTION_API int32 ClientPredictionInputSlidingWindowSize;

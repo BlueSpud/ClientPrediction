@@ -3,7 +3,7 @@
 #include "ClientPredictionNetSerialization.h"
 #include "Driver/ClientPredictionRepProxy.h"
 
-#include "V2/Physics/ClientPredictionPhysicsModelV2.h"
+#include "Physics/ClientPredictionPhysicsModel.h"
 
 #include "ClientPredictionComponent.generated.h"
 

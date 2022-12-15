@@ -1,7 +1,7 @@
 ﻿#pragma once
 
-#include "V2/World/ClientPredictionWorldManager.h"
-#include "V2/World/ClientPredictionTickCallback.h"
+#include "World/ClientPredictionWorldManager.h"
+#include "World/ClientPredictionTickCallback.h"
 
 #include "PBDRigidsSolver.h"
 

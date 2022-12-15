@@ -1,215 +1,236 @@
 ﻿#pragma once
 
-#include "Physics/ImmediatePhysics/ImmediatePhysicsDeclares.h"
-#include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsActorHandle_Chaos.h"
-#include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsSimulation_Chaos.h"
+#include "CoreMinimal.h"
 
-#include "../ClientPredictionModel.h"
-#include "ClientPredictionPhysicsDeclares.h"
-#include "ClientPredictionPhysicsContext.h"
+#include "Driver/ClientPredictionRepProxy.h"
+#include "Driver/ClientPredictionModelDriver.h"
 
-/** The number of ticks an actor is allowed to not have been seen in the overlap before being removed from the simulation. */
-static constexpr uint32 kActorLifetime = 30;
+#include "Driver/Drivers/ClientPredictionModelAuthDriver.h"
+#include "Driver/Drivers/ClientPredictionModelAutoProxyDriver.h"
+#include "World/ClientPredictionWorldManager.h"
 
-/** The radius of the sphere used to find and add components into the simulation */
-static constexpr float kSimulationQueryRange = 10000.0;
+namespace ClientPrediction {
 
-struct CLIENTPREDICTION_API FEmptyState {
-	void NetSerialize(FArchive& Ar, bool bSerializeFullState) {}
-	void Rewind(class UPrimitiveComponent* Component) const {}
-	void Interpolate(float Alpha, const FEmptyState& Other) {}
-	bool operator ==(const FEmptyState& Other) const { return true; }
-};
+	// Delegate
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename InputPacket, typename ModelState, typename CueSet>
-class BaseClientPredictionPhysicsModel : public BaseClientPredictionModel<InputPacket, FPhysicsStateWrapper<ModelState>, CueSet> {
-	using WrappedModelState = FPhysicsStateWrapper<ModelState>;
-	using SimOutput = FSimulationOutput<WrappedModelState, CueSet>;
-	using PhysicsSimOutput = FPhysicsSimulationOutput<ModelState, CueSet>;
+	struct IPhysicsModelDelegate {
+		virtual ~IPhysicsModelDelegate() = default;
 
-public:
-
-	BaseClientPredictionPhysicsModel();
-	virtual ~BaseClientPredictionPhysicsModel() override;
-
-	virtual void Initialize(UPrimitiveComponent* Component) override final;
-
-protected:
-	virtual void InitializeModel(UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle);
-
-	virtual void GenerateInitialState(FPhysicsStateWrapper<ModelState>& State) override final;
-	virtual void GenerateInitialModelState(ModelState& State);
-
-	virtual void Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const WrappedModelState& PrevState, SimOutput& Output, const InputPacket& Input) override final;
-	virtual void Rewind(const WrappedModelState& State, UPrimitiveComponent* Component) override final;
-
-	// Should be implemented by child classes
-	virtual void SimulatePhysics(Chaos::FReal Dt, UPrimitiveComponent* Component, FPhysicsContext& Context, const ModelState& PrevState, PhysicsSimOutput& Output, const InputPacket& Input);
-	virtual void PostSimulatePhysics(Chaos::FReal Dt, UPrimitiveComponent* Component, const FPhysicsContext& Context, const ModelState& PrevState, PhysicsSimOutput& Output, const InputPacket& Input);
-
-	virtual void ApplyState(UPrimitiveComponent* Component, const WrappedModelState& State) override;
-
-private:
-
-	void FillPhysicsState(FPhysicsStateWrapper<ModelState>& State);
-	void UpdateWorld(UPrimitiveComponent* Component);
-	void RemoveOldActors();
-
-private:
-
-	ImmediatePhysics::FActorHandle* SimulatedBodyHandle = nullptr;
-	ImmediatePhysics::FSimulation* PhysicsSimulation = nullptr;
-
-	struct FSimulationActor {
-
-		FSimulationActor(ImmediatePhysics::FActorHandle* Handle) : Handle(Handle) {}
-
-		/** Memory is managed by simulation */
-		ImmediatePhysics::FActorHandle* Handle = nullptr;
-
-		/** The number of ticks ago that this actor was last seen by an overlap cast */
-		uint32 TicksSinceLastSeen = 0;
-
+		virtual void EmitInputPackets(FNetSerializationProxy& Proxy) = 0;
 	};
 
-	TMap<const UPrimitiveComponent*, FSimulationActor> StaticSimulationActors;
+	// Interface
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-};
+	struct FPhysicsModelBase {
+		virtual ~FPhysicsModelBase() = default;
 
-template <typename InputPacket, typename ModelState, typename CueSet>
-BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::BaseClientPredictionPhysicsModel() {
-	PhysicsSimulation = new ImmediatePhysics::FSimulation();
-}
+		virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) = 0;
+		virtual void Cleanup() = 0;
 
-template <typename InputPacket, typename ModelState, typename CueSet>
-BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::~BaseClientPredictionPhysicsModel() {
-	// SimulatedBodyHandle is managed by the physics simulation
-	delete PhysicsSimulation;
-}
+		virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) = 0;
+		virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) const = 0;
+	};
 
-template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Initialize(UPrimitiveComponent* Component) {
-	SimulatedBodyHandle = PhysicsSimulation->CreateActor(ImmediatePhysics::EActorType::DynamicActor, Component->GetBodyInstance(), Component->GetComponentTransform());
-	check(SimulatedBodyHandle);
+	// Sim output
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-	Component->SetSimulatePhysics(false);
+	template <typename StateType>
+	struct FSimOutput {
+		explicit FSimOutput(FPhysicsState<StateType>& PhysState)
+			: PhysState(PhysState) {}
 
-	SimulatedBodyHandle->SetEnabled(true);
-	PhysicsSimulation->SetNumActiveBodies(1, {0});
+		StateType& State() const { return PhysState.Body; }
 
-	InitializeModel(Component, SimulatedBodyHandle);
-	BaseClientPredictionModel<InputPacket, FPhysicsStateWrapper<ModelState>, CueSet>::Initialize(Component);
-}
+	private:
+		FPhysicsState<StateType>& PhysState;
+	};
 
-template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::InitializeModel(UPrimitiveComponent* Component, ImmediatePhysics::FActorHandle* Handle) {}
 
-template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::GenerateInitialState(FPhysicsStateWrapper<ModelState>& State) {
-	FillPhysicsState(State);
-	GenerateInitialModelState(State.State);
-}
+	// Model declaration
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::GenerateInitialModelState(ModelState& State) {}
+	template <typename InputPacketType, typename StateType>
+	struct FPhysicsModel : public FPhysicsModelBase, public IModelDriverDelegate<StateType> {
+		using SimOutput = FSimOutput<StateType>;
 
-template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Simulate(Chaos::FReal Dt, UPrimitiveComponent* Component, const WrappedModelState& PrevState, SimOutput& Output, const InputPacket& Input) {
-	PhysicsSimOutput PhysicsOutput(Output);
+		/**
+		 * Simulates the model before physics has been run for this ticket.
+		 * WARNING: This is called on the physics thread, so any objects shared between the physics thread and the
+		 * game thread need to be properly synchronized.
+		 */
+		virtual void SimulatePrePhysics(Chaos::FReal Dt, FPhysicsContext& Context, const InputPacketType& Input, const StateType& PrevState, SimOutput& OutState) = 0;
 
-	FPhysicsContext Context(SimulatedBodyHandle, Component, FTransform(PrevState.PhysicsState.Rotation, PrevState.PhysicsState.Location));
-	SimulatePhysics(Dt, Component, Context, PrevState.State, PhysicsOutput, Input);
+		/**
+		 * Simulates the model after physics has been run for this ticket.
+		 * WARNING: This is called on the physics thread, so any objects shared between the physics thread and the
+		 * game thread need to be properly synchronized.
+		 */
+		virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, const InputPacketType& Input, const StateType& PrevState, SimOutput& OutState) = 0;
 
-	UpdateWorld(Component);
+		// FPhysicsModelBase
+		virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) override final;
 
-	PhysicsSimulation->SetSolverSettings(Dt, -1.0, -1.0f, 0, 25, 25, 25);
-	PhysicsSimulation->Simulate(0.0, 0.0, 0, FVector(0.0, 0.0, -980.0));
+		virtual ~FPhysicsModel() override = default;
+		virtual void Cleanup() override final;
 
-	FillPhysicsState(Output.State());
+		virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) override final;
+		virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) const override final;
 
-	PostSimulatePhysics(Dt, Component, Context, PrevState.State, PhysicsOutput, Input);
-}
+		// IModelDriverDelegate
+		virtual void GenerateInitialState(FPhysicsState<StateType>& State) override final;
 
-template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::Rewind(const WrappedModelState& State, UPrimitiveComponent* Component) {
-	State.Rewind(Component, SimulatedBodyHandle);
-}
+		virtual void EmitInputPackets(TArray<FInputPacketWrapper>& Packets) override final;
+		virtual void ProduceInput(FInputPacketWrapper& Packet) override final;
 
-template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::SimulatePhysics(Chaos::FReal Dt, UPrimitiveComponent* Component, FPhysicsContext& Context, const ModelState& PrevState, PhysicsSimOutput& Output, const InputPacket& Input) {}
+		virtual void SimulatePrePhysics(Chaos::FReal Dt, FPhysicsContext& Context, void* Input, const FPhysicsState<StateType>& PrevState, FPhysicsState<StateType>& OutState) override final;
+		virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, void* Input, const FPhysicsState<StateType>& PrevState, FPhysicsState<StateType>& OutState) override final;
 
-template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::PostSimulatePhysics(Chaos::FReal Dt, UPrimitiveComponent* Component,  const FPhysicsContext& Context, const ModelState& PrevState, PhysicsSimOutput& Output, const InputPacket& Input) {}
+	public:
 
-template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::ApplyState(UPrimitiveComponent* Component, const WrappedModelState& State) {
-	Component->SetWorldLocation(State.PhysicsState.Location);
-	Component->SetWorldRotation(State.PhysicsState.Rotation);
-}
+		DECLARE_DELEGATE_OneParam(FPhysicsModelProduceInput, InputPacketType&)
+		FPhysicsModelProduceInput ProduceInputDelegate;
 
-template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::FillPhysicsState(FPhysicsStateWrapper<ModelState>& State) {
-	const FTransform WorldTransform = SimulatedBodyHandle->GetWorldTransform();
+	private:
+		class UPrimitiveComponent* CachedComponent = nullptr;
+		struct FWorldManager* CachedWorldManager = nullptr;
+		TUniquePtr<IModelDriver> ModelDriver = nullptr;
+		IPhysicsModelDelegate* Delegate = nullptr;
+	};
 
-	State.PhysicsState.Location = WorldTransform.GetLocation();
-	State.PhysicsState.Rotation = WorldTransform.GetRotation();
-	State.PhysicsState.LinearVelocity = SimulatedBodyHandle->GetLinearVelocity();
-	State.PhysicsState.AngularVelocity = SimulatedBodyHandle->GetAngularVelocity();
-}
+	// Implementation
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::UpdateWorld(UPrimitiveComponent* Component) {
-	const UWorld* UnsafeWorld = Component->GetWorld();
-	const FPhysScene* PhysScene = UnsafeWorld->GetPhysicsScene();
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::Initialize(UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) {
+		CachedComponent = Component;
+		check(CachedComponent);
 
-	for (auto& Entry : StaticSimulationActors) {
-		++Entry.Value.TicksSinceLastSeen;
+		Delegate = InDelegate;
+		check(Delegate);
+
+		const UWorld* World  = CachedComponent->GetWorld();
+		check(World);
+
+		CachedWorldManager = FWorldManager::ManagerForWorld(World);
+		check(CachedWorldManager)
 	}
 
-	if ((UnsafeWorld != nullptr) && (PhysScene != nullptr))
-	{
-		TArray<FOverlapResult> Overlaps;
-		const AActor* Owner = Cast<AActor>(Component->GetOwner());
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::Cleanup() {
+		if (CachedWorldManager != nullptr && ModelDriver != nullptr) {
+			CachedWorldManager->RemoveTickCallback(ModelDriver.Get());
+		}
 
-		// For now, only support static objects for simplicity
-		UnsafeWorld->OverlapMultiByObjectType(Overlaps, Owner->GetActorLocation(), FQuat::Identity, FCollisionObjectQueryParams::AllStaticObjects, FCollisionShape::MakeSphere(kSimulationQueryRange));
+		CachedWorldManager = nullptr;
+		ModelDriver = nullptr;
+	}
 
-		for (const FOverlapResult& Overlap : Overlaps) {
-			if (UPrimitiveComponent* OverlapComp = Overlap.GetComponent()) {
-				if (StaticSimulationActors.Find(OverlapComp) != nullptr) {
-					StaticSimulationActors[OverlapComp].TicksSinceLastSeen = 0;
-					continue;
-				}
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::SetNetRole(ENetRole Role, bool bShouldTakeInput,
+		FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) {
+		check(CachedWorldManager)
+		check(CachedComponent)
+		check(Delegate)
 
-				const bool bIsSelf = (Owner == OverlapComp->GetOwner());
-				if (!bIsSelf) {
-					ImmediatePhysics::FActorHandle* ActorHandle = PhysicsSimulation->CreateActor(ImmediatePhysics::EActorType::StaticActor, &OverlapComp->BodyInstance, OverlapComp->GetComponentTransform());
-					PhysicsSimulation->AddToCollidingPairs(ActorHandle);
+		if (ModelDriver != nullptr) {
+			CachedWorldManager->RemoveTickCallback(ModelDriver.Get());
+		}
 
-					StaticSimulationActors.Add(OverlapComp, FSimulationActor(ActorHandle));
-				}
+		switch (Role) {
+		case ROLE_Authority:
+			// TODO pass bShouldTakeInput here
+			ModelDriver = MakeUnique<FModelAuthDriver<StateType>>(CachedComponent, this, AutoProxyRep, SimProxyRep);
+			CachedWorldManager->AddTickCallback(ModelDriver.Get());
+			break;
+		case ROLE_AutonomousProxy: {
+			auto NewDriver = MakeUnique<FModelAutoProxyDriver<StateType>>(CachedComponent, this, AutoProxyRep, CachedWorldManager->GetRewindBufferSize());
+			CachedWorldManager->AddTickCallback(NewDriver.Get());
+			CachedWorldManager->AddRewindCallback(NewDriver.Get());
+			ModelDriver = MoveTemp(NewDriver);
+		} break;
+		case ROLE_SimulatedProxy:
+			// TODO add in the sim proxy
+			break;
+		default:
+			break;
+		}
+	}
+
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::ReceiveInputPackets(FNetSerializationProxy& Proxy) const {
+		if (ModelDriver == nullptr) { return; }
+
+		TArray<FInputPacketWrapper> Packets;
+		Proxy.NetSerializeFunc = [&](FArchive& Ar) {
+			uint8 Size;
+			Ar << Size;
+
+			for (uint8 i = 0; i < Size; i++) {
+				Packets.Emplace();
+				FInputPacketWrapper& Packet = Packets.Last();
+				Packet.NetSerialize(Ar);
+
+				TSharedPtr<InputPacketType> Body = MakeShared<InputPacketType>();
+				Body->NetSerialize(Ar);
+				Packet.Body = MoveTemp(Body);
 			}
-		}
+		};
+
+		Proxy.Deserialize();
+		ModelDriver->ReceiveInputPackets(Packets);
 	}
 
-	RemoveOldActors();
-}
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::EmitInputPackets(TArray<FInputPacketWrapper>& Packets) {
+		check(Delegate);
 
-template <typename InputPacket, typename ModelState, typename CueSet>
-void BaseClientPredictionPhysicsModel<InputPacket, ModelState, CueSet>::RemoveOldActors() {
-	TArray<const UPrimitiveComponent*> RemovedComponents;
-	for (const auto& Entry : StaticSimulationActors) {
-		const FSimulationActor& Actor = Entry.Value;
+		FNetSerializationProxy Proxy;
+		Proxy.NetSerializeFunc = [=](FArchive& Ar) mutable {
+			uint8 Size = Packets.Num();
+			Ar << Size;
 
-		if (Actor.TicksSinceLastSeen >= kActorLifetime) {
-			PhysicsSimulation->DestroyActor(Actor.Handle);
-			RemovedComponents.Add(Entry.Key);
-		}
+			for (uint8 i = 0; i < Size; i++) {
+				Packets[i].NetSerialize(Ar);
+
+				check(Packets[i].Body)
+				static_cast<InputPacketType*>(Packets[i].Body.Get())->NetSerialize(Ar);
+			}
+		};
+
+
+		Delegate->EmitInputPackets(Proxy);
 	}
 
-	// Remove all the unused actors in a second loop so that the map is not being modified as it is being
-	// iterated through.
-	for (const UPrimitiveComponent* PurgedEntry : RemovedComponents) {
-		StaticSimulationActors.Remove(PurgedEntry);
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::ProduceInput(FInputPacketWrapper& Packet) {
+		TSharedPtr<InputPacketType> Body = MakeShared<InputPacketType>();
+		ProduceInputDelegate.ExecuteIfBound(*Body.Get());
+
+		Packet.Body = MoveTemp(Body);
+	}
+
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::SimulatePrePhysics(const Chaos::FReal Dt, FPhysicsContext& Context, void* Input, const FPhysicsState<StateType>& PrevState, FPhysicsState<StateType>& OutState) {
+		InputPacketType* InputBody = static_cast<InputPacketType*>(Input);
+
+		SimOutput Output(OutState);
+		SimulatePrePhysics(Dt, Context, *InputBody, PrevState.Body, Output);
+	}
+
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::SimulatePostPhysics(const Chaos::FReal Dt, const FPhysicsContext& Context, void* Input, const FPhysicsState<StateType>& PrevState, FPhysicsState<StateType>& OutState) {
+		InputPacketType* InputBody = static_cast<InputPacketType*>(Input);
+
+		SimOutput Output(OutState);
+		SimulatePostPhysics(Dt, Context, *InputBody, PrevState.Body, Output);
+	}
+
+	template <typename InputPacketType, typename StateType>
+	void FPhysicsModel<InputPacketType, StateType>::GenerateInitialState(FPhysicsState<StateType>& State) {
+		State = {};
+
+		// TODO Actually generate initial state
 	}
 }

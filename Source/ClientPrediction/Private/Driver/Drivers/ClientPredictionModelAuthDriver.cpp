@@ -1,4 +1,4 @@
-﻿#include "V2/Driver/Drivers/ClientPredictionModelAuthDriverV2.h"
+﻿#include "Driver/Drivers/ClientPredictionModelAuthDriver.h"
 
 namespace ClientPrediction {
 	CLIENTPREDICTION_API int32 ClientPredictionDesiredInputBufferSize = 3;

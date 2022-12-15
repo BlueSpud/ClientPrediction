@@ -1,49 +1,30 @@
 ﻿#pragma once
 
-#include "Physics/ImmediatePhysics/ImmediatePhysicsDeclares.h"
+namespace ClientPrediction {
+	struct CLIENTPREDICTION_API FPhysicsContext {
+		FPhysicsContext(class Chaos::FRigidBodyHandle_Internal* BodyHandle, class UPrimitiveComponent* Component)
+			: BodyHandle(BodyHandle), Component(Component) {}
 
-/** 
- * Since a physics component operates in an immediate mode world, this struct provides the bridge and abstracts 
- * away certain things.
- */
-struct CLIENTPREDICTION_API FPhysicsContext {
+		void AddForce(const FVector& Force, bool bAccelerateChange = false);
+		void AddTorqueInRadians(const FVector& Torque, bool bAccelerateChange = false);
+		void AddImpulseAtLocation(FVector Impulse, FVector Location);
+		void SetBodySleeping(const bool Sleeping);
 
-public:
+		Chaos::FReal GetMass() const;
+		FVector GetInertia() const;
+		FVector ScaleByMomentOfInertia(const FVector& InputVector) const;
 
-	FPhysicsContext(ImmediatePhysics::FActorHandle* DynamicHandle, UPrimitiveComponent* Component, FTransform PreviousTransform = FTransform::Identity)
-		: DynamicHandle(DynamicHandle),
-		  Component(Component),
-	      PreviousTransform(PreviousTransform) {}
+		FTransform GetTransform() const;
+		FVector GetLinearVelocity() const;
+		FVector GetAngularVelocity() const;
 
-	// Dynamic actor methods
-	void AddForce(const FVector& Force, bool bAccelerateChange = false);
-	void AddTorqueInRadians(const FVector& Torque, bool bAccelerateChange = false);
-	void AddImpulseAtLocation(FVector Impulse, FVector Location);
+		// World query methods
+		// TODO add more
+		bool LineTraceSingle(struct FHitResult& OutHit, const FVector& Start, const FVector& End) const;
+		// bool SweepSingle(struct FHitResult& OutHit, const FVector& Start, const FVector& End, const FCollisionShape& CollisionShape, const FQuat& Rotation) const;
 
-	void SetBodySleeping(const bool Sleeping);
-
-	Chaos::FReal GetMass() const;
-	FVector GetInertia() const;
-	FVector ScaleByMomentOfInertia(const FVector& InputVector) const;
-
-	FTransform GetTransform() const;
-	FTransform GetPreviousTransform() const;
-
-	FVector GetLinearVelocity() const;
-	FVector GetAngularVelocity() const;
-
-	// World query methods
-	// TODO add more
-	bool LineTraceSingle(struct FHitResult& OutHit, const FVector& Start, const FVector& End) const;
-	bool SweepSingle(struct FHitResult& OutHit, const FVector& Start, const FVector& End, const FCollisionShape& CollisionShape, const FQuat& Rotation) const;
-
-private:
-
-    /** The handle to the dynamic actor in the simulation. */
-    ImmediatePhysics::FActorHandle* DynamicHandle;
-
-	/** The component that the immediate mode simulation is simulating dynamically. */
-	class UPrimitiveComponent* Component;
-
-	FTransform PreviousTransform;
-};
+	private:
+		class Chaos::FRigidBodyHandle_Internal* BodyHandle = nullptr;
+		class UPrimitiveComponent* Component = nullptr;
+	};
+}

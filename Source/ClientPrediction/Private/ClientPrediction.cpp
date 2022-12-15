@@ -1,6 +1,6 @@
 #include "ClientPrediction.h"
 
-#include "V2/World/ClientPredictionWorldManager.h"
+#include "World/ClientPredictionWorldManager.h"
 
 #define LOCTEXT_NAMESPACE "FClientPredictionModule"
 

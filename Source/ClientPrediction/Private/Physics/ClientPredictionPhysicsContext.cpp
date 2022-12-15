@@ -1,86 +1,72 @@
 ﻿#include "Physics/ClientPredictionPhysicsContext.h"
 
-#include "Chaos/Particle/ParticleUtilities.h"
-#include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsActorHandle_Chaos.h"
+#include "PhysicsProxy/SingleParticlePhysicsProxy.h"
 
-void FPhysicsContext::AddForce(const FVector& Force, bool bAccelerateChange) {
-	if (bAccelerateChange) {
-		DynamicHandle->AddForce(Force * GetMass());
-	} else {
-		DynamicHandle->AddForce(Force);
+namespace ClientPrediction {
+	void FPhysicsContext::AddForce(const FVector& Force, bool bAccelerateChange) {
+		SetBodySleeping(false);
+
+		if (bAccelerateChange) { BodyHandle->AddForce(Force * GetMass()); }
+		else { BodyHandle->AddForce(Force); }
 	}
 
-	SetBodySleeping(false);
-}
+	void FPhysicsContext::AddTorqueInRadians(const FVector& Torque, bool bAccelerateChange) {
+		SetBodySleeping(false);
 
-void FPhysicsContext::AddTorqueInRadians(const FVector& Torque, bool bAccelerateChange) {
-	if (bAccelerateChange) {
-		if (Chaos::FPBDRigidParticleHandle* Rigid = DynamicHandle->GetParticle()->CastToRigidParticle()) {
-			DynamicHandle->AddTorque(Chaos::FParticleUtilitiesXR::GetWorldInertia(Rigid) * Torque);
+		if (bAccelerateChange) { BodyHandle->AddTorque(Chaos::FParticleUtilitiesXR::GetWorldInertia(BodyHandle) * Torque);
+		} else { BodyHandle->AddTorque(Torque); }
+	}
+
+	void FPhysicsContext::AddImpulseAtLocation(FVector Impulse, FVector Location) {
+		const Chaos::FVec3 WorldCOM = Chaos::FParticleUtilitiesXR::GetCoMWorldPosition(BodyHandle);
+		BodyHandle->SetLinearImpulse(BodyHandle->LinearImpulseVelocity() + (Impulse * BodyHandle->InvM()), true, false);
+
+		const Chaos::FMatrix33 WorldInvI = Chaos::Utilities::ComputeWorldSpaceInertia(BodyHandle->R() * BodyHandle->RotationOfMass(), BodyHandle->InvI());
+		const Chaos::FVec3 AngularImpulse = Chaos::FVec3::CrossProduct(Location - WorldCOM, Impulse);
+		BodyHandle->SetAngularImpulse(BodyHandle->AngularImpulseVelocity() + WorldInvI * AngularImpulse, true, false);
+
+		SetBodySleeping(false);
+	}
+
+	void FPhysicsContext::SetBodySleeping(const bool Sleeping) {
+		// Check for pending forces
+		if (Sleeping) {
+			if (!BodyHandle->Acceleration().IsNearlyZero() ||
+				!BodyHandle->AngularAcceleration().IsNearlyZero() ||
+				!BodyHandle->AngularImpulseVelocity().IsNearlyZero() ||
+				!BodyHandle->LinearImpulseVelocity().IsNearlyZero()) {
+				return;
+			}
 		}
-	} else {
-		DynamicHandle->AddTorque(Torque);
+
+		BodyHandle->SetObjectState(Sleeping ? Chaos::EObjectStateType::Sleeping : Chaos::EObjectStateType::Dynamic);
 	}
 
-	SetBodySleeping(false);
-}
+	Chaos::FReal FPhysicsContext::GetMass() const { return BodyHandle->M(); }
+	FVector FPhysicsContext::GetInertia() const { return FVector(BodyHandle->I()); }
 
-void FPhysicsContext::AddImpulseAtLocation(FVector Impulse, FVector Location) {
-	DynamicHandle->AddImpulseAtLocation(Impulse, Location);
-	SetBodySleeping(false);
-}
-
-void FPhysicsContext::SetBodySleeping(const bool Sleeping) {
-	const auto RigidParticle = DynamicHandle->GetParticle()->CastToRigidParticle();
-
-	// Check for pending forces
-	if (Sleeping) {
-		if (!RigidParticle->Acceleration().IsNearlyZero() ||
-			!RigidParticle->AngularAcceleration().IsNearlyZero() ||
-			!RigidParticle->AngularImpulseVelocity().IsNearlyZero() ||
-			!RigidParticle->LinearImpulseVelocity().IsNearlyZero()) {
-			return;
-		}
+	FVector FPhysicsContext::ScaleByMomentOfInertia(const FVector& InputVector) const {
+		const FVector InputVectorLocal = GetTransform().InverseTransformVectorNoScale(InputVector);
+		const FVector LocalScaled = InputVectorLocal * GetInertia();
+		return GetTransform().TransformVectorNoScale(LocalScaled);
 	}
 
-	if (RigidParticle != nullptr) {
-		RigidParticle->SetSleeping(Sleeping);
-	}
-}
+	FTransform FPhysicsContext::GetTransform() const { return { BodyHandle->R(), BodyHandle->X(), FVector::ZeroVector}; }
+	FVector FPhysicsContext::GetLinearVelocity() const { return BodyHandle->V(); }
+	FVector FPhysicsContext::GetAngularVelocity() const { return BodyHandle->W(); }
 
-Chaos::FReal FPhysicsContext::GetMass() const { return DynamicHandle->GetMass(); }
-FVector FPhysicsContext::GetInertia() const { return DynamicHandle->GetInertia(); }
-FVector FPhysicsContext::ScaleByMomentOfInertia(const FVector& InputVector) const {
-	const FVector InputVectorLocal = GetTransform().InverseTransformVectorNoScale(InputVector);
-	const FVector LocalScaled = InputVectorLocal * DynamicHandle->GetInertia();
-	return GetTransform().TransformVectorNoScale(LocalScaled);
-}
+	bool FPhysicsContext::LineTraceSingle(FHitResult& OutHit, const FVector& Start, const FVector& End) const {
+		const UWorld* World = Component->GetWorld();
+		if (World == nullptr) { return false; }
 
-FTransform FPhysicsContext::GetTransform() const { return DynamicHandle->GetWorldTransform(); }
-FTransform FPhysicsContext::GetPreviousTransform() const { return PreviousTransform; }
-FVector FPhysicsContext::GetLinearVelocity() const { return DynamicHandle->GetLinearVelocity(); }
-FVector FPhysicsContext::GetAngularVelocity() const { return DynamicHandle->GetAngularVelocity(); }
+		FCollisionQueryParams QueryParams = FCollisionQueryParams::DefaultQueryParam;
+		QueryParams.AddIgnoredActor(Component->GetOwner());
 
-bool FPhysicsContext::LineTraceSingle(FHitResult& OutHit, const FVector& Start, const FVector& End) const {
-	const UWorld* UnsafeWorld = Component->GetWorld();
-	if (UnsafeWorld == nullptr) {
-		return false;
+		return World->LineTraceSingleByChannel(OutHit, Start, End, ECC_WorldStatic, QueryParams);
 	}
 
-	FCollisionQueryParams Params = FCollisionQueryParams::DefaultQueryParam;
-	Params.AddIgnoredActor(Component->GetOwner());
-
-	return UnsafeWorld->LineTraceSingleByObjectType(OutHit, Start, End, FCollisionObjectQueryParams::AllStaticObjects, Params);
-}
-
-bool FPhysicsContext::SweepSingle(FHitResult& OutHit, const FVector& Start, const FVector& End, const FCollisionShape& CollisionShape, const FQuat& Rotation) const {
-	const UWorld* UnsafeWorld = Component->GetWorld();
-	if (UnsafeWorld == nullptr) {
-		return false;
-	}
-
-	FCollisionQueryParams Params = FCollisionQueryParams::DefaultQueryParam;
-	Params.AddIgnoredActor(Component->GetOwner());
-
-	return UnsafeWorld->SweepSingleByObjectType(OutHit, Start, End, Rotation, FCollisionObjectQueryParams::AllStaticObjects, CollisionShape, Params);
+	// bool FPhysicsContext::SweepSingle(FHitResult& OutHit, const FVector& Start, const FVector& End, const FCollisionShape& CollisionShape, const FQuat& Rotation) const {
+	//
+	// 	return false;
+	// }
 }
