@@ -3,7 +3,7 @@
 #include "V2/ClientPredictionInput.h"
 
 namespace ClientPrediction {
-		struct FAutoProxyInputBuf {
+		struct CLIENTPREDICTION_API FAutoProxyInputBuf {
 			FAutoProxyInputBuf(int32 InputBufferMaxSize);
 
 			void QueueInputPacket(const FInputPacketWrapper& Packet);

@@ -3,7 +3,7 @@
 #include "V2/ClientPredictionInput.h"
 
 namespace ClientPrediction {
-	struct FAuthInputBuf {
+	struct CLIENTPREDICTION_API FAuthInputBuf {
 
 		void QueueInputPackets(const TArray<FInputPacketWrapper>& Packets);
 		bool GetNextInputPacket(FInputPacketWrapper& OutPacket);

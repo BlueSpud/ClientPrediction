@@ -23,8 +23,8 @@ namespace ClientPrediction {
 	// Interface
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-	struct FPhysicsModelBase : public IModelDriverDelegate {
-		virtual ~FPhysicsModelBase() override = default;
+	struct FPhysicsModelBase {
+		virtual ~FPhysicsModelBase() = default;
 
 		virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) = 0;
 		virtual void Cleanup() = 0;
@@ -38,13 +38,13 @@ namespace ClientPrediction {
 
 	template <typename StateType>
 	struct FSimOutput {
-		explicit FSimOutput(FPhysicsState& PhysState)
+		explicit FSimOutput(FPhysicsState<StateType>& PhysState)
 			: PhysState(PhysState) {}
 
-		StateType& State() const { return *static_cast<StateType*>(PhysState.Body.Get()); }
+		StateType& State() const { return PhysState.Body; }
 
 	private:
-		FPhysicsState& PhysState;
+		FPhysicsState<StateType>& PhysState;
 	};
 
 
@@ -52,7 +52,7 @@ namespace ClientPrediction {
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	template <typename InputPacketType, typename StateType>
-	struct FPhysicsModel : public FPhysicsModelBase {
+	struct FPhysicsModel : public FPhysicsModelBase, public IModelDriverDelegate<StateType> {
 		using SimOutput = FSimOutput<StateType>;
 
 		/**
@@ -79,16 +79,13 @@ namespace ClientPrediction {
 		virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) const override final;
 
 		// IModelDriverDelegate
+		virtual void GenerateInitialState(FPhysicsState<StateType>& State) override final;
+
 		virtual void EmitInputPackets(TArray<FInputPacketWrapper>& Packets) override final;
 		virtual void ProduceInput(FInputPacketWrapper& Packet) override final;
 
-		virtual void SimulatePrePhysics(Chaos::FReal Dt, FPhysicsContext& Context, void* Input, const FPhysicsState& PrevState, FPhysicsState& OutState) override final;
-		virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, void* Input, const FPhysicsState& PrevState, FPhysicsState& OutState) override final;
-		virtual bool ShouldReconcile(const FPhysicsState& A, const FPhysicsState& B) override final;
-
-		virtual void GenerateInitialState(FPhysicsState& State) override final;
-		virtual void NewState(FPhysicsState& State) override final;
-		virtual void NetSerialize(FPhysicsState& State, FArchive& Ar) override final;
+		virtual void SimulatePrePhysics(Chaos::FReal Dt, FPhysicsContext& Context, void* Input, const FPhysicsState<StateType>& PrevState, FPhysicsState<StateType>& OutState) override final;
+		virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, void* Input, const FPhysicsState<StateType>& PrevState, FPhysicsState<StateType>& OutState) override final;
 
 	public:
 
@@ -144,11 +141,11 @@ namespace ClientPrediction {
 		switch (Role) {
 		case ROLE_Authority:
 			// TODO pass bShouldTakeInput here
-			ModelDriver = MakeUnique<FModelAuthDriver>(CachedComponent, this, AutoProxyRep, SimProxyRep);
+			ModelDriver = MakeUnique<FModelAuthDriver<StateType>>(CachedComponent, this, AutoProxyRep, SimProxyRep);
 			CachedWorldManager->AddTickCallback(ModelDriver.Get());
 			break;
 		case ROLE_AutonomousProxy: {
-			TUniquePtr<FModelAutoProxyDriver> NewDriver = MakeUnique<FModelAutoProxyDriver>(CachedComponent, this, AutoProxyRep, CachedWorldManager->GetRewindBufferSize());
+			auto NewDriver = MakeUnique<FModelAutoProxyDriver<StateType>>(CachedComponent, this, AutoProxyRep, CachedWorldManager->GetRewindBufferSize());
 			CachedWorldManager->AddTickCallback(NewDriver.Get());
 			CachedWorldManager->AddRewindCallback(NewDriver.Get());
 			ModelDriver = MoveTemp(NewDriver);
@@ -215,51 +212,25 @@ namespace ClientPrediction {
 	}
 
 	template <typename InputPacketType, typename StateType>
-	void FPhysicsModel<InputPacketType, StateType>::SimulatePrePhysics(const Chaos::FReal Dt, FPhysicsContext& Context, void* Input, const FPhysicsState& PrevState, FPhysicsState& OutState) {
+	void FPhysicsModel<InputPacketType, StateType>::SimulatePrePhysics(const Chaos::FReal Dt, FPhysicsContext& Context, void* Input, const FPhysicsState<StateType>& PrevState, FPhysicsState<StateType>& OutState) {
 		InputPacketType* InputBody = static_cast<InputPacketType*>(Input);
-		StateType* PrevStateBody = static_cast<StateType*>(PrevState.Body.Get());
 
 		SimOutput Output(OutState);
-		SimulatePrePhysics(Dt, Context, *InputBody, *PrevStateBody, Output);
+		SimulatePrePhysics(Dt, Context, *InputBody, PrevState.Body, Output);
 	}
 
 	template <typename InputPacketType, typename StateType>
-	void FPhysicsModel<InputPacketType, StateType>::SimulatePostPhysics(const Chaos::FReal Dt, const FPhysicsContext& Context, void* Input, const FPhysicsState& PrevState, FPhysicsState& OutState) {
+	void FPhysicsModel<InputPacketType, StateType>::SimulatePostPhysics(const Chaos::FReal Dt, const FPhysicsContext& Context, void* Input, const FPhysicsState<StateType>& PrevState, FPhysicsState<StateType>& OutState) {
 		InputPacketType* InputBody = static_cast<InputPacketType*>(Input);
-		StateType* PrevStateBody = static_cast<StateType*>(PrevState.Body.Get());
 
 		SimOutput Output(OutState);
-		SimulatePostPhysics(Dt, Context, *InputBody, *PrevStateBody, Output);
+		SimulatePostPhysics(Dt, Context, *InputBody, PrevState.Body, Output);
 	}
 
 	template <typename InputPacketType, typename StateType>
-	bool FPhysicsModel<InputPacketType, StateType>::ShouldReconcile(const FPhysicsState& A, const FPhysicsState& B) {
-		if (A.ShouldReconcile(B)) { return true; }
-
-		const StateType* ABody = static_cast<StateType*>(A.Body.Get());
-		const StateType* BBody = static_cast<StateType*>(A.Body.Get());
-
-		return ABody->ShouldReconcile(*BBody);
-	}
-
-	template <typename InputPacketType, typename StateType>
-	void FPhysicsModel<InputPacketType, StateType>::GenerateInitialState(FPhysicsState& State) {
-		NewState(State);
-
-		// Actually generate initial state
-	}
-
-	template <typename InputPacketType, typename StateType>
-	void FPhysicsModel<InputPacketType, StateType>::NewState(FPhysicsState& State) {
+	void FPhysicsModel<InputPacketType, StateType>::GenerateInitialState(FPhysicsState<StateType>& State) {
 		State = {};
-		State.Body = MakeShared<StateType>();
-	}
 
-	template <typename InputPacketType, typename StateType>
-	void FPhysicsModel<InputPacketType, StateType>::NetSerialize(FPhysicsState& State, FArchive& Ar) {
-		State.NetSerialize(Ar);
-
-		check(State.Body)
-		static_cast<StateType*>(State.Body.Get())->NetSerialize(Ar);
+		// TODO Actually generate initial state
 	}
 }
