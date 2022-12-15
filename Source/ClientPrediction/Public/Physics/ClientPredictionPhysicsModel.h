@@ -51,8 +51,8 @@ namespace ClientPrediction {
 	// Model declaration
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-	template <typename InputPacketType, typename StateType>
-	struct FPhysicsModel : public FPhysicsModelBase, public IModelDriverDelegate<StateType> {
+	template <typename InputType, typename StateType>
+	struct FPhysicsModel : public FPhysicsModelBase, public IModelDriverDelegate<InputType, StateType> {
 		using SimOutput = FSimOutput<StateType>;
 
 		/**
@@ -60,14 +60,14 @@ namespace ClientPrediction {
 		 * WARNING: This is called on the physics thread, so any objects shared between the physics thread and the
 		 * game thread need to be properly synchronized.
 		 */
-		virtual void SimulatePrePhysics(Chaos::FReal Dt, FPhysicsContext& Context, const InputPacketType& Input, const StateType& PrevState, SimOutput& OutState) = 0;
+		virtual void SimulatePrePhysics(Chaos::FReal Dt, FPhysicsContext& Context, const InputType& Input, const StateType& PrevState, SimOutput& OutState) = 0;
 
 		/**
 		 * Simulates the model after physics has been run for this ticket.
 		 * WARNING: This is called on the physics thread, so any objects shared between the physics thread and the
 		 * game thread need to be properly synchronized.
 		 */
-		virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, const InputPacketType& Input, const StateType& PrevState, SimOutput& OutState) = 0;
+		virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, const InputType& Input, const StateType& PrevState, SimOutput& OutState) = 0;
 
 		// FPhysicsModelBase
 		virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) override final;
@@ -81,29 +81,29 @@ namespace ClientPrediction {
 		// IModelDriverDelegate
 		virtual void GenerateInitialState(FPhysicsState<StateType>& State) override final;
 
-		virtual void EmitInputPackets(TArray<FInputPacketWrapper>& Packets) override final;
-		virtual void ProduceInput(FInputPacketWrapper& Packet) override final;
+		virtual void EmitInputPackets(TArray<FInputPacketWrapper<InputType>>& Packets) override final;
+		virtual void ProduceInput(FInputPacketWrapper<InputType>& Packet) override final;
 
-		virtual void SimulatePrePhysics(Chaos::FReal Dt, FPhysicsContext& Context, void* Input, const FPhysicsState<StateType>& PrevState, FPhysicsState<StateType>& OutState) override final;
-		virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, void* Input, const FPhysicsState<StateType>& PrevState, FPhysicsState<StateType>& OutState) override final;
+		virtual void SimulatePrePhysics(Chaos::FReal Dt, FPhysicsContext& Context, const InputType& Input, const FPhysicsState<StateType>& PrevState, FPhysicsState<StateType>& OutState) override final;
+		virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, const InputType& Input, const FPhysicsState<StateType>& PrevState, FPhysicsState<StateType>& OutState) override final;
 
 	public:
 
-		DECLARE_DELEGATE_OneParam(FPhysicsModelProduceInput, InputPacketType&)
+		DECLARE_DELEGATE_OneParam(FPhysicsModelProduceInput, InputType&)
 		FPhysicsModelProduceInput ProduceInputDelegate;
 
 	private:
 		class UPrimitiveComponent* CachedComponent = nullptr;
 		struct FWorldManager* CachedWorldManager = nullptr;
-		TUniquePtr<IModelDriver> ModelDriver = nullptr;
+		TUniquePtr<IModelDriver<InputType>> ModelDriver = nullptr;
 		IPhysicsModelDelegate* Delegate = nullptr;
 	};
 
 	// Implementation
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-	template <typename InputPacketType, typename StateType>
-	void FPhysicsModel<InputPacketType, StateType>::Initialize(UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) {
+	template <typename InputType, typename StateType>
+	void FPhysicsModel<InputType, StateType>::Initialize(UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) {
 		CachedComponent = Component;
 		check(CachedComponent);
 
@@ -117,8 +117,8 @@ namespace ClientPrediction {
 		check(CachedWorldManager)
 	}
 
-	template <typename InputPacketType, typename StateType>
-	void FPhysicsModel<InputPacketType, StateType>::Cleanup() {
+	template <typename InputType, typename StateType>
+	void FPhysicsModel<InputType, StateType>::Cleanup() {
 		if (CachedWorldManager != nullptr && ModelDriver != nullptr) {
 			CachedWorldManager->RemoveTickCallback(ModelDriver.Get());
 		}
@@ -127,8 +127,8 @@ namespace ClientPrediction {
 		ModelDriver = nullptr;
 	}
 
-	template <typename InputPacketType, typename StateType>
-	void FPhysicsModel<InputPacketType, StateType>::SetNetRole(ENetRole Role, bool bShouldTakeInput,
+	template <typename InputType, typename StateType>
+	void FPhysicsModel<InputType, StateType>::SetNetRole(ENetRole Role, bool bShouldTakeInput,
 		FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep) {
 		check(CachedWorldManager)
 		check(CachedComponent)
@@ -141,11 +141,11 @@ namespace ClientPrediction {
 		switch (Role) {
 		case ROLE_Authority:
 			// TODO pass bShouldTakeInput here
-			ModelDriver = MakeUnique<FModelAuthDriver<StateType>>(CachedComponent, this, AutoProxyRep, SimProxyRep);
+			ModelDriver = MakeUnique<FModelAuthDriver<InputType, StateType>>(CachedComponent, this, AutoProxyRep, SimProxyRep);
 			CachedWorldManager->AddTickCallback(ModelDriver.Get());
 			break;
 		case ROLE_AutonomousProxy: {
-			auto NewDriver = MakeUnique<FModelAutoProxyDriver<StateType>>(CachedComponent, this, AutoProxyRep, CachedWorldManager->GetRewindBufferSize());
+			auto NewDriver = MakeUnique<FModelAutoProxyDriver<InputType, StateType>>(CachedComponent, this, AutoProxyRep, CachedWorldManager->GetRewindBufferSize());
 			CachedWorldManager->AddTickCallback(NewDriver.Get());
 			CachedWorldManager->AddRewindCallback(NewDriver.Get());
 			ModelDriver = MoveTemp(NewDriver);
@@ -158,77 +158,45 @@ namespace ClientPrediction {
 		}
 	}
 
-	template <typename InputPacketType, typename StateType>
-	void FPhysicsModel<InputPacketType, StateType>::ReceiveInputPackets(FNetSerializationProxy& Proxy) const {
+	template <typename InputType, typename StateType>
+	void FPhysicsModel<InputType, StateType>::ReceiveInputPackets(FNetSerializationProxy& Proxy) const {
 		if (ModelDriver == nullptr) { return; }
 
-		TArray<FInputPacketWrapper> Packets;
-		Proxy.NetSerializeFunc = [&](FArchive& Ar) {
-			uint8 Size;
-			Ar << Size;
-
-			for (uint8 i = 0; i < Size; i++) {
-				Packets.Emplace();
-				FInputPacketWrapper& Packet = Packets.Last();
-				Packet.NetSerialize(Ar);
-
-				TSharedPtr<InputPacketType> Body = MakeShared<InputPacketType>();
-				Body->NetSerialize(Ar);
-				Packet.Body = MoveTemp(Body);
-			}
-		};
+		TArray<FInputPacketWrapper<InputType>> Packets;
+		Proxy.NetSerializeFunc = [&](FArchive& Ar) { Ar << Packets; };
 
 		Proxy.Deserialize();
 		ModelDriver->ReceiveInputPackets(Packets);
 	}
 
-	template <typename InputPacketType, typename StateType>
-	void FPhysicsModel<InputPacketType, StateType>::EmitInputPackets(TArray<FInputPacketWrapper>& Packets) {
+	template <typename InputType, typename StateType>
+	void FPhysicsModel<InputType, StateType>::EmitInputPackets(TArray<FInputPacketWrapper<InputType>>& Packets) {
 		check(Delegate);
 
 		FNetSerializationProxy Proxy;
-		Proxy.NetSerializeFunc = [=](FArchive& Ar) mutable {
-			uint8 Size = Packets.Num();
-			Ar << Size;
-
-			for (uint8 i = 0; i < Size; i++) {
-				Packets[i].NetSerialize(Ar);
-
-				check(Packets[i].Body)
-				static_cast<InputPacketType*>(Packets[i].Body.Get())->NetSerialize(Ar);
-			}
-		};
-
-
+		Proxy.NetSerializeFunc = [=](FArchive& Ar) mutable { Ar << Packets; };
 		Delegate->EmitInputPackets(Proxy);
 	}
 
-	template <typename InputPacketType, typename StateType>
-	void FPhysicsModel<InputPacketType, StateType>::ProduceInput(FInputPacketWrapper& Packet) {
-		TSharedPtr<InputPacketType> Body = MakeShared<InputPacketType>();
-		ProduceInputDelegate.ExecuteIfBound(*Body.Get());
-
-		Packet.Body = MoveTemp(Body);
+	template <typename InputType, typename StateType>
+	void FPhysicsModel<InputType, StateType>::ProduceInput(FInputPacketWrapper<InputType>& Packet) {
+		ProduceInputDelegate.ExecuteIfBound(Packet.Body);
 	}
 
-	template <typename InputPacketType, typename StateType>
-	void FPhysicsModel<InputPacketType, StateType>::SimulatePrePhysics(const Chaos::FReal Dt, FPhysicsContext& Context, void* Input, const FPhysicsState<StateType>& PrevState, FPhysicsState<StateType>& OutState) {
-		InputPacketType* InputBody = static_cast<InputPacketType*>(Input);
-
+	template <typename InputType, typename StateType>
+	void FPhysicsModel<InputType, StateType>::SimulatePrePhysics(const Chaos::FReal Dt, FPhysicsContext& Context, const InputType& Input, const FPhysicsState<StateType>& PrevState, FPhysicsState<StateType>& OutState) {
 		SimOutput Output(OutState);
-		SimulatePrePhysics(Dt, Context, *InputBody, PrevState.Body, Output);
+		SimulatePrePhysics(Dt, Context, Input, PrevState.Body, Output);
 	}
 
-	template <typename InputPacketType, typename StateType>
-	void FPhysicsModel<InputPacketType, StateType>::SimulatePostPhysics(const Chaos::FReal Dt, const FPhysicsContext& Context, void* Input, const FPhysicsState<StateType>& PrevState, FPhysicsState<StateType>& OutState) {
-		InputPacketType* InputBody = static_cast<InputPacketType*>(Input);
-
+	template <typename InputType, typename StateType>
+	void FPhysicsModel<InputType, StateType>::SimulatePostPhysics(const Chaos::FReal Dt, const FPhysicsContext& Context, const InputType& Input, const FPhysicsState<StateType>& PrevState, FPhysicsState<StateType>& OutState) {
 		SimOutput Output(OutState);
-		SimulatePostPhysics(Dt, Context, *InputBody, PrevState.Body, Output);
+		SimulatePostPhysics(Dt, Context, Input, PrevState.Body, Output);
 	}
 
-	template <typename InputPacketType, typename StateType>
-	void FPhysicsModel<InputPacketType, StateType>::GenerateInitialState(FPhysicsState<StateType>& State) {
+	template <typename InputType, typename StateType>
+	void FPhysicsModel<InputType, StateType>::GenerateInitialState(FPhysicsState<StateType>& State) {
 		State = {};
 
 		// TODO Actually generate initial state

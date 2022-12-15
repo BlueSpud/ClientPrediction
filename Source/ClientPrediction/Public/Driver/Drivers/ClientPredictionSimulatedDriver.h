@@ -3,11 +3,11 @@
 
 namespace ClientPrediction {
 
-	template <typename StateType>
-	class FSimulatedModelDriver : public IModelDriver {
+	template <typename InputType, typename StateType>
+	class FSimulatedModelDriver : public IModelDriver<InputType> {
 
 	public:
-		FSimulatedModelDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<StateType>* Delegate);
+		FSimulatedModelDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate);
 
 	protected:
 		class Chaos::FRigidBodyHandle_Internal* GetPhysicsHandle() const;
@@ -17,15 +17,15 @@ namespace ClientPrediction {
 
 	protected:
 		UPrimitiveComponent* UpdatedComponent = nullptr;
-		IModelDriverDelegate<StateType>* Delegate = nullptr;
+		IModelDriverDelegate<InputType, StateType>* Delegate = nullptr;
 
-		FInputPacketWrapper CurrentInput{}; // Only used on physics thread
+		FInputPacketWrapper<InputType> CurrentInput{}; // Only used on physics thread
 		FPhysicsState<StateType> CurrentState{}; // Only used on physics thread
 		FPhysicsState<StateType> LastState{}; // Only used on physics thread
 	};
 
-	template <typename StateType>
-	FSimulatedModelDriver<StateType>::FSimulatedModelDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<StateType>* Delegate)
+	template <typename InputType, typename StateType>
+	FSimulatedModelDriver<InputType, StateType>::FSimulatedModelDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate)
 		: UpdatedComponent(UpdatedComponent),
 		  Delegate(Delegate) {
 		check(UpdatedComponent);
@@ -35,8 +35,8 @@ namespace ClientPrediction {
 		LastState = CurrentState;
 	}
 
-	template <typename StateType>
-	Chaos::FRigidBodyHandle_Internal* FSimulatedModelDriver<StateType>::GetPhysicsHandle() const {
+	template <typename InputType, typename StateType>
+	Chaos::FRigidBodyHandle_Internal* FSimulatedModelDriver<InputType, StateType>::GetPhysicsHandle() const {
 		FBodyInstance* BodyInstance = UpdatedComponent->GetBodyInstance();
 		check(BodyInstance)
 
@@ -46,8 +46,8 @@ namespace ClientPrediction {
 		return PhysicsHandle;
 	}
 
-	template <typename StateType>
-	void FSimulatedModelDriver<StateType>::PreTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt) {
+	template <typename InputType, typename StateType>
+	void FSimulatedModelDriver<InputType, StateType>::PreTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt) {
 		LastState = CurrentState;
 
 		CurrentState = {};
@@ -56,15 +56,15 @@ namespace ClientPrediction {
 
 		auto* Handle = GetPhysicsHandle();
 		FPhysicsContext Context(Handle, UpdatedComponent);
-		Delegate->SimulatePrePhysics(Dt, Context, CurrentInput.Body.Get(), LastState, CurrentState);
+		Delegate->SimulatePrePhysics(Dt, Context, CurrentInput.Body, LastState, CurrentState);
 	}
 
-	template <typename StateType>
-	void FSimulatedModelDriver<StateType>::PostTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) {
+	template <typename InputType, typename StateType>
+	void FSimulatedModelDriver<InputType, StateType>::PostTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) {
 		const auto Handle = GetPhysicsHandle();
 		CurrentState.FillState(Handle);
 
 		const FPhysicsContext Context(Handle, UpdatedComponent);
-		Delegate->SimulatePostPhysics(Dt, Context, CurrentInput.Body.Get(), LastState, CurrentState);
+		Delegate->SimulatePostPhysics(Dt, Context, CurrentInput.Body, LastState, CurrentState);
 	}
 }

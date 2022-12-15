@@ -6,16 +6,16 @@
 #include "Driver/Input/ClientPredictionAutoProxyInputBuf.h"
 #include "Driver/Drivers/ClientPredictionSimulatedDriver.h"
 #include "Driver/ClientPredictionRepProxy.h"
-#include "ClientPredictionInput.h"
+#include "Driver/Input/ClientPredictionInput.h"
 #include "ClientPredictionModelTypes.h"
 
 namespace ClientPrediction {
 	extern CLIENTPREDICTION_API int32 ClientPredictionInputSlidingWindowSize;
 
-	template <typename StateType>
-	class FModelAutoProxyDriver : public FSimulatedModelDriver<StateType>, public IRewindCallback  {
+	template <typename InputType, typename StateType>
+	class FModelAutoProxyDriver final : public FSimulatedModelDriver<InputType, StateType>, public IRewindCallback  {
 	public:
-		FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<StateType>* InDelegate, FClientPredictionRepProxy& AutoProxyRep, int32 RewindBufferSize);
+		FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FClientPredictionRepProxy& AutoProxyRep, int32 RewindBufferSize);
 		virtual ~FModelAutoProxyDriver() override = default;
 
 	private:
@@ -35,7 +35,7 @@ namespace ClientPrediction {
 		virtual void PostPhysicsGameThread() override;
 
 	private:
-		FAutoProxyInputBuf InputBuf; // Written to on game thread, read from physics thread
+		FAutoProxyInputBuf<InputType> InputBuf; // Written to on game thread, read from physics thread
 		TArray<FPhysicsState<StateType>> History; // Only used on physics thread
 		int32 RewindBufferSize = 0;
 
@@ -47,30 +47,30 @@ namespace ClientPrediction {
 		int32 LastAckedTick = INDEX_NONE; // Only used on the physics thread but might be used on the game thread later
 
 		// Game thread
-		TArray<FInputPacketWrapper> InputSlidingWindow;
+		TArray<FInputPacketWrapper<InputType>> InputSlidingWindow;
 	};
 
-	template <typename StateType>
-	FModelAutoProxyDriver<StateType>::FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent,
-                                                 IModelDriverDelegate<StateType>* Delegate,
+	template <typename InputType, typename StateType>
+	FModelAutoProxyDriver<InputType, StateType>::FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent,
+                                                 IModelDriverDelegate<InputType, StateType>* Delegate,
                                                  FClientPredictionRepProxy& AutoProxyRep,
                                                  int32 RewindBufferSize) :
     	FSimulatedModelDriver(UpdatedComponent, Delegate), InputBuf(RewindBufferSize), RewindBufferSize(RewindBufferSize) {
     	BindToRepProxy(AutoProxyRep);
     }
 
-	template <typename StateType>
-    void FModelAutoProxyDriver<StateType>::BindToRepProxy(FClientPredictionRepProxy& AutoProxyRep) {
+	template <typename InputType,typename StateType>
+    void FModelAutoProxyDriver<InputType, StateType>::BindToRepProxy(FClientPredictionRepProxy& AutoProxyRep) {
     	AutoProxyRep.SerializeFunc = [&](FArchive& Ar) {
     		FScopeLock Lock(&LastAuthorityMutex);
     		LastAuthorityState.NetSerialize(Ar);
     	};
     }
 
-	template <typename StateType>
-    void FModelAutoProxyDriver<StateType>::PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) {
+	template <typename InputType, typename StateType>
+    void FModelAutoProxyDriver<InputType, StateType>::PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) {
     	// Sample a new input packet
-    	FInputPacketWrapper Packet;
+    	FInputPacketWrapper<InputType> Packet;
     	Packet.PacketNumber = TickNumber;
     	Delegate->ProduceInput(Packet);
 
@@ -82,37 +82,37 @@ namespace ClientPrediction {
     		InputSlidingWindow.RemoveAt(0);
     	}
 
-    	check(InputSlidingWindow.Num() <= TNumericLimits<uint8>::Max())
     	Delegate->EmitInputPackets(InputSlidingWindow);
     }
 
-	template <typename StateType>
-    void FModelAutoProxyDriver<StateType>::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
+	template <typename InputType, typename StateType>
+    void FModelAutoProxyDriver<InputType, StateType>::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
     	ApplyCorrectionIfNeeded(TickNumber);
 
     	check(InputBuf.InputForTick(TickNumber, CurrentInput))
     	PreTickSimulateWithCurrentInput(TickNumber, Dt);
     }
 
-	template <typename StateType>
-    void FModelAutoProxyDriver<StateType>::ApplyCorrectionIfNeeded(int32 TickNumber) {
+	template <typename InputType, typename StateType>
+    void FModelAutoProxyDriver<InputType, StateType>::ApplyCorrectionIfNeeded(int32 TickNumber) {
     	if (PendingPhysicsCorrectionFrame == INDEX_NONE) { return; }
     	check(PendingPhysicsCorrectionFrame == TickNumber);
 
     	auto* PhysicsHandle = GetPhysicsHandle();
     	PendingCorrection.Reconcile(PhysicsHandle);
-    	LastState = MoveTemp(PendingCorrection);
     	PendingPhysicsCorrectionFrame = INDEX_NONE;
+
+		LastState = PendingCorrection;
     }
 
-	template <typename StateType>
-    void FModelAutoProxyDriver<StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) {
+	template <typename InputType, typename StateType>
+    void FModelAutoProxyDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal Time) {
     	PostTickSimulateWithCurrentInput(TickNumber, Dt, Time);
     	UpdateHistory();
     }
 
-	template <typename StateType>
-    void FModelAutoProxyDriver<StateType>::UpdateHistory() {
+	template <typename InputType, typename StateType>
+    void FModelAutoProxyDriver<InputType, StateType>::UpdateHistory() {
     	if (History.IsEmpty() || History.Last().TickNumber < CurrentState.TickNumber) {
     		History.Add(MoveTemp(CurrentState));
     	} else {
@@ -126,8 +126,8 @@ namespace ClientPrediction {
     	}
     }
 
-	template <typename StateType>
-    int32 FModelAutoProxyDriver<StateType>::GetRewindTickNumber(int32 CurrentTickNumber, const Chaos::FRewindData& RewindData) {
+	template <typename InputType, typename StateType>
+    int32 FModelAutoProxyDriver<InputType, StateType>::GetRewindTickNumber(int32 CurrentTickNumber, const Chaos::FRewindData& RewindData) {
     	FScopeLock Lock(&LastAuthorityMutex);
     	const int32 LocalTickNumber = LastAuthorityState.InputPacketTickNumber;
 
@@ -165,6 +165,6 @@ namespace ClientPrediction {
     	return INDEX_NONE;
     }
 
-	template <typename StateType>
-    void FModelAutoProxyDriver<StateType>::PostPhysicsGameThread() {}
+	template <typename InputType, typename StateType>
+    void FModelAutoProxyDriver<InputType, StateType>::PostPhysicsGameThread() {}
 }
