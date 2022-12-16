@@ -21,8 +21,12 @@ namespace ClientPrediction {
 		// Ticking
 		virtual void PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) override;
 		virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) override;
-		virtual void PostPhysicsGameThread(Chaos::FReal SimTime) override;
+		virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
 
+	private:
+		void SendCurrentStateToRemotes();
+
+	public:
 		// Called on game thread
 		virtual void ReceiveInputPackets(const TArray<FInputPacketWrapper<InputType>>& Packets) override;
 
@@ -61,7 +65,13 @@ namespace ClientPrediction {
 	}
 
 	template <typename InputType, typename StateType>
-	void FModelAuthDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime) {
+	void FModelAuthDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
+		FSimulatedModelDriver<InputType, StateType>::PostPhysicsGameThread(SimTime, Dt);
+		SendCurrentStateToRemotes();
+	}
+
+	template <typename InputType, typename StateType>
+	void FModelAuthDriver<InputType, StateType>::SendCurrentStateToRemotes() {
 		FPhysicsState<StateType> SendingState = LastStateGt;
 		{
 			FScopeLock Lock(&LastStateGtMutex);

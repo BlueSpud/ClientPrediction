@@ -49,7 +49,7 @@ namespace ClientPrediction {
 		 * At this point, physics results have been marshalled to the game thread.
 		 * @param [in] SimTime The absolute time of the simulation. This should be used for interpolation between two states generated on the physics thread.
 		 */
-		virtual void PostPhysicsGameThread(Chaos::FReal SimTime) {}
+		virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {}
 	};
 
 	class IRewindCallback {

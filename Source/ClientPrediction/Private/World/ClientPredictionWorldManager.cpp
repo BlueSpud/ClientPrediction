@@ -146,9 +146,14 @@ namespace ClientPrediction {
 	void FWorldManager::OnPhysScenePostTick(FChaosScene* /*TickedPhysScene*/) {
 		const Chaos::FReal ResultsTime = Solver->GetPhysicsResultsTime_External();
 
+		const Chaos::FReal Dt = LastResultsTime == -1.0 ? 0.0 : ResultsTime - LastResultsTime;
+		check(Dt >= 0.0)
+
 		for (ITickCallback* Callback : TickCallbacks) {
-			Callback->PostPhysicsGameThread(ResultsTime);
+			Callback->PostPhysicsGameThread(ResultsTime, Dt);
 		}
+
+		LastResultsTime = ResultsTime;
 	}
 
 	int32 FWorldManager::TriggerRewindIfNeeded_Internal(int32 CurrentTickNumber) const {

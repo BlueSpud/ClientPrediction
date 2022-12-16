@@ -15,7 +15,7 @@ namespace ClientPrediction {
 
 		void PreTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt);
 		void PostTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime);
-		virtual void PostPhysicsGameThread(Chaos::FReal SimTime) override;
+		virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
 
 	protected:
 		UPrimitiveComponent* UpdatedComponent = nullptr;
@@ -78,10 +78,9 @@ namespace ClientPrediction {
 	}
 
 	template <typename InputType, typename StateType>
-	void FSimulatedModelDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime) {
+	void FSimulatedModelDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
 		StateType InterpolatedState{};
 		History.GetStateAtTime(SimTime, InterpolatedState);
-
-		Delegate->Finalize(InterpolatedState);
+		Delegate->Finalize(InterpolatedState, Dt);
 	}
 }

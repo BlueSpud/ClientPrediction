@@ -71,7 +71,7 @@ namespace ClientPrediction {
 
 		// FPhysicsModelBase
 		virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) override final;
-		virtual void Finalize(const StateType& State) override final;
+		virtual void Finalize(const StateType& State, Chaos::FReal Dt) override final;
 
 		virtual ~FPhysicsModel() override = default;
 		virtual void Cleanup() override final;
@@ -93,7 +93,7 @@ namespace ClientPrediction {
 		DECLARE_DELEGATE_OneParam(FPhysicsModelProduceInput, InputType&)
 		FPhysicsModelProduceInput ProduceInputDelegate;
 
-		DECLARE_DELEGATE_OneParam(FPhysicsModelFinalize, const StateType&)
+		DECLARE_DELEGATE_TwoParams(FPhysicsModelFinalize, const StateType&, Chaos::FReal Dt)
 		FPhysicsModelFinalize FinalizeDelegate;
 
 	private:
@@ -122,7 +122,7 @@ namespace ClientPrediction {
 	}
 
 	template <typename InputType, typename StateType>
-	void FPhysicsModel<InputType, StateType>::Finalize(const StateType& State) { FinalizeDelegate.ExecuteIfBound(State); }
+	void FPhysicsModel<InputType, StateType>::Finalize(const StateType& State, Chaos::FReal Dt) { FinalizeDelegate.ExecuteIfBound(State, Dt); }
 
 	template <typename InputType, typename StateType>
 	void FPhysicsModel<InputType, StateType>::Cleanup() {

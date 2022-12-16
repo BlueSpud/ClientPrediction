@@ -80,6 +80,7 @@ namespace ClientPrediction {
 
 		int32 CachedLastTickNumber = INDEX_NONE;
 		Chaos::FReal CachedSolverStartTime = 0.0;
+		Chaos::FReal LastResultsTime = -1.0;
 
 		TSet<class ITickCallback*> TickCallbacks;
 		class IRewindCallback* RewindCallback = nullptr;
