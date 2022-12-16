@@ -29,14 +29,10 @@ namespace ClientPrediction {
 		void ApplyCorrectionIfNeeded(int32 TickNumber);
 
 		virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) override;
-		void UpdateHistory();
-
 		virtual int32 GetRewindTickNumber(int32 CurrentTickNumber, const class Chaos::FRewindData& RewindData) override;
-		virtual void PostPhysicsGameThread(Chaos::FReal SimTime) override;
 
 	private:
 		FAutoProxyInputBuf<InputType> InputBuf; // Written to on game thread, read from physics thread
-		TArray<FPhysicsState<StateType>> History; // Only used on physics thread
 		int32 RewindBufferSize = 0;
 
 		FPhysicsState<StateType> PendingCorrection{}; // Only used on physics thread
@@ -55,7 +51,7 @@ namespace ClientPrediction {
                                                  IModelDriverDelegate<InputType, StateType>* Delegate,
                                                  FClientPredictionRepProxy& AutoProxyRep,
                                                  int32 RewindBufferSize) :
-    	FSimulatedModelDriver(UpdatedComponent, Delegate), InputBuf(RewindBufferSize), RewindBufferSize(RewindBufferSize) {
+    	FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), InputBuf(RewindBufferSize), RewindBufferSize(RewindBufferSize) {
     	BindToRepProxy(AutoProxyRep);
     }
 
@@ -108,22 +104,7 @@ namespace ClientPrediction {
 	template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
     	PostTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
-    	UpdateHistory();
-    }
-
-	template <typename InputType, typename StateType>
-    void FModelAutoProxyDriver<InputType, StateType>::UpdateHistory() {
-    	if (History.IsEmpty() || History.Last().TickNumber < CurrentState.TickNumber) {
-    		History.Add(CurrentState);
-    	} else {
-    		const int32 StartingTickNumber = History[0].TickNumber;
-    		History[CurrentState.TickNumber - StartingTickNumber] = CurrentState;
-    	}
-
-    	// Trim the history buffer
-    	while (History.Num() > RewindBufferSize) {
-    		History.RemoveAt(0);
-    	}
+    	History.Update(CurrentState);
     }
 
 	template <typename InputType, typename StateType>
@@ -139,18 +120,13 @@ namespace ClientPrediction {
     	check(LocalTickNumber >= CurrentTickNumber - RewindBufferSize)
 
     	// Check against the historic state
-    	const FPhysicsState<StateType>* HistoricState = nullptr;
-    	for (const FPhysicsState<StateType>& State : History) {
-    		if (State.TickNumber == LocalTickNumber) {
-    			HistoricState = &State;
-    			break;
-    		}
-    	}
+		FPhysicsState<StateType> HistoricState;
+    	History.GetStateAtTick(LocalTickNumber, HistoricState);
 
-    	check(HistoricState);
+    	check(HistoricState.TickNumber != INDEX_NONE);
     	LastAckedTick = LocalTickNumber;
 
-    	if (LastAuthorityState.ShouldReconcile(*HistoricState)) {
+    	if (LastAuthorityState.ShouldReconcile(HistoricState)) {
 
     		// When we perform a correction, we add one to the frame, since LastAuthorityState will be the state
     		// of the simulation during PostTickPhysicsThread (after physics has been simulated), so it is the beginning
@@ -164,7 +140,4 @@ namespace ClientPrediction {
 
     	return INDEX_NONE;
     }
-
-	template <typename InputType, typename StateType>
-    void FModelAutoProxyDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime) {}
 }

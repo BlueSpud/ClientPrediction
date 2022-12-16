@@ -71,6 +71,7 @@ namespace ClientPrediction {
 
 		// FPhysicsModelBase
 		virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) override final;
+		virtual void Finalize(const StateType& State) override final;
 
 		virtual ~FPhysicsModel() override = default;
 		virtual void Cleanup() override final;
@@ -91,6 +92,9 @@ namespace ClientPrediction {
 
 		DECLARE_DELEGATE_OneParam(FPhysicsModelProduceInput, InputType&)
 		FPhysicsModelProduceInput ProduceInputDelegate;
+
+		DECLARE_DELEGATE_OneParam(FPhysicsModelFinalize, const StateType&)
+		FPhysicsModelFinalize FinalizeDelegate;
 
 	private:
 		class UPrimitiveComponent* CachedComponent = nullptr;
@@ -118,6 +122,9 @@ namespace ClientPrediction {
 	}
 
 	template <typename InputType, typename StateType>
+	void FPhysicsModel<InputType, StateType>::Finalize(const StateType& State) { FinalizeDelegate.ExecuteIfBound(State); }
+
+	template <typename InputType, typename StateType>
 	void FPhysicsModel<InputType, StateType>::Cleanup() {
 		if (CachedWorldManager != nullptr && ModelDriver != nullptr) {
 			CachedWorldManager->RemoveTickCallback(ModelDriver.Get());
@@ -138,14 +145,15 @@ namespace ClientPrediction {
 			CachedWorldManager->RemoveTickCallback(ModelDriver.Get());
 		}
 
+		int32 RewindBufferSize = CachedWorldManager->GetRewindBufferSize();
 		switch (Role) {
 		case ROLE_Authority:
 			// TODO pass bShouldTakeInput here
-			ModelDriver = MakeUnique<FModelAuthDriver<InputType, StateType>>(CachedComponent, this, AutoProxyRep, SimProxyRep);
+			ModelDriver = MakeUnique<FModelAuthDriver<InputType, StateType>>(CachedComponent, this, AutoProxyRep, SimProxyRep, RewindBufferSize);
 			CachedWorldManager->AddTickCallback(ModelDriver.Get());
 			break;
 		case ROLE_AutonomousProxy: {
-			auto NewDriver = MakeUnique<FModelAutoProxyDriver<InputType, StateType>>(CachedComponent, this, AutoProxyRep, CachedWorldManager->GetRewindBufferSize());
+			auto NewDriver = MakeUnique<FModelAutoProxyDriver<InputType, StateType>>(CachedComponent, this, AutoProxyRep, RewindBufferSize);
 			CachedWorldManager->AddTickCallback(NewDriver.Get());
 			CachedWorldManager->AddRewindCallback(NewDriver.Get());
 			ModelDriver = MoveTemp(NewDriver);

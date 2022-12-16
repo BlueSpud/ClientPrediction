@@ -13,7 +13,7 @@ namespace ClientPrediction {
 	template <typename InputType, typename StateType>
 	class FModelAuthDriver final : public FSimulatedModelDriver<InputType, StateType>  {
 	public:
-		FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep);
+		FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep, int32 RewindBufferSize);
 		virtual ~FModelAuthDriver() override = default;
 
 	public:
@@ -37,9 +37,8 @@ namespace ClientPrediction {
 	};
 
 	template <typename InputType, typename StateType>
-	FModelAuthDriver<InputType, StateType>::FModelAuthDriver(UPrimitiveComponent* UpdatedComponent,
-		IModelDriverDelegate<InputType, StateType>* Delegate, FClientPredictionRepProxy& AutoProxyRep,
-		FClientPredictionRepProxy& SimProxyRep) : FSimulatedModelDriver(UpdatedComponent, Delegate), AutoProxyRep(AutoProxyRep), SimProxyRep(SimProxyRep) {}
+	FModelAuthDriver<InputType, StateType>::FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep, int32 RewindBufferSize)
+	: FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), AutoProxyRep(AutoProxyRep), SimProxyRep(SimProxyRep) {}
 
 	template <typename InputType, typename StateType>
 	void FModelAuthDriver<InputType, StateType>::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
@@ -63,18 +62,21 @@ namespace ClientPrediction {
 
 	template <typename InputType, typename StateType>
 	void FModelAuthDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime) {
-		FScopeLock Lock(&LastStateGtMutex);
+		FPhysicsState<StateType> SendingState = LastStateGt;
+		{
+			FScopeLock Lock(&LastStateGtMutex);
+			SendingState = LastStateGt;
+		}
 
-		if (LastStateGt.TickNumber != INDEX_NONE && LastStateGt.TickNumber != LastEmittedState) {
+		if (SendingState.TickNumber != INDEX_NONE && SendingState.TickNumber != LastEmittedState) {
 
-			FPhysicsState SendingState = LastStateGt;
 			AutoProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { SendingState.NetSerialize(Ar); };
 			SimProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { SendingState.NetSerialize(Ar); };
 
 			AutoProxyRep.Dispatch();
 			SimProxyRep.Dispatch();
 
-			LastEmittedState = LastStateGt.TickNumber;
+			LastEmittedState = SendingState.TickNumber;
 		}
 	}
 

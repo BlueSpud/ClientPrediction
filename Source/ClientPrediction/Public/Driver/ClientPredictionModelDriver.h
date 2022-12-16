@@ -14,6 +14,7 @@ namespace ClientPrediction {
 		virtual ~IModelDriverDelegate() = default;
 
 		virtual void GenerateInitialState(FPhysicsState<StateType>& State) = 0;
+		virtual void Finalize(const StateType& State) = 0;
 
 		virtual void EmitInputPackets(TArray<FInputPacketWrapper<InputType>>& Packets) = 0;
 		virtual void ProduceInput(FInputPacketWrapper<InputType>& Packet) = 0;

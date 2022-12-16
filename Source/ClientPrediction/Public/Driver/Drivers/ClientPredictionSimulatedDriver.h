@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "Driver/ClientPredictionHistoryBuffer.h"
 #include "Driver/ClientPredictionModelDriver.h"
 
 namespace ClientPrediction {
@@ -7,17 +8,19 @@ namespace ClientPrediction {
 	class FSimulatedModelDriver : public IModelDriver<InputType> {
 
 	public:
-		FSimulatedModelDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate);
+		FSimulatedModelDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, int32 HistoryBufferSize);
 
 	protected:
 		class Chaos::FRigidBodyHandle_Internal* GetPhysicsHandle() const;
 
 		void PreTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt);
 		void PostTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime);
+		virtual void PostPhysicsGameThread(Chaos::FReal SimTime) override;
 
 	protected:
 		UPrimitiveComponent* UpdatedComponent = nullptr;
 		IModelDriverDelegate<InputType, StateType>* Delegate = nullptr;
+		FHistoryBuffer<StateType> History;
 
 		FInputPacketWrapper<InputType> CurrentInput{}; // Only used on physics thread
 		FPhysicsState<StateType> CurrentState{}; // Only used on physics thread
@@ -25,14 +28,17 @@ namespace ClientPrediction {
 	};
 
 	template <typename InputType, typename StateType>
-	FSimulatedModelDriver<InputType, StateType>::FSimulatedModelDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate)
-		: UpdatedComponent(UpdatedComponent),
-		  Delegate(Delegate) {
+	FSimulatedModelDriver<InputType, StateType>::FSimulatedModelDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, int32 HistoryBufferSize)
+		: UpdatedComponent(UpdatedComponent), Delegate(Delegate), History(HistoryBufferSize) {
 		check(UpdatedComponent);
 		check(Delegate);
 
 		Delegate->GenerateInitialState(CurrentState);
+		CurrentState.TickNumber = INDEX_NONE;
+		CurrentState.InputPacketTickNumber = INDEX_NONE;
+
 		LastState = CurrentState;
+		History.Update(CurrentState);
 	}
 
 	template <typename InputType, typename StateType>
@@ -69,5 +75,13 @@ namespace ClientPrediction {
 
 		const FPhysicsContext Context(Handle, UpdatedComponent);
 		Delegate->SimulatePostPhysics(Dt, Context, CurrentInput.Body, LastState, CurrentState);
+	}
+
+	template <typename InputType, typename StateType>
+	void FSimulatedModelDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime) {
+		StateType InterpolatedState{};
+		History.GetStateAtTime(SimTime, InterpolatedState);
+
+		Delegate->Finalize(InterpolatedState);
 	}
 }
