@@ -4,14 +4,21 @@
 #include "World/ClientPredictionTickCallback.h"
 
 #include "PBDRigidsSolver.h"
+#include "PhysicsEngine/PhysicsSettings.h"
 
 namespace ClientPrediction {
     CLIENTPREDICTION_API float ClientPredictionFixedDt = 1.0 / 60.0;
     FAutoConsoleVariableRef CVarClientPredictionFixedDt(TEXT("cp.FixedDt"), ClientPredictionFixedDt,
                                                         TEXT("The fixed timestep for ClientPrediction. This is also used as the async physics step"));
 
-    CLIENTPREDICTION_API uint32 ClientPredictionHistoryTimeMs = 400;
-    FAutoConsoleVariableRef CVarClientPredictionHistoryTimeMs(TEXT("cp.RewindHistoryTime"), ClientPredictionFixedDt, TEXT("The amount of time to store for rewind"));
+    CLIENTPREDICTION_API float ClientPredictionMaxPhysicsTime = 1.0;
+    FAutoConsoleVariableRef CVarClientPredictionMaxPhysicsTime(TEXT("cp.MaxPhysicsTime"), ClientPredictionMaxPhysicsTime,
+                                                               TEXT("The maximum time physics can be simulated per frame. "
+                                                                   "This is set to a high value to make sure that clients with low framerates still simulate enough "
+                                                                   "physics ticks to stay relatively in-sync with the server, and should probably remain untouched."));
+
+    CLIENTPREDICTION_API uint32 ClientPredictionHistoryTimeMs = 500;
+    FAutoConsoleVariableRef CVarClientPredictionHistoryTimeMs(TEXT("cp.RewindHistoryTime"), ClientPredictionFixedDt, TEXT("The amount of time (in ms) to store for rewind"));
 
     TMap<UWorld*, FWorldManager*> FWorldManager::Managers;
 
@@ -59,6 +66,8 @@ namespace ClientPrediction {
         RewindBufferSize = FMath::CeilToInt32(static_cast<float>(ClientPredictionHistoryTimeMs) / 1000.0 / ClientPredictionFixedDt);
         Solver->EnableRewindCapture(RewindBufferSize, false, MakeUnique<FChaosRewindCallback>());
         check(Solver->IsDetemerministic());
+
+        UPhysicsSettings::Get()->MaxPhysicsDeltaTime = ClientPredictionMaxPhysicsTime;
     }
 
     void FWorldManager::CreateCallbacks() {
@@ -90,6 +99,11 @@ namespace ClientPrediction {
         if (RewindCallback == Callback) {
             RewindCallback = nullptr;
         }
+    }
+
+    void FWorldManager::SetTimeDilation(const Chaos::FReal TimeDilation) const {
+        if (PhysScene == nullptr) { return; }
+        PhysScene->SetNetworkDeltaTimeScale(TimeDilation);
     }
 
     FWorldManager::~FWorldManager() {

@@ -11,6 +11,9 @@
 
 namespace ClientPrediction {
     extern CLIENTPREDICTION_API int32 ClientPredictionInputSlidingWindowSize;
+    extern CLIENTPREDICTION_API float ClientPredictionMaxTimeDilation;
+
+    static constexpr Chaos::FReal kFastForwardTimescale = 2.0;
 
     template <typename InputType, typename StateType>
     class FModelAutoProxyDriver final : public FSimulatedModelDriver<InputType, StateType>, public IRewindCallback {
@@ -21,7 +24,7 @@ namespace ClientPrediction {
         virtual ~FModelAutoProxyDriver() override = default;
 
     private:
-        void BindToRepProxy(FRepProxy& AutoProxyRep);
+        void BindToRepProxy(FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep);
 
     public:
         // Ticking
@@ -30,6 +33,8 @@ namespace ClientPrediction {
         void ApplyCorrectionIfNeeded(int32 TickNumber);
 
         virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) override;
+        virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
+
         virtual int32 GetRewindTickNumber(int32 CurrentTickNumber, const class Chaos::FRewindData& RewindData) override;
 
     private:
@@ -42,9 +47,11 @@ namespace ClientPrediction {
         FCriticalSection LastAuthorityMutex;
         FPhysicsState<StateType> LastAuthorityState; // Written to from the game thread, read by the physics thread
         int32 LastAckedTick = INDEX_NONE; // Only used on the physics thread but might be used on the game thread later
+        std::atomic<bool> bIsBehindAuthority; // Written from the physics thread, read on the game thread.
 
         // Game thread
         TArray<FInputPacketWrapper<InputType>> InputSlidingWindow;
+        FControlPacket LastControlPacket{};
     };
 
     template <typename InputType, typename StateType>
@@ -55,28 +62,31 @@ namespace ClientPrediction {
                                                                        FRepProxy& ControlProxyRep,
                                                                        int32 RewindBufferSize) :
         FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), InputBuf(RewindBufferSize),
-        RewindBufferSize(RewindBufferSize) {
-        BindToRepProxy(AutoProxyRep);
+        RewindBufferSize(RewindBufferSize), bIsBehindAuthority(false) {
+        BindToRepProxy(AutoProxyRep, ControlProxyRep);
     }
 
     template <typename InputType, typename StateType>
-    void FModelAutoProxyDriver<InputType, StateType>::BindToRepProxy(FRepProxy& AutoProxyRep) {
+    void FModelAutoProxyDriver<InputType, StateType>::BindToRepProxy(FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep) {
         AutoProxyRep.SerializeFunc = [&](FArchive& Ar) {
             FScopeLock Lock(&LastAuthorityMutex);
             LastAuthorityState.NetSerialize(Ar);
+        };
+
+        ControlProxyRep.SerializeFunc = [&](FArchive& Ar) {
+            LastControlPacket.NetSerialize(Ar);
         };
     }
 
     template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) {
-        // Sample a new input packet
         FInputPacketWrapper<InputType> Packet;
         Packet.PacketNumber = TickNumber;
         Delegate->ProduceInput(Packet);
 
         InputBuf.QueueInputPacket(Packet);
 
-        // Bundle it up with the most recent inputs and send it to the authority
+        // Bundle the new packet up with the most recent inputs and send it to the authority
         InputSlidingWindow.Add(Packet);
         while (InputSlidingWindow.Num() > ClientPredictionInputSlidingWindowSize) {
             InputSlidingWindow.RemoveAt(0);
@@ -112,6 +122,20 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType>
+    void FModelAutoProxyDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
+        FSimulatedModelDriver<InputType, StateType>::PostPhysicsGameThread(SimTime, Dt);
+
+        // If for some reason the auto proxy has fallen behind the authority, fast forward to catch back up.
+        if (bIsBehindAuthority) {
+            Delegate->SetTimeDilation(kFastForwardTimescale);
+            return;
+        }
+
+        const Chaos::FReal NewTimeDilation = 1.0 + LastControlPacket.GetTimeDilation() * ClientPredictionMaxTimeDilation;
+        Delegate->SetTimeDilation(NewTimeDilation);
+    }
+
+    template <typename InputType, typename StateType>
     int32 FModelAutoProxyDriver<InputType, StateType>::GetRewindTickNumber(int32 CurrentTickNumber, const Chaos::FRewindData& RewindData) {
         FScopeLock Lock(&LastAuthorityMutex);
         const int32 LocalTickNumber = LastAuthorityState.InputPacketTickNumber;
@@ -120,14 +144,17 @@ namespace ClientPrediction {
         if (LocalTickNumber <= LastAckedTick) { return INDEX_NONE; }
 
         // TODO Both of these cases should be handled gracefully
-        check(LocalTickNumber <= CurrentTickNumber)
+        if (LocalTickNumber > CurrentTickNumber) {
+            bIsBehindAuthority = true;
+            return INDEX_NONE;
+        }
+
+        bIsBehindAuthority = false;
         check(LocalTickNumber >= CurrentTickNumber - RewindBufferSize)
 
         // Check against the historic state
         FPhysicsState<StateType> HistoricState;
         History.GetStateAtTick(LocalTickNumber, HistoricState);
-
-        check(HistoricState.TickNumber != INDEX_NONE);
         LastAckedTick = LocalTickNumber;
 
         if (LastAuthorityState.ShouldReconcile(HistoricState)) {

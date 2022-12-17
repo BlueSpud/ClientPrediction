@@ -5,6 +5,7 @@
 
 namespace ClientPrediction {
     extern CLIENTPREDICTION_API float ClientPredictionFixedDt;
+    extern CLIENTPREDICTION_API float ClientPredictionMaxPhysicsTime;
     extern CLIENTPREDICTION_API uint32 ClientPredictionHistoryTimeMs;
 
     struct CLIENTPREDICTION_API FWorldManager {
@@ -31,6 +32,8 @@ namespace ClientPrediction {
         void RemoveRewindCallback(const class IRewindCallback* Callback);
 
         int32 GetRewindBufferSize() const { return RewindBufferSize; }
+
+        void SetTimeDilation(const Chaos::FReal TimeDilation) const;
 
     private:
         DECLARE_DELEGATE_OneParam(FTickCallback, int32);

@@ -78,6 +78,7 @@ namespace ClientPrediction {
 
         virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep, FRepProxy& ControlProxyRep) override final;
         virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) const override final;
+        virtual void SetTimeDilation(const Chaos::FReal TimeDilation) override final;
 
         // IModelDriverDelegate
         virtual void GenerateInitialState(FPhysicsState<StateType>& State) override final;
@@ -180,6 +181,12 @@ namespace ClientPrediction {
 
         Proxy.Deserialize();
         ModelDriver->ReceiveInputPackets(Packets);
+    }
+
+    template <typename InputType, typename StateType>
+    void FPhysicsModel<InputType, StateType>::SetTimeDilation(const Chaos::FReal TimeDilation) {
+        check(CachedWorldManager)
+        CachedWorldManager->SetTimeDilation(TimeDilation);
     }
 
     template <typename InputType, typename StateType>

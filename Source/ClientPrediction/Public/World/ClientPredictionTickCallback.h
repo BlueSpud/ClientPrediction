@@ -4,7 +4,7 @@ namespace ClientPrediction {
     /**
      * A note on terminology:
      * A tick is run every frame. This may include none, one or many physics ticks.
-     * 		 
+     *  
      * If multiple physics ticks are being run in one game tick, PrepareTickGameThread() will be called for each physics tick
      * before any actual physics work is done. For instance, if we run tick 4,5 and 6 the order will be:
      * Prepare 4,5,6

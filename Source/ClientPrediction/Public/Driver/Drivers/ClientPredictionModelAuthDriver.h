@@ -9,6 +9,7 @@
 
 namespace ClientPrediction {
     extern CLIENTPREDICTION_API int32 ClientPredictionDesiredInputBufferSize;
+    extern CLIENTPREDICTION_API float ClientPredictionTimeDilationAlpha;
 
     template <typename InputType, typename StateType>
     class FModelAuthDriver final : public FSimulatedModelDriver<InputType, StateType> {
@@ -39,6 +40,7 @@ namespace ClientPrediction {
         FRepProxy& ControlProxyRep;
 
         FAuthInputBuf<InputType> InputBuf; // Written to on game thread, read from physics thread
+        Chaos::FReal LastSuggestedTimeDilation = 1.0; // Only used on game thread
 
         FCriticalSection LastStateGtMutex;
         FPhysicsState<StateType> LastStateGt; // Written from physics thread, read on game thread
@@ -78,6 +80,16 @@ namespace ClientPrediction {
     void FModelAuthDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
         FSimulatedModelDriver<InputType, StateType>::PostPhysicsGameThread(SimTime, Dt);
         SendCurrentStateToRemotes();
+
+        const int32 InputBufferSize = static_cast<int32>(InputBuf.GetBufferSize());
+        const Chaos::FReal TargetTimeDilation = InputBufferSize > ClientPredictionDesiredInputBufferSize ? -1.0 : (InputBufferSize < ClientPredictionDesiredInputBufferSize ? 1.0 : 0.0);
+        LastSuggestedTimeDilation = FMath::Lerp(LastSuggestedTimeDilation, TargetTimeDilation, ClientPredictionTimeDilationAlpha);
+
+        FControlPacket ControlPacket{};
+        ControlPacket.SetTimeDilation(LastSuggestedTimeDilation);
+
+        ControlProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { ControlPacket.NetSerialize(Ar); };
+        ControlProxyRep.Dispatch();
     }
 
     template <typename InputType, typename StateType>

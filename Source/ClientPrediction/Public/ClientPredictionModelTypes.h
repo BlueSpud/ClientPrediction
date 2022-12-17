@@ -94,4 +94,23 @@ namespace ClientPrediction {
         Handle->SetW(W);
         Handle->SetObjectState(ObjectState);
     }
+
+    struct FControlPacket {
+        void SetTimeDilation(const Chaos::FReal Dilation) {
+            const int32 Rounded = FMath::RoundToInt(Dilation * 127.0);
+            TimeDilation = FMath::Clamp(Rounded, -127, 127);
+        }
+
+        Chaos::FReal GetTimeDilation() const {
+            return static_cast<Chaos::FReal>(TimeDilation) / static_cast<Chaos::FReal>(TNumericLimits<int8>::Max());
+        }
+
+        void NetSerialize(FArchive& Ar) {
+            Ar << TimeDilation;
+        }
+
+    private:
+        /** This stores time dilation in the range [-127, 127] (since 128 can't be represented with an int8)*/
+        int8 TimeDilation = 0;
+    };
 }

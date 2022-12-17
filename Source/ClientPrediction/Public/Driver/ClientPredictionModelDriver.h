@@ -17,6 +17,7 @@ namespace ClientPrediction {
 
         virtual void EmitInputPackets(TArray<FInputPacketWrapper<InputType>>& Packets) = 0;
         virtual void ProduceInput(FInputPacketWrapper<InputType>& Packet) = 0;
+        virtual void SetTimeDilation(const Chaos::FReal TimeDilation) = 0;
 
         virtual void SimulatePrePhysics(const Chaos::FReal Dt, FPhysicsContext& Context, const InputType& Input, const FPhysicsState<StateType>& PrevState,
                                         FPhysicsState<StateType>& OutState) = 0;
