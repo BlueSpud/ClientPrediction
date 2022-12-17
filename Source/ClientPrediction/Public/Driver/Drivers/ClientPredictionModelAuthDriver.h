@@ -8,90 +8,100 @@
 #include "Driver/Input/ClientPredictionInput.h"
 
 namespace ClientPrediction {
-	extern CLIENTPREDICTION_API int32 ClientPredictionDesiredInputBufferSize;
+    extern CLIENTPREDICTION_API int32 ClientPredictionDesiredInputBufferSize;
 
-	template <typename InputType, typename StateType>
-	class FModelAuthDriver final : public FSimulatedModelDriver<InputType, StateType>  {
-	public:
-		FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep, int32 RewindBufferSize);
-		virtual ~FModelAuthDriver() override = default;
+    template <typename InputType, typename StateType>
+    class FModelAuthDriver final : public FSimulatedModelDriver<InputType, StateType> {
+    public:
+        FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate,
+                         FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep, FRepProxy& ControlProxyRep,
+                         int32 RewindBufferSize);
+        virtual ~FModelAuthDriver() override = default;
 
-	public:
+    public:
+        // Ticking
+        virtual void PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) override;
+        virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime,
+                                           Chaos::FReal EndTime) override;
+        virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
 
-		// Ticking
-		virtual void PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) override;
-		virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) override;
-		virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
+    private:
+        void SendCurrentStateToRemotes();
 
-	private:
-		void SendCurrentStateToRemotes();
+    public:
+        // Called on game thread
+        virtual void ReceiveInputPackets(const TArray<FInputPacketWrapper<InputType>>& Packets) override;
 
-	public:
-		// Called on game thread
-		virtual void ReceiveInputPackets(const TArray<FInputPacketWrapper<InputType>>& Packets) override;
+    private:
+        FRepProxy& AutoProxyRep;
+        FRepProxy& SimProxyRep;
+        FRepProxy& ControlProxyRep;
 
-	private:
-		FClientPredictionRepProxy& AutoProxyRep;
-		FClientPredictionRepProxy& SimProxyRep;
-		FAuthInputBuf<InputType> InputBuf; // Written to on game thread, read from physics thread
+        FAuthInputBuf<InputType> InputBuf; // Written to on game thread, read from physics thread
 
-		FCriticalSection LastStateGtMutex;
-		FPhysicsState<StateType> LastStateGt; // Written from physics thread, read on game thread
-		int32 LastEmittedState = INDEX_NONE; // Only used on game thread
-	};
+        FCriticalSection LastStateGtMutex;
+        FPhysicsState<StateType> LastStateGt; // Written from physics thread, read on game thread
+        int32 LastEmittedState = INDEX_NONE; // Only used on game thread
+    };
 
-	template <typename InputType, typename StateType>
-	FModelAuthDriver<InputType, StateType>::FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FClientPredictionRepProxy& AutoProxyRep, FClientPredictionRepProxy& SimProxyRep, int32 RewindBufferSize)
-	: FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), AutoProxyRep(AutoProxyRep), SimProxyRep(SimProxyRep) {}
+    template <typename InputType, typename StateType>
+    FModelAuthDriver<InputType, StateType>::FModelAuthDriver(UPrimitiveComponent* UpdatedComponent,
+                                                             IModelDriverDelegate<InputType, StateType>* Delegate,
+                                                             FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep,
+                                                             FRepProxy& ControlProxyRep, int32 RewindBufferSize)
+        : FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), AutoProxyRep(AutoProxyRep),
+          SimProxyRep(SimProxyRep), ControlProxyRep(ControlProxyRep) {}
 
-	template <typename InputType, typename StateType>
-	void FModelAuthDriver<InputType, StateType>::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
-		if (CurrentInput.PacketNumber == INDEX_NONE && InputBuf.GetBufferSize() < static_cast<uint32>(ClientPredictionDesiredInputBufferSize)) { return; }
+    template <typename InputType, typename StateType>
+    void FModelAuthDriver<InputType, StateType>::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
+        if (CurrentInput.PacketNumber == INDEX_NONE && InputBuf.GetBufferSize() < static_cast<uint32>(
+            ClientPredictionDesiredInputBufferSize)) { return; }
 
-		const bool bHadPacketInInputBuffer = InputBuf.GetNextInputPacket(CurrentInput);
-		if (!bHadPacketInInputBuffer) {
-			UE_LOG(LogTemp, Error, TEXT("Dropped an input packet %d on the authority"), CurrentInput.PacketNumber);
-		}
+        const bool bHadPacketInInputBuffer = InputBuf.GetNextInputPacket(CurrentInput);
+        if (!bHadPacketInInputBuffer) {
+            UE_LOG(LogTemp, Error, TEXT("Dropped an input packet %d on the authority"), CurrentInput.PacketNumber);
+        }
 
-		PreTickSimulateWithCurrentInput(TickNumber, Dt);
-	}
+        PreTickSimulateWithCurrentInput(TickNumber, Dt);
+    }
 
-	template <typename InputType, typename StateType>
-	void FModelAuthDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
-		PostTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
+    template <typename InputType, typename StateType>
+    void FModelAuthDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt,
+                                                                       Chaos::FReal StartTime, Chaos::FReal EndTime) {
+        PostTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
 
-		FScopeLock Lock(&LastStateGtMutex);
-		LastStateGt = CurrentState;
-	}
+        FScopeLock Lock(&LastStateGtMutex);
+        LastStateGt = CurrentState;
+    }
 
-	template <typename InputType, typename StateType>
-	void FModelAuthDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
-		FSimulatedModelDriver<InputType, StateType>::PostPhysicsGameThread(SimTime, Dt);
-		SendCurrentStateToRemotes();
-	}
+    template <typename InputType, typename StateType>
+    void FModelAuthDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
+        FSimulatedModelDriver<InputType, StateType>::PostPhysicsGameThread(SimTime, Dt);
+        SendCurrentStateToRemotes();
+    }
 
-	template <typename InputType, typename StateType>
-	void FModelAuthDriver<InputType, StateType>::SendCurrentStateToRemotes() {
-		FPhysicsState<StateType> SendingState = LastStateGt;
-		{
-			FScopeLock Lock(&LastStateGtMutex);
-			SendingState = LastStateGt;
-		}
+    template <typename InputType, typename StateType>
+    void FModelAuthDriver<InputType, StateType>::SendCurrentStateToRemotes() {
+        FPhysicsState<StateType> SendingState = LastStateGt;
+        {
+            FScopeLock Lock(&LastStateGtMutex);
+            SendingState = LastStateGt;
+        }
 
-		if (SendingState.TickNumber != INDEX_NONE && SendingState.TickNumber != LastEmittedState) {
+        if (SendingState.TickNumber != INDEX_NONE && SendingState.TickNumber != LastEmittedState) {
+            AutoProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { SendingState.NetSerialize(Ar); };
+            SimProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { SendingState.NetSerialize(Ar); };
 
-			AutoProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { SendingState.NetSerialize(Ar); };
-			SimProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { SendingState.NetSerialize(Ar); };
+            AutoProxyRep.Dispatch();
+            SimProxyRep.Dispatch();
 
-			AutoProxyRep.Dispatch();
-			SimProxyRep.Dispatch();
+            LastEmittedState = SendingState.TickNumber;
+        }
+    }
 
-			LastEmittedState = SendingState.TickNumber;
-		}
-	}
-
-	template <typename InputType, typename StateType>
-	void FModelAuthDriver<InputType, StateType>::ReceiveInputPackets(const TArray<FInputPacketWrapper<InputType>>& Packets) {
-		InputBuf.QueueInputPackets(Packets);
-	}
+    template <typename InputType, typename StateType>
+    void FModelAuthDriver<InputType, StateType>::ReceiveInputPackets(
+        const TArray<FInputPacketWrapper<InputType>>& Packets) {
+        InputBuf.QueueInputPackets(Packets);
+    }
 }
