@@ -28,8 +28,7 @@ namespace ClientPrediction {
         virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) = 0;
         virtual void Cleanup() = 0;
 
-        virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep,
-                                FRepProxy& ControlProxyRep) = 0;
+        virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep, FRepProxy& ControlProxyRep) = 0;
 
         virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) const = 0;
     };
@@ -61,16 +60,14 @@ namespace ClientPrediction {
          * WARNING: This is called on the physics thread, so any objects shared between the physics thread and the
          * game thread need to be properly synchronized.
          */
-        virtual void SimulatePrePhysics(Chaos::FReal Dt, FPhysicsContext& Context, const InputType& Input,
-                                        const StateType& PrevState, SimOutput& OutState) = 0;
+        virtual void SimulatePrePhysics(Chaos::FReal Dt, FPhysicsContext& Context, const InputType& Input, const StateType& PrevState, SimOutput& OutState) = 0;
 
         /**
          * Simulates the model after physics has been run for this ticket.
          * WARNING: This is called on the physics thread, so any objects shared between the physics thread and the
          * game thread need to be properly synchronized.
          */
-        virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, const InputType& Input,
-                                         const StateType& PrevState, SimOutput& OutState) = 0;
+        virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, const InputType& Input, const StateType& PrevState, SimOutput& OutState) = 0;
 
         // FPhysicsModelBase
         virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) override final;
@@ -79,8 +76,7 @@ namespace ClientPrediction {
         virtual ~FPhysicsModel() override = default;
         virtual void Cleanup() override final;
 
-        virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep,
-                                FRepProxy& ControlProxyRep) override final;
+        virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep, FRepProxy& ControlProxyRep) override final;
         virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) const override final;
 
         // IModelDriverDelegate
@@ -89,11 +85,10 @@ namespace ClientPrediction {
         virtual void EmitInputPackets(TArray<FInputPacketWrapper<InputType>>& Packets) override final;
         virtual void ProduceInput(FInputPacketWrapper<InputType>& Packet) override final;
 
-        virtual void SimulatePrePhysics(Chaos::FReal Dt, FPhysicsContext& Context, const InputType& Input,
-                                        const FPhysicsState<StateType>& PrevState,
+        virtual void SimulatePrePhysics(Chaos::FReal Dt, FPhysicsContext& Context, const InputType& Input, const FPhysicsState<StateType>& PrevState,
                                         FPhysicsState<StateType>& OutState) override final;
-        virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, const InputType& Input,
-                                         const FPhysicsState<StateType>& PrevState,
+
+        virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, const InputType& Input, const FPhysicsState<StateType>& PrevState,
                                          FPhysicsState<StateType>& OutState) override final;
 
     public:
@@ -114,8 +109,7 @@ namespace ClientPrediction {
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     template <typename InputType, typename StateType>
-    void FPhysicsModel<InputType, StateType>::Initialize(UPrimitiveComponent* Component,
-                                                         IPhysicsModelDelegate* InDelegate) {
+    void FPhysicsModel<InputType, StateType>::Initialize(UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) {
         CachedComponent = Component;
         check(CachedComponent);
 
@@ -159,13 +153,11 @@ namespace ClientPrediction {
         switch (Role) {
         case ROLE_Authority:
             // TODO pass bShouldTakeInput here
-            ModelDriver = MakeUnique<FModelAuthDriver<InputType, StateType>>(
-                CachedComponent, this, AutoProxyRep, SimProxyRep, ControlProxyRep, RewindBufferSize);
+            ModelDriver = MakeUnique<FModelAuthDriver<InputType, StateType>>(CachedComponent, this, AutoProxyRep, SimProxyRep, ControlProxyRep, RewindBufferSize);
             CachedWorldManager->AddTickCallback(ModelDriver.Get());
             break;
         case ROLE_AutonomousProxy: {
-            auto NewDriver = MakeUnique<FModelAutoProxyDriver<InputType, StateType>>(
-                CachedComponent, this, AutoProxyRep, RewindBufferSize);
+            auto NewDriver = MakeUnique<FModelAutoProxyDriver<InputType, StateType>>(CachedComponent, this, AutoProxyRep, ControlProxyRep, RewindBufferSize);
             CachedWorldManager->AddTickCallback(NewDriver.Get());
             CachedWorldManager->AddRewindCallback(NewDriver.Get());
             ModelDriver = MoveTemp(NewDriver);

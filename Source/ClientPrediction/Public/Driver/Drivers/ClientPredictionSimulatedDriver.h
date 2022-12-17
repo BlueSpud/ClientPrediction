@@ -3,10 +3,8 @@
 #include "Driver/ClientPredictionModelDriver.h"
 
 namespace ClientPrediction {
-
     template <typename InputType, typename StateType>
     class FSimulatedModelDriver : public IModelDriver<InputType> {
-
     public:
         FSimulatedModelDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, int32 HistoryBufferSize);
 
@@ -28,7 +26,8 @@ namespace ClientPrediction {
     };
 
     template <typename InputType, typename StateType>
-    FSimulatedModelDriver<InputType, StateType>::FSimulatedModelDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, int32 HistoryBufferSize)
+    FSimulatedModelDriver<InputType, StateType>::FSimulatedModelDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate,
+                                                                       int32 HistoryBufferSize)
         : UpdatedComponent(UpdatedComponent), Delegate(Delegate), History(HistoryBufferSize) {
         check(UpdatedComponent);
         check(Delegate);

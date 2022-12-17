@@ -16,6 +16,7 @@ namespace ClientPrediction {
         FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate,
                          FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep, FRepProxy& ControlProxyRep,
                          int32 RewindBufferSize);
+
         virtual ~FModelAuthDriver() override = default;
 
     public:
@@ -66,8 +67,7 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType>
-    void FModelAuthDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt,
-                                                                       Chaos::FReal StartTime, Chaos::FReal EndTime) {
+    void FModelAuthDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
         PostTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
 
         FScopeLock Lock(&LastStateGtMutex);

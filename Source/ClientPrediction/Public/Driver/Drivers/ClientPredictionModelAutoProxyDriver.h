@@ -15,9 +15,9 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     class FModelAutoProxyDriver final : public FSimulatedModelDriver<InputType, StateType>, public IRewindCallback {
     public:
-        FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent,
-                              IModelDriverDelegate<InputType, StateType>* Delegate, FRepProxy& AutoProxyRep,
+        FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FRepProxy& AutoProxyRep,
                               FRepProxy& ControlProxyRep, int32 RewindBufferSize);
+
         virtual ~FModelAutoProxyDriver() override = default;
 
     private:
@@ -29,8 +29,7 @@ namespace ClientPrediction {
         virtual void PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) override;
         void ApplyCorrectionIfNeeded(int32 TickNumber);
 
-        virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime,
-                                           Chaos::FReal EndTime) override;
+        virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) override;
         virtual int32 GetRewindTickNumber(int32 CurrentTickNumber, const class Chaos::FRewindData& RewindData) override;
 
     private:
@@ -107,15 +106,13 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType>
-    void FModelAutoProxyDriver<InputType, StateType>::PostTickPhysicsThread(
-        int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
+    void FModelAutoProxyDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
         PostTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
         History.Update(CurrentState);
     }
 
     template <typename InputType, typename StateType>
-    int32 FModelAutoProxyDriver<InputType, StateType>::GetRewindTickNumber(
-        int32 CurrentTickNumber, const Chaos::FRewindData& RewindData) {
+    int32 FModelAutoProxyDriver<InputType, StateType>::GetRewindTickNumber(int32 CurrentTickNumber, const Chaos::FRewindData& RewindData) {
         FScopeLock Lock(&LastAuthorityMutex);
         const int32 LocalTickNumber = LastAuthorityState.InputPacketTickNumber;
 

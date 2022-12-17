@@ -12,73 +12,71 @@
  */
 USTRUCT()
 struct FNetSerializationProxy {
+    GENERATED_BODY()
 
-	GENERATED_BODY()
+    FNetSerializationProxy() = default;
 
-	FNetSerializationProxy() = default;
-	FNetSerializationProxy(TFunction<void(FArchive& Ar)> NetSerializeFunc) {
-		this->NetSerializeFunc = NetSerializeFunc;
-	}
+    FNetSerializationProxy(TFunction<void(FArchive& Ar)> NetSerializeFunc) {
+        this->NetSerializeFunc = NetSerializeFunc;
+    }
 
-	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess) {
-		if (Ar.IsLoading()) {
-			PackageMap = Map;
+    bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess) {
+        if (Ar.IsLoading()) {
+            PackageMap = Map;
 
-			TArray<uint8> CompressedBuffer;
-			Ar << NumberOfBits;
-			Ar << CompressedBuffer;
+            TArray<uint8> CompressedBuffer;
+            Ar << NumberOfBits;
+            Ar << CompressedBuffer;
 
-			FArchiveLoadCompressedProxy Decompressor(CompressedBuffer, NAME_Zlib);
-			Decompressor << SerializedBits;
-		} else {
-			checkSlow(NetSerializeFunc());
+            FArchiveLoadCompressedProxy Decompressor(CompressedBuffer, NAME_Zlib);
+            Decompressor << SerializedBits;
+        }
+        else {
+            checkSlow(NetSerializeFunc());
 
-			FNetBitWriter Writer(nullptr, 32768);
-			NetSerializeFunc(Writer);
+            FNetBitWriter Writer(nullptr, 32768);
+            NetSerializeFunc(Writer);
 
-			TArray<uint8> UncompressedBuffer = *Writer.GetBuffer();
+            TArray<uint8> UncompressedBuffer = *Writer.GetBuffer();
 
-			TArray<uint8> CompressedBuffer;
-			FArchiveSaveCompressedProxy Compressor(CompressedBuffer, NAME_Zlib);
-			Compressor << UncompressedBuffer;
-			Compressor.Flush();
+            TArray<uint8> CompressedBuffer;
+            FArchiveSaveCompressedProxy Compressor(CompressedBuffer, NAME_Zlib);
+            Compressor << UncompressedBuffer;
+            Compressor.Flush();
 
-			int64 NumBits = Writer.GetNumBits();
-			Ar << NumBits;
-			Ar << CompressedBuffer;
-		}
+            int64 NumBits = Writer.GetNumBits();
+            Ar << NumBits;
+            Ar << CompressedBuffer;
+        }
 
-		bOutSuccess = true;
-		return true;
-	}
+        bOutSuccess = true;
+        return true;
+    }
 
-	/** To be called after receiving the proxy from an RPC. This will deserialize the data. */
-	bool Deserialize() {
-		if (NumberOfBits == -1 || PackageMap == nullptr) {
-			return false;
-		}
+    /** To be called after receiving the proxy from an RPC. This will deserialize the data. */
+    bool Deserialize() {
+        if (NumberOfBits == -1 || PackageMap == nullptr) {
+            return false;
+        }
 
-		FNetBitReader BitReader(PackageMap, SerializedBits.GetData(), NumberOfBits);
-		NetSerializeFunc(BitReader);
+        FNetBitReader BitReader(PackageMap, SerializedBits.GetData(), NumberOfBits);
+        NetSerializeFunc(BitReader);
 
-		NumberOfBits = -1;
-		PackageMap = nullptr;
-		return true;
-	}
+        NumberOfBits = -1;
+        PackageMap = nullptr;
+        return true;
+    }
 
-	TFunction<void(FArchive& Ar)> NetSerializeFunc;
+    TFunction<void(FArchive& Ar)> NetSerializeFunc;
 
-	UPackageMap* PackageMap = nullptr;
-	TArray<uint8> SerializedBits;
-	int64 NumberOfBits = -1;
-
+    UPackageMap* PackageMap = nullptr;
+    TArray<uint8> SerializedBits;
+    int64 NumberOfBits = -1;
 };
 
-template<>
-struct TStructOpsTypeTraits<FNetSerializationProxy> : public TStructOpsTypeTraitsBase2<FNetSerializationProxy>
-{
-	enum
-	{
-		WithNetSerializer = true
-	};
+template <>
+struct TStructOpsTypeTraits<FNetSerializationProxy> : public TStructOpsTypeTraitsBase2<FNetSerializationProxy> {
+    enum {
+        WithNetSerializer = true
+    };
 };

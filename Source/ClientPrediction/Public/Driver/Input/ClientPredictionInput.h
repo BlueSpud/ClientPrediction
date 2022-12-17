@@ -1,7 +1,6 @@
 ﻿#pragma once
 
 namespace ClientPrediction {
-
     template <typename InputType>
     struct FInputPacketWrapper {
         int32 PacketNumber = INDEX_NONE;
@@ -24,5 +23,4 @@ namespace ClientPrediction {
         Wrapper.NetSerialize(Ar);
         return Ar;
     }
-
 }
