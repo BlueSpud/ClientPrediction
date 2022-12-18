@@ -85,7 +85,6 @@ namespace ClientPrediction {
     void FWorldManager::AddTickCallback(ITickCallback* Callback) { TickCallbacks.Add(Callback); }
 
     void FWorldManager::AddRewindCallback(IRewindCallback* Callback) {
-        check(RewindCallback == nullptr);
         RewindCallback = Callback;
     }
 

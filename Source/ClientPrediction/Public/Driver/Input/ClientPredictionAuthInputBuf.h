@@ -7,19 +7,31 @@ namespace ClientPrediction {
     struct FAuthInputBuf {
         using Wrapper = FInputPacketWrapper<InputType>;
 
+        FAuthInputBuf(const uint16 DroppedPacketMemoryTickLength) : DroppedPacketMemoryTickLength(DroppedPacketMemoryTickLength) {}
+
         void QueueInputPackets(const TArray<Wrapper>& Packets);
-        bool GetNextInputPacket(Wrapper& OutPacket);
+        void GetNextInputPacket(Wrapper& OutPacket);
 
         uint32 GetBufferSize() {
             FScopeLock Lock(&Mutex);
             return InputPackets.Num();
         }
 
+        uint32 GetNumRecentlyDroppedInputPackets() {
+            FScopeLock Lock(&Mutex);
+            return DroppedInputPacketIndices.Num();
+        }
+
     private:
         void ConsumeFirstPacket(Wrapper& OutPacket);
+        void TrimDroppedPacketsBuffer(const int32 ExpectedPacketNumber);
 
         TArray<Wrapper> InputPackets;
         Wrapper LastInputPacket{};
+
+        /** This is the number of ticks to remember that a packet was dropped. */
+        uint16 DroppedPacketMemoryTickLength = 0;
+        TArray<int32> DroppedInputPacketIndices;
 
         FCriticalSection Mutex;
     };
@@ -46,33 +58,41 @@ namespace ClientPrediction {
     }
 
     template <typename InputType>
-    bool FAuthInputBuf<InputType>::GetNextInputPacket(Wrapper& OutPacket) {
+    void FAuthInputBuf<InputType>::GetNextInputPacket(Wrapper& OutPacket) {
         FScopeLock Lock(&Mutex);
 
         if (LastInputPacket.PacketNumber == INDEX_NONE) {
             if (!InputPackets.IsEmpty()) {
                 ConsumeFirstPacket(OutPacket);
-                return true;
+                return;
             }
         }
 
         const int32 ExpectedPacketNumber = LastInputPacket.PacketNumber + 1;
+        TrimDroppedPacketsBuffer(ExpectedPacketNumber);
+
         if (!InputPackets.IsEmpty()) {
             if (InputPackets[0].PacketNumber == ExpectedPacketNumber) {
                 ConsumeFirstPacket(OutPacket);
-                return true;
+                return;
             }
         }
 
         LastInputPacket.PacketNumber = ExpectedPacketNumber;
+        DroppedInputPacketIndices.Add(ExpectedPacketNumber);
         OutPacket = LastInputPacket;
-
-        return false;
     }
 
     template <typename InputType>
     void FAuthInputBuf<InputType>::ConsumeFirstPacket(Wrapper& OutPacket) {
         OutPacket = LastInputPacket = InputPackets[0];
         InputPackets.RemoveAt(0);
+    }
+
+    template <typename InputType>
+    void FAuthInputBuf<InputType>::TrimDroppedPacketsBuffer(const int32 ExpectedPacketNumber) {
+        while (!DroppedInputPacketIndices.IsEmpty() && DroppedInputPacketIndices[0] < ExpectedPacketNumber - DroppedPacketMemoryTickLength) {
+            DroppedInputPacketIndices.RemoveAt(0);
+        }
     }
 }

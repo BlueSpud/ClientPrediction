@@ -9,6 +9,7 @@
 
 namespace ClientPrediction {
     extern CLIENTPREDICTION_API int32 ClientPredictionDesiredInputBufferSize;
+    extern CLIENTPREDICTION_API int32 ClientPredictionDroppedPacketMemoryTickLength;
     extern CLIENTPREDICTION_API float ClientPredictionTimeDilationAlpha;
 
     template <typename InputType, typename StateType>
@@ -53,18 +54,13 @@ namespace ClientPrediction {
                                                              FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep,
                                                              FRepProxy& ControlProxyRep, int32 RewindBufferSize)
         : FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), AutoProxyRep(AutoProxyRep),
-          SimProxyRep(SimProxyRep), ControlProxyRep(ControlProxyRep) {}
+          SimProxyRep(SimProxyRep), ControlProxyRep(ControlProxyRep), InputBuf(ClientPredictionDroppedPacketMemoryTickLength) {}
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
-        if (CurrentInput.PacketNumber == INDEX_NONE && InputBuf.GetBufferSize() < static_cast<uint32>(
-            ClientPredictionDesiredInputBufferSize)) { return; }
+        if (CurrentInput.PacketNumber == INDEX_NONE && InputBuf.GetBufferSize() <static_cast<uint32>(ClientPredictionDesiredInputBufferSize)) { return; }
 
-        const bool bHadPacketInInputBuffer = InputBuf.GetNextInputPacket(CurrentInput);
-        if (!bHadPacketInInputBuffer) {
-            UE_LOG(LogTemp, Error, TEXT("Dropped an input packet %d on the authority"), CurrentInput.PacketNumber);
-        }
-
+        InputBuf.GetNextInputPacket(CurrentInput);
         PreTickSimulateWithCurrentInput(TickNumber, Dt);
     }
 
@@ -81,8 +77,11 @@ namespace ClientPrediction {
         FSimulatedModelDriver<InputType, StateType>::PostPhysicsGameThread(SimTime, Dt);
         SendCurrentStateToRemotes();
 
-        const int32 InputBufferSize = static_cast<int32>(InputBuf.GetBufferSize());
-        const Chaos::FReal TargetTimeDilation = InputBufferSize > ClientPredictionDesiredInputBufferSize ? -1.0 : (InputBufferSize < ClientPredictionDesiredInputBufferSize ? 1.0 : 0.0);
+        // Suggest a time dilation rate for the auto proxy to run at to keep its input buffer healthy
+        const uint16 InputBufferSize = InputBuf.GetBufferSize();
+        const uint16 DesiredInputBufferSize = ClientPredictionDesiredInputBufferSize + InputBuf.GetNumRecentlyDroppedInputPackets();
+
+        const Chaos::FReal TargetTimeDilation = InputBufferSize > DesiredInputBufferSize ? -1.0 : (InputBufferSize < DesiredInputBufferSize ? 1.0 : 0.0);
         LastSuggestedTimeDilation = FMath::Lerp(LastSuggestedTimeDilation, TargetTimeDilation, ClientPredictionTimeDilationAlpha);
 
         FControlPacket ControlPacket{};
