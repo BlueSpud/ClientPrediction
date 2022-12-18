@@ -17,8 +17,11 @@ namespace ClientPrediction {
                                                                    "This is set to a high value to make sure that clients with low framerates still simulate enough "
                                                                    "physics ticks to stay relatively in-sync with the server, and should probably remain untouched."));
 
-    CLIENTPREDICTION_API uint32 ClientPredictionHistoryTimeMs = 500;
-    FAutoConsoleVariableRef CVarClientPredictionHistoryTimeMs(TEXT("cp.RewindHistoryTime"), ClientPredictionFixedDt, TEXT("The amount of time (in ms) to store for rewind"));
+    CLIENTPREDICTION_API int32 ClientPredictionHistoryTimeMs = 500;
+    FAutoConsoleVariableRef CVarClientPredictionHistoryTimeMs(TEXT("cp.RewindHistoryTime"), ClientPredictionHistoryTimeMs, TEXT("The amount of time (in ms) to store for rewind"));
+
+    CLIENTPREDICTION_API int32 ClientPredictionMaxForcedSimulationTicks = 50;
+    FAutoConsoleVariableRef CVarClientPredictionMaxForcedSimulationTicks(TEXT("cp.MaxForceSimulationTicks"), ClientPredictionMaxForcedSimulationTicks, TEXT("The maximum number of forced simulation ticks"));
 
     TMap<UWorld*, FWorldManager*> FWorldManager::Managers;
 
@@ -103,6 +106,23 @@ namespace ClientPrediction {
     void FWorldManager::SetTimeDilation(const Chaos::FReal TimeDilation) const {
         if (PhysScene == nullptr) { return; }
         PhysScene->SetNetworkDeltaTimeScale(TimeDilation);
+    }
+
+    void FWorldManager::ForceSimulate(const uint32 NumTicks) const {
+        if (PhysScene == nullptr || Solver == nullptr) { return; }
+
+        const Chaos::EThreadingModeTemp CachedThreadingMode = Solver->GetThreadingMode();
+        Solver->SetThreadingMode_External(Chaos::EThreadingModeTemp::SingleThread);
+
+        const float CachedTimeDilation = PhysScene->GetNetworkDeltaTimeScale();
+        PhysScene->SetNetworkDeltaTimeScale(1.0);
+
+        const int32 AdjustedNumTicks = FMath::Min(static_cast<int32>(NumTicks), ClientPredictionMaxForcedSimulationTicks);
+        const Chaos::FReal SimulationTime = static_cast<Chaos::FReal>(AdjustedNumTicks) * Solver->GetAsyncDeltaTime();
+        Solver->AdvanceAndDispatch_External(SimulationTime);
+
+        PhysScene->SetNetworkDeltaTimeScale(CachedTimeDilation);
+        Solver->SetThreadingMode_External(CachedThreadingMode);
     }
 
     FWorldManager::~FWorldManager() {

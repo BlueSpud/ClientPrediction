@@ -6,7 +6,8 @@
 namespace ClientPrediction {
     extern CLIENTPREDICTION_API float ClientPredictionFixedDt;
     extern CLIENTPREDICTION_API float ClientPredictionMaxPhysicsTime;
-    extern CLIENTPREDICTION_API uint32 ClientPredictionHistoryTimeMs;
+    extern CLIENTPREDICTION_API int32 ClientPredictionHistoryTimeMs;
+    extern CLIENTPREDICTION_API int32 ClientPredictionMaxedForceSimulationTicks;
 
     struct CLIENTPREDICTION_API FWorldManager {
     private:
@@ -33,7 +34,9 @@ namespace ClientPrediction {
 
         int32 GetRewindBufferSize() const { return RewindBufferSize; }
 
+        // These should only be called from the game thread
         void SetTimeDilation(const Chaos::FReal TimeDilation) const;
+        void ForceSimulate(const uint32 NumTicks) const;
 
     private:
         DECLARE_DELEGATE_OneParam(FTickCallback, int32);

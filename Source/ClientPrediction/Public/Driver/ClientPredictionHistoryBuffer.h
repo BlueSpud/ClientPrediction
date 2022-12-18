@@ -11,6 +11,11 @@ namespace ClientPrediction {
         void GetStateAtTick(const int32 TickNumber, FPhysicsState<StateType>& OutState);
         void GetStateAtTime(const Chaos::FReal Time, StateType& OutState);
 
+        int32 GetLatestTickNumber() {
+            FScopeLock Lock(&Mutex);
+            return History.IsEmpty() ? INDEX_NONE : History.Last().TickNumber;
+        }
+
     private:
         int32 Capacity = 0;
         TArray<FPhysicsState<StateType>> History;

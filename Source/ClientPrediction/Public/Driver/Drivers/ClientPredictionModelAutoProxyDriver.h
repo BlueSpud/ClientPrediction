@@ -47,7 +47,6 @@ namespace ClientPrediction {
         FCriticalSection LastAuthorityMutex;
         FPhysicsState<StateType> LastAuthorityState; // Written to from the game thread, read by the physics thread
         int32 LastAckedTick = INDEX_NONE; // Only used on the physics thread but might be used on the game thread later
-        std::atomic<bool> bIsBehindAuthority; // Written from the physics thread, read on the game thread.
 
         // Game thread
         TArray<FInputPacketWrapper<InputType>> InputSlidingWindow;
@@ -61,8 +60,7 @@ namespace ClientPrediction {
                                                                        FRepProxy& AutoProxyRep,
                                                                        FRepProxy& ControlProxyRep,
                                                                        int32 RewindBufferSize) :
-        FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), InputBuf(RewindBufferSize),
-        RewindBufferSize(RewindBufferSize), bIsBehindAuthority(false) {
+        FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), InputBuf(RewindBufferSize), RewindBufferSize(RewindBufferSize) {
         BindToRepProxy(AutoProxyRep, ControlProxyRep);
     }
 
@@ -125,47 +123,57 @@ namespace ClientPrediction {
     void FModelAutoProxyDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
         FSimulatedModelDriver<InputType, StateType>::PostPhysicsGameThread(SimTime, Dt);
 
-        // If for some reason the auto proxy has fallen behind the authority, fast forward to catch back up.
-        if (bIsBehindAuthority) {
-            Delegate->SetTimeDilation(kFastForwardTimescale);
-            return;
-        }
-
         const Chaos::FReal NewTimeDilation = 1.0 + LastControlPacket.GetTimeDilation() * ClientPredictionMaxTimeDilation;
         Delegate->SetTimeDilation(NewTimeDilation);
+
+        // If for some reason the auto proxy has fallen behind the authority, fast forward to catch back up.
+        int32 NumForceSimulatedTicks;
+        {
+            FScopeLock Lock(&LastAuthorityMutex);
+            const int32 LocalTickNumber = LastAuthorityState.InputPacketTickNumber;
+            const int32 LastTick = History.GetLatestTickNumber();
+
+            NumForceSimulatedTicks = LocalTickNumber > LastTick ? LocalTickNumber - LastTick : 0;
+        }
+
+        // TODO this works fine for low-latency clients, but for clients with high latency we need to simulate additional ticks
+        // to compensate for that. Ideally, we would simulate to be 1/2 RTT ahead of the authority and then the size of the input buffer
+        // plus maybe a small fudge factor
+        if (NumForceSimulatedTicks > 0) {
+            UE_LOG(LogTemp, Warning, TEXT("Force simulating %d"), NumForceSimulatedTicks);
+            Delegate->ForceSimulate(NumForceSimulatedTicks);
+        }
     }
 
     template <typename InputType, typename StateType>
     int32 FModelAutoProxyDriver<InputType, StateType>::GetRewindTickNumber(int32 CurrentTickNumber, const Chaos::FRewindData& RewindData) {
         FScopeLock Lock(&LastAuthorityMutex);
-        const int32 LocalTickNumber = LastAuthorityState.InputPacketTickNumber;
+        const int32 AuthLocalTickNumber = LastAuthorityState.InputPacketTickNumber;
 
-        if (LocalTickNumber == INDEX_NONE) { return INDEX_NONE; }
-        if (LocalTickNumber <= LastAckedTick) { return INDEX_NONE; }
+        if (AuthLocalTickNumber == INDEX_NONE) { return INDEX_NONE; }
+        if (AuthLocalTickNumber <= LastAckedTick) { return INDEX_NONE; }
+        if (AuthLocalTickNumber > CurrentTickNumber) { return INDEX_NONE; }
 
-        // TODO Both of these cases should be handled gracefully
-        if (LocalTickNumber > CurrentTickNumber) {
-            bIsBehindAuthority = true;
-            return INDEX_NONE;
-        }
-
-        bIsBehindAuthority = false;
-        check(LocalTickNumber >= CurrentTickNumber - RewindBufferSize)
+        // TODO This may not be sufficient to cover this case. This scenario should only occur if the authority was to fall FAR behind the client
+        // but that can happen. There are a couple solutions that could be implemented:
+        // - Maintain a tick offset, rewind to the earliest tick in the buffer and adjust the offset as needed
+        // - Dilate time so the auto proxy isn't so far behind the authority, maybe even just completely skip some frames
+        if (AuthLocalTickNumber < CurrentTickNumber - RewindBufferSize) { return INDEX_NONE; }
 
         // Check against the historic state
         FPhysicsState<StateType> HistoricState;
-        History.GetStateAtTick(LocalTickNumber, HistoricState);
-        LastAckedTick = LocalTickNumber;
+        History.GetStateAtTick(AuthLocalTickNumber, HistoricState);
+        LastAckedTick = AuthLocalTickNumber;
 
         if (LastAuthorityState.ShouldReconcile(HistoricState)) {
             // When we perform a correction, we add one to the frame, since LastAuthorityState will be the state
             // of the simulation during PostTickPhysicsThread (after physics has been simulated), so it is the beginning
             // state for LocalTickNumber + 1
-            PendingPhysicsCorrectionFrame = LocalTickNumber + 1;
+            PendingPhysicsCorrectionFrame = AuthLocalTickNumber + 1;
             PendingCorrection = LastAuthorityState;
 
-            UE_LOG(LogTemp, Error, TEXT("Rewinding and rolling back to %d"), LocalTickNumber);
-            return LocalTickNumber + 1;
+            UE_LOG(LogTemp, Error, TEXT("Rewinding and rolling back to %d"), AuthLocalTickNumber);
+            return AuthLocalTickNumber + 1;
         }
 
         return INDEX_NONE;
