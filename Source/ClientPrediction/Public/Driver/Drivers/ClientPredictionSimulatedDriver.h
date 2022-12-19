@@ -35,6 +35,7 @@ namespace ClientPrediction {
         Delegate->GenerateInitialState(CurrentState);
         CurrentState.TickNumber = INDEX_NONE;
         CurrentState.InputPacketTickNumber = INDEX_NONE;
+        CurrentState.Events = 0;
 
         LastState = CurrentState;
         History.Update(CurrentState);

@@ -27,6 +27,7 @@ namespace ClientPrediction {
         Chaos::FVec3 W = Chaos::FVec3::ZeroVector;
 
         StateType Body{};
+        uint8 Events = 0;
 
         // These are not sent over the network, they're used for local interpolation only
         float StartTime = 0.0;
@@ -63,6 +64,7 @@ namespace ClientPrediction {
         Ar << W.Y;
         Ar << W.Z;
 
+        Ar << Events;
         Body.NetSerialize(Ar);
     }
 
@@ -73,6 +75,7 @@ namespace ClientPrediction {
         if ((State.V - V).Size() > ClientPredictionVelocityTolerance) { return true; }
         if ((State.R - R).Size() > ClientPredictionRotationTolerance) { return true; }
         if ((State.W - W).Size() > ClientPredictionAngularVelTolerance) { return true; }
+        if (State.Events != Events) { return true; }
 
         return Body.ShouldReconcile(State.Body);
     }

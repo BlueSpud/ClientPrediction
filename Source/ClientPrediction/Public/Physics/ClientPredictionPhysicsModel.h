@@ -36,12 +36,17 @@ namespace ClientPrediction {
     // Sim output
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    template <typename StateType>
+    template <typename StateType, typename EventType>
     struct FSimOutput {
         explicit FSimOutput(FPhysicsState<StateType>& PhysState)
             : PhysState(PhysState) {}
 
         StateType& State() const { return PhysState.Body; }
+
+        void DispatchEvent(EventType Event) {
+            check(Event < 8)
+            PhysState.Events |= 0b1 << Event;
+        }
 
     private:
         FPhysicsState<StateType>& PhysState;
@@ -51,9 +56,9 @@ namespace ClientPrediction {
     // Model declaration
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    template <typename InputType, typename StateType>
+    template <typename InputType, typename StateType, typename EventType>
     struct FPhysicsModel : public FPhysicsModelBase, public IModelDriverDelegate<InputType, StateType> {
-        using SimOutput = FSimOutput<StateType>;
+        using SimOutput = FSimOutput<StateType, EventType>;
 
         /**
          * Simulates the model before physics has been run for this ticket.
@@ -94,12 +99,17 @@ namespace ClientPrediction {
         virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, const InputType& Input, const FPhysicsState<StateType>& PrevState,
                                          FPhysicsState<StateType>& OutState) override final;
 
+        virtual void DispatchEvents(const FPhysicsState<StateType>& State) override final;
+
     public:
         DECLARE_DELEGATE_OneParam(FPhysicsModelProduceInput, InputType&)
         FPhysicsModelProduceInput ProduceInputDelegate;
 
         DECLARE_DELEGATE_TwoParams(FPhysicsModelFinalize, const StateType&, Chaos::FReal Dt)
         FPhysicsModelFinalize FinalizeDelegate;
+
+        DECLARE_DELEGATE_OneParam(FPhysicsModelDispatchEvent, EventType)
+        FPhysicsModelDispatchEvent DispatchEventDelegate;
 
     private:
         class UPrimitiveComponent* CachedComponent = nullptr;
@@ -111,8 +121,8 @@ namespace ClientPrediction {
     // Implementation
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    template <typename InputType, typename StateType>
-    void FPhysicsModel<InputType, StateType>::Initialize(UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) {
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::Initialize(UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) {
         CachedComponent = Component;
         check(CachedComponent);
 
@@ -126,13 +136,13 @@ namespace ClientPrediction {
         check(CachedWorldManager)
     }
 
-    template <typename InputType, typename StateType>
-    void FPhysicsModel<InputType, StateType>::Finalize(const StateType& State, Chaos::FReal Dt) {
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::Finalize(const StateType& State, Chaos::FReal Dt) {
         FinalizeDelegate.ExecuteIfBound(State, Dt);
     }
 
-    template <typename InputType, typename StateType>
-    void FPhysicsModel<InputType, StateType>::Cleanup() {
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::Cleanup() {
         if (CachedWorldManager != nullptr && ModelDriver != nullptr) {
             CachedWorldManager->RemoveTickCallback(ModelDriver.Get());
         }
@@ -141,8 +151,8 @@ namespace ClientPrediction {
         ModelDriver = nullptr;
     }
 
-    template <typename InputType, typename StateType>
-    void FPhysicsModel<InputType, StateType>::SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& AutoProxyRep,
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& AutoProxyRep,
                                                          FRepProxy& SimProxyRep, FRepProxy& ControlProxyRep) {
         check(CachedWorldManager)
         check(CachedComponent)
@@ -174,8 +184,8 @@ namespace ClientPrediction {
         }
     }
 
-    template <typename InputType, typename StateType>
-    void FPhysicsModel<InputType, StateType>::ReceiveInputPackets(FNetSerializationProxy& Proxy) const {
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::ReceiveInputPackets(FNetSerializationProxy& Proxy) const {
         if (ModelDriver == nullptr) { return; }
 
         TArray<FInputPacketWrapper<InputType>> Packets;
@@ -185,20 +195,15 @@ namespace ClientPrediction {
         ModelDriver->ReceiveInputPackets(Packets);
     }
 
-    template <typename InputType, typename StateType>
-    void FPhysicsModel<InputType, StateType>::SetTimeDilation(const Chaos::FReal TimeDilation) {
-        check(CachedWorldManager)
-        CachedWorldManager->SetTimeDilation(TimeDilation);
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::GenerateInitialState(FPhysicsState<StateType>& State) {
+        State = {};
+
+        // TODO Actually generate initial state
     }
 
-    template <typename InputType, typename StateType>
-    void FPhysicsModel<InputType, StateType>::ForceSimulate(const uint32 NumTicks) {
-        check(CachedWorldManager)
-        CachedWorldManager->ForceSimulate(NumTicks);
-    }
-
-    template <typename InputType, typename StateType>
-    void FPhysicsModel<InputType, StateType>::EmitInputPackets(TArray<FInputPacketWrapper<InputType>>& Packets) {
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::EmitInputPackets(TArray<FInputPacketWrapper<InputType>>& Packets) {
         check(Delegate);
 
         FNetSerializationProxy Proxy;
@@ -206,13 +211,25 @@ namespace ClientPrediction {
         Delegate->EmitInputPackets(Proxy);
     }
 
-    template <typename InputType, typename StateType>
-    void FPhysicsModel<InputType, StateType>::ProduceInput(FInputPacketWrapper<InputType>& Packet) {
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::SetTimeDilation(const Chaos::FReal TimeDilation) {
+        check(CachedWorldManager)
+        CachedWorldManager->SetTimeDilation(TimeDilation);
+    }
+
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::ForceSimulate(const uint32 NumTicks) {
+        check(CachedWorldManager)
+        CachedWorldManager->ForceSimulate(NumTicks);
+    }
+
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::ProduceInput(FInputPacketWrapper<InputType>& Packet) {
         ProduceInputDelegate.ExecuteIfBound(Packet.Body);
     }
 
-    template <typename InputType, typename StateType>
-    void FPhysicsModel<InputType, StateType>::SimulatePrePhysics(const Chaos::FReal Dt, FPhysicsContext& Context,
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::SimulatePrePhysics(const Chaos::FReal Dt, FPhysicsContext& Context,
                                                                  const InputType& Input,
                                                                  const FPhysicsState<StateType>& PrevState,
                                                                  FPhysicsState<StateType>& OutState) {
@@ -220,8 +237,8 @@ namespace ClientPrediction {
         SimulatePrePhysics(Dt, Context, Input, PrevState.Body, Output);
     }
 
-    template <typename InputType, typename StateType>
-    void FPhysicsModel<InputType, StateType>::SimulatePostPhysics(const Chaos::FReal Dt, const FPhysicsContext& Context,
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::SimulatePostPhysics(const Chaos::FReal Dt, const FPhysicsContext& Context,
                                                                   const InputType& Input,
                                                                   const FPhysicsState<StateType>& PrevState,
                                                                   FPhysicsState<StateType>& OutState) {
@@ -229,10 +246,12 @@ namespace ClientPrediction {
         SimulatePostPhysics(Dt, Context, Input, PrevState.Body, Output);
     }
 
-    template <typename InputType, typename StateType>
-    void FPhysicsModel<InputType, StateType>::GenerateInitialState(FPhysicsState<StateType>& State) {
-        State = {};
-
-        // TODO Actually generate initial state
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::DispatchEvents(const FPhysicsState<StateType>& State) {
+        for (uint8 Event = 0; Event < 8; ++Event) {
+            if ((State.Events & (0b1 << Event)) != 0) {
+                DispatchEventDelegate.ExecuteIfBound(static_cast<EventType>(Event));
+            }
+        }
     }
 }

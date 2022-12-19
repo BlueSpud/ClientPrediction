@@ -112,14 +112,16 @@ namespace ClientPrediction {
         if (PhysScene == nullptr || Solver == nullptr) { return; }
 
         const Chaos::EThreadingModeTemp CachedThreadingMode = Solver->GetThreadingMode();
-        Solver->SetThreadingMode_External(Chaos::EThreadingModeTemp::SingleThread);
-
         const float CachedTimeDilation = PhysScene->GetNetworkDeltaTimeScale();
+
+        Solver->SetThreadingMode_External(Chaos::EThreadingModeTemp::SingleThread);
         PhysScene->SetNetworkDeltaTimeScale(1.0);
 
         const int32 AdjustedNumTicks = FMath::Min(static_cast<int32>(NumTicks), ClientPredictionMaxForcedSimulationTicks);
         const Chaos::FReal SimulationTime = static_cast<Chaos::FReal>(AdjustedNumTicks) * Solver->GetAsyncDeltaTime();
+
         Solver->AdvanceAndDispatch_External(SimulationTime);
+        Solver->UpdateGameThreadStructures();
 
         PhysScene->SetNetworkDeltaTimeScale(CachedTimeDilation);
         Solver->SetThreadingMode_External(CachedThreadingMode);
