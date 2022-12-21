@@ -25,7 +25,7 @@ namespace ClientPrediction {
 
     private:
         void BindToRepProxy(FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep);
-        void QueueAuthorityState(const FPhysicsState<StateType>& State);
+        void QueueAuthorityState(const FStateWrapper<StateType>& State);
 
     public:
         // Ticking
@@ -46,11 +46,11 @@ namespace ClientPrediction {
         FAutoProxyInputBuf<InputType> InputBuf; // Written to on game thread, read from physics thread
         int32 RewindBufferSize = 0;
 
-        FPhysicsState<StateType> PendingCorrection{}; // Only used on physics thread
+        FStateWrapper<StateType> PendingCorrection{}; // Only used on physics thread
         int32 PendingPhysicsCorrectionFrame = INDEX_NONE; // Only used on physics thread
 
         FCriticalSection PendingAuthorityStatesMutex;
-        TArray<FPhysicsState<StateType>> PendingAuthorityStates; // Written to from the game thread, read by the physics thread
+        TArray<FStateWrapper<StateType>> PendingAuthorityStates; // Written to from the game thread, read by the physics thread
         int32 LastAckedTick = INDEX_NONE; // Only used on the physics thread but might be used on the game thread later
 
         // Game thread
@@ -72,7 +72,7 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::BindToRepProxy(FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep) {
         AutoProxyRep.SerializeFunc = [&](FArchive& Ar) {
-            FPhysicsState<StateType> State{};
+            FStateWrapper<StateType> State{};
             State.NetSerialize(Ar);
 
             QueueAuthorityState(State);
@@ -84,7 +84,7 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType>
-    void FModelAutoProxyDriver<InputType, StateType>::QueueAuthorityState(const FPhysicsState<StateType>& State) {
+    void FModelAutoProxyDriver<InputType, StateType>::QueueAuthorityState(const FStateWrapper<StateType>& State) {
         FScopeLock Lock(&PendingAuthorityStatesMutex);
 
         const int32 AuthLocalTickNumber = State.InputPacketTickNumber;
@@ -183,7 +183,7 @@ namespace ClientPrediction {
         FScopeLock Lock(&PendingAuthorityStatesMutex);
 
         while (!PendingAuthorityStates.IsEmpty()) {
-            FPhysicsState<StateType> AuthState = PendingAuthorityStates[0];
+            FStateWrapper<StateType>& AuthState = PendingAuthorityStates[0];
             const int32 AuthLocalTickNumber = AuthState.InputPacketTickNumber;
 
             // The auto proxy has fallen behind the authority, so there is no need to reconcile with it right now, since we can't predict ahead
@@ -207,7 +207,7 @@ namespace ClientPrediction {
             InputBuf.Ack(AuthLocalTickNumber);
 
             // Check against the historic state
-            FPhysicsState<StateType> HistoricState;
+            FStateWrapper<StateType> HistoricState;
             check(History.GetStateAtTick(AuthLocalTickNumber, HistoricState));
             check(HistoricState.TickNumber == AuthLocalTickNumber)
 

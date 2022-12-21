@@ -91,14 +91,13 @@ namespace ClientPrediction {
         RewindCallback = Callback;
     }
 
-    void FWorldManager::RemoveTickCallback(const ITickCallback* Callback) {
-        if (TickCallbacks.Contains(Callback)) {
-            TickCallbacks.Remove(Callback);
+    void FWorldManager::RemoveCallback(const void* Callback) {
+        const auto* TickCallback = static_cast<const ITickCallback*>(Callback);
+        if (TickCallbacks.Contains(TickCallback)) {
+            TickCallbacks.Remove(TickCallback);
         }
-    }
 
-    void FWorldManager::RemoveRewindCallback(const IRewindCallback* Callback) {
-        if (RewindCallback == Callback) {
+        if (RewindCallback == static_cast<const IRewindCallback*>(Callback)) {
             RewindCallback = nullptr;
         }
     }

@@ -28,9 +28,7 @@ namespace ClientPrediction {
     public:
         void AddTickCallback(class ITickCallback* Callback);
         void AddRewindCallback(class IRewindCallback* Callback);
-
-        void RemoveTickCallback(const class ITickCallback* Callback);
-        void RemoveRewindCallback(const class IRewindCallback* Callback);
+        void RemoveCallback(const void* Callback);
 
         int32 GetRewindBufferSize() const { return RewindBufferSize; }
 

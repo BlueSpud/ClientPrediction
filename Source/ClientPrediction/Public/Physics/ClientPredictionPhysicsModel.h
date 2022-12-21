@@ -29,7 +29,6 @@ namespace ClientPrediction {
         virtual void Cleanup() = 0;
 
         virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep, FRepProxy& ControlProxyRep) = 0;
-
         virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) const = 0;
     };
 
@@ -38,18 +37,18 @@ namespace ClientPrediction {
 
     template <typename StateType, typename EventType>
     struct FSimOutput {
-        explicit FSimOutput(FPhysicsState<StateType>& PhysState)
-            : PhysState(PhysState) {}
+        explicit FSimOutput(FStateWrapper<StateType>& StateWrapper)
+            : StateWrapper(StateWrapper) {}
 
-        StateType& State() const { return PhysState.Body; }
+        StateType& State() const { return StateWrapper.Body; }
 
         void DispatchEvent(EventType Event) {
             check(Event < 8)
-            PhysState.Events |= 0b1 << Event;
+            StateWrapper.Events |= 0b1 << Event;
         }
 
     private:
-        FPhysicsState<StateType>& PhysState;
+        FStateWrapper<StateType>& StateWrapper;
     };
 
 
@@ -88,18 +87,18 @@ namespace ClientPrediction {
         virtual void ForceSimulate(const uint32 NumTicks) override final;
 
         // IModelDriverDelegate
-        virtual void GenerateInitialState(FPhysicsState<StateType>& State) override final;
+        virtual void GenerateInitialState(FStateWrapper<StateType>& State) override final;
 
         virtual void EmitInputPackets(TArray<FInputPacketWrapper<InputType>>& Packets) override final;
         virtual void ProduceInput(FInputPacketWrapper<InputType>& Packet) override final;
 
-        virtual void SimulatePrePhysics(Chaos::FReal Dt, FPhysicsContext& Context, const InputType& Input, const FPhysicsState<StateType>& PrevState,
-                                        FPhysicsState<StateType>& OutState) override final;
+        virtual void SimulatePrePhysics(Chaos::FReal Dt, FPhysicsContext& Context, const InputType& Input, const FStateWrapper<StateType>& PrevState,
+                                        FStateWrapper<StateType>& OutState) override final;
 
-        virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, const InputType& Input, const FPhysicsState<StateType>& PrevState,
-                                         FPhysicsState<StateType>& OutState) override final;
+        virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, const InputType& Input, const FStateWrapper<StateType>& PrevState,
+                                         FStateWrapper<StateType>& OutState) override final;
 
-        virtual void DispatchEvents(const FPhysicsState<StateType>& State, uint8 Events) override final;
+        virtual void DispatchEvents(const FStateWrapper<StateType>& State, uint8 Events) override final;
 
     public:
         DECLARE_DELEGATE_OneParam(FPhysicsModelProduceInput, InputType&)
@@ -108,7 +107,7 @@ namespace ClientPrediction {
         DECLARE_DELEGATE_TwoParams(FPhysicsModelFinalize, const StateType&, Chaos::FReal Dt)
         FPhysicsModelFinalize FinalizeDelegate;
 
-        DECLARE_DELEGATE_OneParam(FPhysicsModelDispatchEvent, EventType)
+        DECLARE_DELEGATE_ThreeParams(FPhysicsModelDispatchEvent, EventType, const StateType& State, const FPhysicsState& PhysState)
         FPhysicsModelDispatchEvent DispatchEventDelegate;
 
     private:
@@ -144,7 +143,7 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::Cleanup() {
         if (CachedWorldManager != nullptr && ModelDriver != nullptr) {
-            CachedWorldManager->RemoveTickCallback(ModelDriver.Get());
+            CachedWorldManager->RemoveCallback(ModelDriver.Get());
         }
 
         CachedWorldManager = nullptr;
@@ -159,14 +158,13 @@ namespace ClientPrediction {
         check(Delegate)
 
         if (ModelDriver != nullptr) {
-            CachedWorldManager->RemoveTickCallback(ModelDriver.Get());
+            CachedWorldManager->RemoveCallback(ModelDriver.Get());
         }
 
         int32 RewindBufferSize = CachedWorldManager->GetRewindBufferSize();
         switch (Role) {
         case ROLE_Authority:
-            // TODO pass bShouldTakeInput here
-            ModelDriver = MakeUnique<FModelAuthDriver<InputType, StateType>>(CachedComponent, this, AutoProxyRep, SimProxyRep, ControlProxyRep, RewindBufferSize);
+            ModelDriver = MakeUnique<FModelAuthDriver<InputType, StateType>>(CachedComponent, this, AutoProxyRep, SimProxyRep, ControlProxyRep, RewindBufferSize, bShouldTakeInput);
             CachedWorldManager->AddTickCallback(ModelDriver.Get());
             break;
         case ROLE_AutonomousProxy: {
@@ -196,7 +194,7 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType, typename EventType>
-    void FPhysicsModel<InputType, StateType, EventType>::GenerateInitialState(FPhysicsState<StateType>& State) {
+    void FPhysicsModel<InputType, StateType, EventType>::GenerateInitialState(FStateWrapper<StateType>& State) {
         State = {};
 
         // TODO Actually generate initial state
@@ -231,8 +229,8 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::SimulatePrePhysics(const Chaos::FReal Dt, FPhysicsContext& Context,
                                                                  const InputType& Input,
-                                                                 const FPhysicsState<StateType>& PrevState,
-                                                                 FPhysicsState<StateType>& OutState) {
+                                                                 const FStateWrapper<StateType>& PrevState,
+                                                                 FStateWrapper<StateType>& OutState) {
         SimOutput Output(OutState);
         SimulatePrePhysics(Dt, Context, Input, PrevState.Body, Output);
     }
@@ -240,17 +238,17 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::SimulatePostPhysics(const Chaos::FReal Dt, const FPhysicsContext& Context,
                                                                   const InputType& Input,
-                                                                  const FPhysicsState<StateType>& PrevState,
-                                                                  FPhysicsState<StateType>& OutState) {
+                                                                  const FStateWrapper<StateType>& PrevState,
+                                                                  FStateWrapper<StateType>& OutState) {
         SimOutput Output(OutState);
         SimulatePostPhysics(Dt, Context, Input, PrevState.Body, Output);
     }
 
     template <typename InputType, typename StateType, typename EventType>
-    void FPhysicsModel<InputType, StateType, EventType>::DispatchEvents(const FPhysicsState<StateType>& State, const uint8 Events) {
+    void FPhysicsModel<InputType, StateType, EventType>::DispatchEvents(const FStateWrapper<StateType>& State, const uint8 Events) {
         for (uint8 Event = 0; Event < 8; ++Event) {
             if ((Events & (0b1 << Event)) != 0) {
-                DispatchEventDelegate.ExecuteIfBound(static_cast<EventType>(Event));
+                DispatchEventDelegate.ExecuteIfBound(static_cast<EventType>(Event), State.Body, State.PhysicsState);
             }
         }
     }

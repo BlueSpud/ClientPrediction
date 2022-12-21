@@ -6,7 +6,7 @@
 namespace ClientPrediction {
     template <typename StateType>
     struct FEvent {
-        FPhysicsState<StateType> State{};
+        FStateWrapper<StateType> State{};
         uint8 Events = 0;
     };
 
@@ -24,7 +24,7 @@ namespace ClientPrediction {
 
     protected:
         void InterpolateStateGameThread(Chaos::FReal SimTime, Chaos::FReal Dt);
-        void UpdateHistory(const FPhysicsState<StateType>& State);
+        void UpdateHistory(const FStateWrapper<StateType>& State);
 
     protected:
         UPrimitiveComponent* UpdatedComponent = nullptr;
@@ -32,8 +32,8 @@ namespace ClientPrediction {
         FHistoryBuffer<StateType> History;
 
         FInputPacketWrapper<InputType> CurrentInput{}; // Only used on physics thread
-        FPhysicsState<StateType> CurrentState{}; // Only used on physics thread
-        FPhysicsState<StateType> LastState{}; // Only used on physics thread
+        FStateWrapper<StateType> CurrentState{}; // Only used on physics thread
+        FStateWrapper<StateType> LastState{}; // Only used on physics thread
 
         // Events have their own queue since we do not want to dispatch events more than once during re-simulates if they are the same.
         FCriticalSection EventQueueMutex;
@@ -111,11 +111,11 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType>
-    void FSimulatedModelDriver<InputType, StateType>::UpdateHistory(const FPhysicsState<StateType>& State) {
+    void FSimulatedModelDriver<InputType, StateType>::UpdateHistory(const FStateWrapper<StateType>& State) {
         FScopeLock EventQueueLock(&EventQueueMutex);
 
 
-        FPhysicsState<StateType> PreviousHistoryState{};
+        FStateWrapper<StateType> PreviousHistoryState{};
         bool bEventQueueIsDirty = false;
 
         if (History.GetStateAtTick(State.TickNumber, PreviousHistoryState)) {

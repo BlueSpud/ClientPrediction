@@ -17,12 +17,13 @@ namespace ClientPrediction {
     public:
         FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate,
                          FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep, FRepProxy& ControlProxyRep,
-                         int32 RewindBufferSize);
+                         int32 RewindBufferSize, const bool bTakesInput);
 
         virtual ~FModelAuthDriver() override = default;
 
     public:
         // Ticking
+        virtual void PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) override;
         virtual void PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) override;
         virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) override;
 
@@ -40,12 +41,13 @@ namespace ClientPrediction {
         FRepProxy& AutoProxyRep;
         FRepProxy& SimProxyRep;
         FRepProxy& ControlProxyRep;
+        bool bTakesInput = false;
 
         FAuthInputBuf<InputType> InputBuf; // Written to on game thread, read from physics thread
         Chaos::FReal LastSuggestedTimeDilation = 1.0; // Only used on game thread
 
         FCriticalSection LastStateGtMutex;
-        FPhysicsState<StateType> LastStateGt; // Written from physics thread, read on game thread
+        FStateWrapper<StateType> LastStateGt; // Written from physics thread, read on game thread
         int32 LastEmittedState = INDEX_NONE; // Only used on game thread
     };
 
@@ -53,22 +55,32 @@ namespace ClientPrediction {
     FModelAuthDriver<InputType, StateType>::FModelAuthDriver(UPrimitiveComponent* UpdatedComponent,
                                                              IModelDriverDelegate<InputType, StateType>* Delegate,
                                                              FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep,
-                                                             FRepProxy& ControlProxyRep, int32 RewindBufferSize)
+                                                             FRepProxy& ControlProxyRep, int32 RewindBufferSize, const bool bTakesInput)
         : FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), AutoProxyRep(AutoProxyRep),
-          SimProxyRep(SimProxyRep), ControlProxyRep(ControlProxyRep), InputBuf(ClientPredictionDroppedPacketMemoryTickLength) {}
+          SimProxyRep(SimProxyRep), ControlProxyRep(ControlProxyRep), bTakesInput(bTakesInput), InputBuf(ClientPredictionDroppedPacketMemoryTickLength) {}
+
+    template <typename InputType, typename StateType>
+    void FModelAuthDriver<InputType, StateType>::PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) {
+        if (bTakesInput) {
+            FInputPacketWrapper<InputType> Packet;
+            Packet.PacketNumber = TickNumber;
+            Delegate->ProduceInput(Packet);
+
+            InputBuf.QueueInputPackets({Packet});
+        }
+    }
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
-        if (CurrentInput.PacketNumber == INDEX_NONE && InputBuf.GetBufferSize() < static_cast<uint32>(ClientPredictionDesiredInputBufferSize)) { return; }
+        if (CurrentInput.PacketNumber != INDEX_NONE || InputBuf.GetBufferSize() >= static_cast<uint32>(ClientPredictionDesiredInputBufferSize) || bTakesInput) {
+            InputBuf.GetNextInputPacket(CurrentInput);
+        }
 
-        InputBuf.GetNextInputPacket(CurrentInput);
         PreTickSimulateWithCurrentInput(TickNumber, Dt);
     }
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
-        if (CurrentInput.PacketNumber == INDEX_NONE) { return; }
-
         PostTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
 
         FScopeLock Lock(&LastStateGtMutex);
@@ -84,7 +96,7 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::SendCurrentStateToRemotes() {
-        FPhysicsState<StateType> SendingState = LastStateGt;
+        FStateWrapper<StateType> SendingState = LastStateGt;
         {
             FScopeLock Lock(&LastStateGtMutex);
             SendingState = LastStateGt;

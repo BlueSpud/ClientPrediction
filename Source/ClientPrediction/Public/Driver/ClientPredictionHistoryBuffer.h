@@ -1,14 +1,15 @@
 ﻿#pragma once
 
 #include "ClientPredictionModelTypes.h"
+#include "Math/UnitConversion.h"
 
 namespace ClientPrediction {
     template <typename StateType>
     struct FHistoryBuffer {
         explicit FHistoryBuffer(const int32 Capacity);
 
-        void Update(const FPhysicsState<StateType>& State);
-        bool GetStateAtTick(const int32 TickNumber, FPhysicsState<StateType>& OutState);
+        void Update(const FStateWrapper<StateType>& State);
+        bool GetStateAtTick(const int32 TickNumber, FStateWrapper<StateType>& OutState);
         void GetStateAtTime(const Chaos::FReal Time, StateType& OutState);
 
         int32 GetLatestTickNumber() {
@@ -18,7 +19,7 @@ namespace ClientPrediction {
 
     private:
         int32 Capacity = 0;
-        TArray<FPhysicsState<StateType>> History;
+        TArray<FStateWrapper<StateType>> History;
         FCriticalSection Mutex;
     };
 
@@ -28,11 +29,11 @@ namespace ClientPrediction {
     }
 
     template <typename StateType>
-    void FHistoryBuffer<StateType>::Update(const FPhysicsState<StateType>& State) {
+    void FHistoryBuffer<StateType>::Update(const FStateWrapper<StateType>& State) {
         FScopeLock Lock(&Mutex);
 
         bool bUpdatedExistingState = false;
-        for (FPhysicsState<StateType>& ExistingState : History) {
+        for (FStateWrapper<StateType>& ExistingState : History) {
             if (ExistingState.TickNumber == State.TickNumber) {
                 ExistingState = State;
                 bUpdatedExistingState = true;
@@ -46,10 +47,10 @@ namespace ClientPrediction {
     }
 
     template <typename StateType>
-    bool FHistoryBuffer<StateType>::GetStateAtTick(const int32 TickNumber, FPhysicsState<StateType>& OutState) {
+    bool FHistoryBuffer<StateType>::GetStateAtTick(const int32 TickNumber, FStateWrapper<StateType>& OutState) {
         FScopeLock Lock(&Mutex);
 
-        for (const FPhysicsState<StateType>& State : History) {
+        for (const FStateWrapper<StateType>& State : History) {
             if (State.TickNumber == TickNumber) {
                 OutState = State;
                 return true;
@@ -68,8 +69,8 @@ namespace ClientPrediction {
         for (int i = 0; i < History.Num(); i++) {
             if (History[i].EndTime >= Time) {
                 if (i != 0) {
-                    const FPhysicsState<StateType>& Start = History[i - 1];
-                    const FPhysicsState<StateType>& End = History[i];
+                    const FStateWrapper<StateType>& Start = History[i - 1];
+                    const FStateWrapper<StateType>& End = History[i];
 
                     const Chaos::FReal PrevEndTime = Start.EndTime;
                     const Chaos::FReal TimeFromPrevEnd = Time - PrevEndTime;
@@ -78,8 +79,11 @@ namespace ClientPrediction {
 
                     OutState = Start.Body;
                     OutState.Interpolate(End.Body, Alpha);
+                    return;
                 }
-                else { OutState = History[0].Body; }
+
+                OutState = History[0].Body;
+                return;
             }
         }
 
