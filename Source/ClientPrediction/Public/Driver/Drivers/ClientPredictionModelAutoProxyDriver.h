@@ -36,6 +36,10 @@ namespace ClientPrediction {
         virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) override;
         virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
 
+    private:
+        void FastForwardIfNeeded();
+
+    public:
         virtual int32 GetRewindTickNumber(int32 CurrentTickNumber, const class Chaos::FRewindData& RewindData) override;
 
     private:
@@ -86,13 +90,13 @@ namespace ClientPrediction {
         const int32 AuthLocalTickNumber = State.InputPacketTickNumber;
         if (AuthLocalTickNumber <= LastAckedTick) { return; }
 
-        const bool bStateAlreadyPending = PendingAuthorityStates.ContainsByPredicate([&](const FPhysicsState<StateType>& Candidate) {
+        const bool bStateAlreadyPending = PendingAuthorityStates.ContainsByPredicate([&](const auto& Candidate) {
             return Candidate.TickNumber == State.TickNumber;
         });
 
         if (!bStateAlreadyPending) {
             PendingAuthorityStates.Add(State);
-            PendingAuthorityStates.Sort([](const FPhysicsState<StateType>& A, const FPhysicsState<StateType>& B) {
+            PendingAuthorityStates.Sort([](const auto& A, const auto& B) {
                 return A.TickNumber < B.TickNumber;
             });
         }
@@ -133,21 +137,26 @@ namespace ClientPrediction {
         PendingPhysicsCorrectionFrame = INDEX_NONE;
 
         LastState = PendingCorrection;
+        UpdateHistory(LastState);
     }
 
     template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
         PostTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
-        History.Update(CurrentState);
     }
 
     template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
-        FSimulatedModelDriver<InputType, StateType>::PostPhysicsGameThread(SimTime, Dt);
+        InterpolateStateGameThread(SimTime, Dt);
 
         const Chaos::FReal NewTimeDilation = 1.0 + LastControlPacket.GetTimeDilation() * ClientPredictionMaxTimeDilation;
         Delegate->SetTimeDilation(NewTimeDilation);
 
+        FastForwardIfNeeded();
+    }
+
+    template <typename InputType, typename StateType>
+    void FModelAutoProxyDriver<InputType, StateType>::FastForwardIfNeeded() {
         // If for some reason the auto proxy has fallen behind the authority, fast forward to catch back up.
         int32 NumForceSimulatedTicks = 0;
         {
@@ -199,7 +208,7 @@ namespace ClientPrediction {
 
             // Check against the historic state
             FPhysicsState<StateType> HistoricState;
-            History.GetStateAtTick(AuthLocalTickNumber, HistoricState);
+            check(History.GetStateAtTick(AuthLocalTickNumber, HistoricState));
             check(HistoricState.TickNumber == AuthLocalTickNumber)
 
             if (AuthState.ShouldReconcile(HistoricState)) {
@@ -207,7 +216,15 @@ namespace ClientPrediction {
                 // of the simulation during PostTickPhysicsThread (after physics has been simulated), so it is the beginning
                 // state for LocalTickNumber + 1
                 PendingPhysicsCorrectionFrame = AuthLocalTickNumber + 1;
+
                 PendingCorrection = AuthState;
+                PendingCorrection.StartTime = HistoricState.StartTime;
+                PendingCorrection.EndTime = HistoricState.EndTime;
+                PendingCorrection.TickNumber = HistoricState.TickNumber;
+
+                // Clear the event queue, it will be repopulated during re-simulate
+                FScopeLock EventQueueLock(&EventQueueMutex);
+                EventQueue.Empty();
 
                 UE_LOG(LogTemp, Error, TEXT("Rewinding and rolling back to %d"), AuthLocalTickNumber);
                 return AuthLocalTickNumber + 1;

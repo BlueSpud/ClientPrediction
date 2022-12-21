@@ -26,7 +26,7 @@ namespace ClientPrediction {
         virtual void SimulatePostPhysics(const Chaos::FReal Dt, const FPhysicsContext& Context, const InputType& Input, const FPhysicsState<StateType>& PrevState,
                                          FPhysicsState<StateType>& OutState) = 0;
 
-        virtual void DispatchEvents(const FPhysicsState<StateType>& State) = 0;
+        virtual void DispatchEvents(const FPhysicsState<StateType>& State, const uint8 Events) = 0;
     };
 
     template <typename InputType>

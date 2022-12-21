@@ -99,7 +99,7 @@ namespace ClientPrediction {
         virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, const InputType& Input, const FPhysicsState<StateType>& PrevState,
                                          FPhysicsState<StateType>& OutState) override final;
 
-        virtual void DispatchEvents(const FPhysicsState<StateType>& State) override final;
+        virtual void DispatchEvents(const FPhysicsState<StateType>& State, uint8 Events) override final;
 
     public:
         DECLARE_DELEGATE_OneParam(FPhysicsModelProduceInput, InputType&)
@@ -247,9 +247,9 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType, typename EventType>
-    void FPhysicsModel<InputType, StateType, EventType>::DispatchEvents(const FPhysicsState<StateType>& State) {
+    void FPhysicsModel<InputType, StateType, EventType>::DispatchEvents(const FPhysicsState<StateType>& State, const uint8 Events) {
         for (uint8 Event = 0; Event < 8; ++Event) {
-            if ((State.Events & (0b1 << Event)) != 0) {
+            if ((Events & (0b1 << Event)) != 0) {
                 DispatchEventDelegate.ExecuteIfBound(static_cast<EventType>(Event));
             }
         }

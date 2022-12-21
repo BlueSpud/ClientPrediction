@@ -24,12 +24,13 @@ namespace ClientPrediction {
     public:
         // Ticking
         virtual void PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) override;
-        virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime,
-                                           Chaos::FReal EndTime) override;
+        virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) override;
+
         virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
 
     private:
         void SendCurrentStateToRemotes();
+        void SuggestTimeDilation();
 
     public:
         // Called on game thread
@@ -58,7 +59,7 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
-        if (CurrentInput.PacketNumber == INDEX_NONE && InputBuf.GetBufferSize() <static_cast<uint32>(ClientPredictionDesiredInputBufferSize)) { return; }
+        if (CurrentInput.PacketNumber == INDEX_NONE && InputBuf.GetBufferSize() < static_cast<uint32>(ClientPredictionDesiredInputBufferSize)) { return; }
 
         InputBuf.GetNextInputPacket(CurrentInput);
         PreTickSimulateWithCurrentInput(TickNumber, Dt);
@@ -66,6 +67,8 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
+        if (CurrentInput.PacketNumber == INDEX_NONE) { return; }
+
         PostTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
 
         FScopeLock Lock(&LastStateGtMutex);
@@ -74,21 +77,9 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
-        FSimulatedModelDriver<InputType, StateType>::PostPhysicsGameThread(SimTime, Dt);
+        InterpolateStateGameThread(SimTime, Dt);
         SendCurrentStateToRemotes();
-
-        // Suggest a time dilation rate for the auto proxy to run at to keep its input buffer healthy
-        const uint16 InputBufferSize = InputBuf.GetBufferSize();
-        const uint16 DesiredInputBufferSize = ClientPredictionDesiredInputBufferSize + InputBuf.GetNumRecentlyDroppedInputPackets();
-
-        const Chaos::FReal TargetTimeDilation = InputBufferSize > DesiredInputBufferSize ? -1.0 : (InputBufferSize < DesiredInputBufferSize ? 1.0 : 0.0);
-        LastSuggestedTimeDilation = FMath::Lerp(LastSuggestedTimeDilation, TargetTimeDilation, ClientPredictionTimeDilationAlpha);
-
-        FControlPacket ControlPacket{};
-        ControlPacket.SetTimeDilation(LastSuggestedTimeDilation);
-
-        ControlProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { ControlPacket.NetSerialize(Ar); };
-        ControlProxyRep.Dispatch();
+        SuggestTimeDilation();
     }
 
     template <typename InputType, typename StateType>
@@ -108,6 +99,21 @@ namespace ClientPrediction {
 
             LastEmittedState = SendingState.TickNumber;
         }
+    }
+
+    template <typename InputType, typename StateType>
+    void FModelAuthDriver<InputType, StateType>::SuggestTimeDilation() {
+        const uint16 InputBufferSize = InputBuf.GetBufferSize();
+        const uint16 DesiredInputBufferSize = ClientPredictionDesiredInputBufferSize + InputBuf.GetNumRecentlyDroppedInputPackets();
+
+        const Chaos::FReal TargetTimeDilation = InputBufferSize > DesiredInputBufferSize ? -1.0 : (InputBufferSize < DesiredInputBufferSize ? 1.0 : 0.0);
+        LastSuggestedTimeDilation = FMath::Lerp(LastSuggestedTimeDilation, TargetTimeDilation, ClientPredictionTimeDilationAlpha);
+
+        FControlPacket ControlPacket{};
+        ControlPacket.SetTimeDilation(LastSuggestedTimeDilation);
+
+        ControlProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { ControlPacket.NetSerialize(Ar); };
+        ControlProxyRep.Dispatch();
     }
 
     template <typename InputType, typename StateType>

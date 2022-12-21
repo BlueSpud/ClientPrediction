@@ -1,8 +1,15 @@
 ﻿#pragma once
+
 #include "Driver/ClientPredictionHistoryBuffer.h"
 #include "Driver/ClientPredictionModelDriver.h"
 
 namespace ClientPrediction {
+    template <typename StateType>
+    struct FEvent {
+        FPhysicsState<StateType> State{};
+        uint8 Events = 0;
+    };
+
     template <typename InputType, typename StateType>
     class FSimulatedModelDriver : public IModelDriver<InputType> {
     public:
@@ -11,9 +18,13 @@ namespace ClientPrediction {
     protected:
         class Chaos::FRigidBodyHandle_Internal* GetPhysicsHandle() const;
 
+    public:
         void PreTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt);
         void PostTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime);
-        virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
+
+    protected:
+        void InterpolateStateGameThread(Chaos::FReal SimTime, Chaos::FReal Dt);
+        void UpdateHistory(const FPhysicsState<StateType>& State);
 
     protected:
         UPrimitiveComponent* UpdatedComponent = nullptr;
@@ -23,6 +34,10 @@ namespace ClientPrediction {
         FInputPacketWrapper<InputType> CurrentInput{}; // Only used on physics thread
         FPhysicsState<StateType> CurrentState{}; // Only used on physics thread
         FPhysicsState<StateType> LastState{}; // Only used on physics thread
+
+        // Events have their own queue since we do not want to dispatch events more than once during re-simulates if they are the same.
+        FCriticalSection EventQueueMutex;
+        TArray<FEvent<StateType>> EventQueue; // Written from the physics thread and consumed on the game thread
     };
 
     template <typename InputType, typename StateType>
@@ -38,7 +53,7 @@ namespace ClientPrediction {
         CurrentState.Events = 0;
 
         LastState = CurrentState;
-        History.Update(CurrentState);
+        UpdateHistory(CurrentState);
     }
 
     template <typename InputType, typename StateType>
@@ -75,12 +90,50 @@ namespace ClientPrediction {
 
         const FPhysicsContext Context(Handle, UpdatedComponent);
         Delegate->SimulatePostPhysics(Dt, Context, CurrentInput.Body, LastState, CurrentState);
+
+        UpdateHistory(CurrentState);
     }
 
     template <typename InputType, typename StateType>
-    void FSimulatedModelDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
+    void FSimulatedModelDriver<InputType, StateType>::InterpolateStateGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
         StateType InterpolatedState{};
         History.GetStateAtTime(SimTime, InterpolatedState);
         Delegate->Finalize(InterpolatedState, Dt);
+
+        FScopeLock EventQueueLock(&EventQueueMutex);
+        while (!EventQueue.IsEmpty()) {
+            const FEvent<StateType>& Front = EventQueue[0];
+            if (Front.State.StartTime > SimTime) { break; }
+
+            Delegate->DispatchEvents(Front.State, Front.Events);
+            EventQueue.RemoveAt(0);
+        }
+    }
+
+    template <typename InputType, typename StateType>
+    void FSimulatedModelDriver<InputType, StateType>::UpdateHistory(const FPhysicsState<StateType>& State) {
+        FScopeLock EventQueueLock(&EventQueueMutex);
+
+
+        FPhysicsState<StateType> PreviousHistoryState{};
+        bool bEventQueueIsDirty = false;
+
+        if (History.GetStateAtTick(State.TickNumber, PreviousHistoryState)) {
+            const uint8 DirtyEvents = State.Events & (~PreviousHistoryState.Events);
+            if (DirtyEvents != 0) {
+                EventQueue.Add({State, DirtyEvents});
+                bEventQueueIsDirty = true;
+            }
+        }
+        else if (State.Events != 0) {
+            EventQueue.Add({State, State.Events});
+            bEventQueueIsDirty = true;
+        }
+
+        if (bEventQueueIsDirty) {
+            EventQueue.Sort([](const auto& A, const auto& B) { return A.State.StartTime < B.State.StartTime; });
+        }
+
+        History.Update(State);
     }
 }

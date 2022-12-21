@@ -8,7 +8,7 @@ namespace ClientPrediction {
         explicit FHistoryBuffer(const int32 Capacity);
 
         void Update(const FPhysicsState<StateType>& State);
-        void GetStateAtTick(const int32 TickNumber, FPhysicsState<StateType>& OutState);
+        bool GetStateAtTick(const int32 TickNumber, FPhysicsState<StateType>& OutState);
         void GetStateAtTime(const Chaos::FReal Time, StateType& OutState);
 
         int32 GetLatestTickNumber() {
@@ -46,17 +46,17 @@ namespace ClientPrediction {
     }
 
     template <typename StateType>
-    void FHistoryBuffer<StateType>::GetStateAtTick(const int32 TickNumber, FPhysicsState<StateType>& OutState) {
+    bool FHistoryBuffer<StateType>::GetStateAtTick(const int32 TickNumber, FPhysicsState<StateType>& OutState) {
         FScopeLock Lock(&Mutex);
 
         for (const FPhysicsState<StateType>& State : History) {
             if (State.TickNumber == TickNumber) {
                 OutState = State;
-                return;
+                return true;
             }
         }
 
-        check(false)
+        return false;
     }
 
     template <typename StateType>
