@@ -29,6 +29,7 @@ public:
 
 private:
     virtual void EmitInputPackets(FNetSerializationProxy& Proxy) override;
+    virtual void EmitReliableAuthorityState(FNetSerializationProxy& Proxy) override;
 
     UFUNCTION(Server, Unreliable)
     void RecvInputPacket(FNetSerializationProxy Proxy);

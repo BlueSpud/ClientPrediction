@@ -16,6 +16,7 @@ namespace ClientPrediction {
         virtual void Finalize(const StateType& State, Chaos::FReal Dt) = 0;
 
         virtual void EmitInputPackets(TArray<FInputPacketWrapper<InputType>>& Packets) = 0;
+        virtual void EmitReliableAuthorityState(FStateWrapper<StateType> State) = 0;
         virtual void ProduceInput(FInputPacketWrapper<InputType>& Packet) = 0;
 
         virtual void SetTimeDilation(const Chaos::FReal TimeDilation) = 0;
@@ -29,13 +30,13 @@ namespace ClientPrediction {
         virtual void DispatchEvents(const FStateWrapper<StateType>& State, const uint8 Events) = 0;
     };
 
-    template <typename InputType>
+    template <typename InputType, typename StateType>
     class IModelDriver : public ITickCallback {
     public:
         virtual ~IModelDriver() override = default;
 
         // Input packet / state receiving
         virtual void ReceiveInputPackets(const TArray<FInputPacketWrapper<InputType>>& Packets) {}
-        virtual void ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) {}
+        virtual void ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) {}
     };
 }

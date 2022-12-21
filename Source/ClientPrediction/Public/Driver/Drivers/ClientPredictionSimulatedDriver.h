@@ -11,7 +11,7 @@ namespace ClientPrediction {
     };
 
     template <typename InputType, typename StateType>
-    class FSimulatedModelDriver : public IModelDriver<InputType> {
+    class FSimulatedModelDriver : public IModelDriver<InputType, StateType> {
     public:
         FSimulatedModelDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, int32 HistoryBufferSize);
 

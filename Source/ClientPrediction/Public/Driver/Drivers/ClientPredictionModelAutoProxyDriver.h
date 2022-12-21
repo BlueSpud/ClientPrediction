@@ -25,6 +25,9 @@ namespace ClientPrediction {
 
     private:
         void BindToRepProxy(FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep);
+    public:
+        virtual void ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) override;
+    private:
         void QueueAuthorityState(const FStateWrapper<StateType>& State);
 
     public:
@@ -81,6 +84,11 @@ namespace ClientPrediction {
         ControlProxyRep.SerializeFunc = [&](FArchive& Ar) {
             LastControlPacket.NetSerialize(Ar);
         };
+    }
+
+    template <typename InputType, typename StateType>
+    void FModelAutoProxyDriver<InputType, StateType>::ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) {
+        QueueAuthorityState(State);
     }
 
     template <typename InputType, typename StateType>
@@ -183,13 +191,13 @@ namespace ClientPrediction {
         FScopeLock Lock(&PendingAuthorityStatesMutex);
 
         while (!PendingAuthorityStates.IsEmpty()) {
-            FStateWrapper<StateType>& AuthState = PendingAuthorityStates[0];
-            const int32 AuthLocalTickNumber = AuthState.InputPacketTickNumber;
+            const int32 AuthLocalTickNumber = PendingAuthorityStates[0].InputPacketTickNumber;
 
             // The auto proxy has fallen behind the authority, so there is no need to reconcile with it right now, since we can't predict ahead
             if (AuthLocalTickNumber > CurrentTickNumber) { return INDEX_NONE; }
 
             // The state will be processed, it can be popped from the queue
+            FStateWrapper<StateType> AuthState = PendingAuthorityStates[0];
             PendingAuthorityStates.RemoveAt(0);
 
             const bool bStateHasInvalidTickNumber = AuthLocalTickNumber == INDEX_NONE;

@@ -41,6 +41,8 @@ void UClientPredictionComponent::PreNetReceive() {
 }
 
 void UClientPredictionComponent::CheckOwnerRoleChanged() {
+    if (PhysicsModel == nullptr) { return; }
+
     const AActor* OwnerActor = GetOwner();
     const ENetRole CurrentRole = OwnerActor->GetLocalRole();
     const bool bAuthorityTakesInput = OwnerActor->GetNetConnection() == nullptr;
@@ -60,15 +62,30 @@ void UClientPredictionComponent::BeginPlay() {
 
 void UClientPredictionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
     Super::EndPlay(EndPlayReason);
-    PhysicsModel->Cleanup();
+    if (PhysicsModel != nullptr) {
+        PhysicsModel->Cleanup();
+    }
 }
 
-void UClientPredictionComponent::RecvReliableAuthorityState_Implementation(FNetSerializationProxy Proxy) {}
-
-void UClientPredictionComponent::EmitInputPackets(FNetSerializationProxy& Proxy) {
-    RecvInputPacket(Proxy);
+void UClientPredictionComponent::EmitReliableAuthorityState(FNetSerializationProxy& Proxy) {
+    RecvReliableAuthorityState(Proxy);
 }
 
 void UClientPredictionComponent::RecvInputPacket_Implementation(FNetSerializationProxy Proxy) {
-    PhysicsModel->ReceiveInputPackets(Proxy);
+    if (PhysicsModel != nullptr) {
+        PhysicsModel->ReceiveInputPackets(Proxy);
+    }
 }
+
+void UClientPredictionComponent::EmitInputPackets(FNetSerializationProxy& Proxy) {
+    if (PhysicsModel != nullptr) {
+        RecvInputPacket(Proxy);
+    }
+}
+
+void UClientPredictionComponent::RecvReliableAuthorityState_Implementation(FNetSerializationProxy Proxy) {
+    if (PhysicsModel != nullptr) {
+        PhysicsModel->ReceiveReliableAuthorityState(Proxy);
+    }
+}
+
