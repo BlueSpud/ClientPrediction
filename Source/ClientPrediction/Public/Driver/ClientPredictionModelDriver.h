@@ -21,6 +21,7 @@ namespace ClientPrediction {
 
         virtual void SetTimeDilation(const Chaos::FReal TimeDilation) = 0;
         virtual void ForceSimulate(const uint32 NumTicks) = 0;
+        virtual Chaos::FReal GetWorldTimeNoDilation() const = 0;
 
         virtual void SimulatePrePhysics(const Chaos::FReal Dt, FPhysicsContext& Context, const InputType& Input, const FStateWrapper<StateType>& PrevState,
                                         FStateWrapper<StateType>& OutState) = 0;

@@ -7,6 +7,7 @@
 
 #include "Driver/Drivers/ClientPredictionModelAuthDriver.h"
 #include "Driver/Drivers/ClientPredictionModelAutoProxyDriver.h"
+#include "Driver/Drivers/ClientPredictionModelSimProxyDriver.h"
 #include "World/ClientPredictionWorldManager.h"
 
 namespace ClientPrediction {
@@ -88,6 +89,7 @@ namespace ClientPrediction {
 
         virtual void SetTimeDilation(const Chaos::FReal TimeDilation) override final;
         virtual void ForceSimulate(const uint32 NumTicks) override final;
+        virtual Chaos::FReal GetWorldTimeNoDilation() const override final;
 
         // IModelDriverDelegate
         virtual void GenerateInitialState(FStateWrapper<StateType>& State) override final;
@@ -155,8 +157,8 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType, typename EventType>
-    void FPhysicsModel<InputType, StateType, EventType>::SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& AutoProxyRep,
-                                                         FRepProxy& SimProxyRep, FRepProxy& ControlProxyRep) {
+    void FPhysicsModel<InputType, StateType, EventType>::SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep,
+                                                                    FRepProxy& ControlProxyRep) {
         check(CachedWorldManager)
         check(CachedComponent)
         check(Delegate)
@@ -168,22 +170,23 @@ namespace ClientPrediction {
         int32 RewindBufferSize = CachedWorldManager->GetRewindBufferSize();
         switch (Role) {
         case ROLE_Authority:
-            ModelDriver = MakeUnique<FModelAuthDriver<InputType, StateType>>(CachedComponent, this, AutoProxyRep, SimProxyRep, ControlProxyRep, RewindBufferSize, bShouldTakeInput);
-            CachedWorldManager->AddTickCallback(ModelDriver.Get());
+            ModelDriver = MakeUnique<FModelAuthDriver<InputType, StateType>>(CachedComponent, this, AutoProxyRep, SimProxyRep, ControlProxyRep, RewindBufferSize,
+                                                                             bShouldTakeInput);
             break;
         case ROLE_AutonomousProxy: {
             auto NewDriver = MakeUnique<FModelAutoProxyDriver<InputType, StateType>>(CachedComponent, this, AutoProxyRep, ControlProxyRep, RewindBufferSize);
-            CachedWorldManager->AddTickCallback(NewDriver.Get());
             CachedWorldManager->AddRewindCallback(NewDriver.Get());
             ModelDriver = MoveTemp(NewDriver);
         }
         break;
         case ROLE_SimulatedProxy:
-            // TODO add in the sim proxy
+            ModelDriver = MakeUnique<FModelSimProxyDriver<InputType, StateType>>(this, SimProxyRep);
             break;
         default:
             break;
         }
+
+        CachedWorldManager->AddTickCallback(ModelDriver.Get());
     }
 
     template <typename InputType, typename StateType, typename EventType>
@@ -246,24 +249,34 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType, typename EventType>
+    Chaos::FReal FPhysicsModel<InputType, StateType, EventType>::GetWorldTimeNoDilation() const {
+        check(CachedComponent);
+        if (const UWorld* World = CachedComponent->GetWorld()) {
+            return World->GetRealTimeSeconds();
+        }
+
+        return -1.0;
+    }
+
+    template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::ProduceInput(FInputPacketWrapper<InputType>& Packet) {
         ProduceInputDelegate.ExecuteIfBound(Packet.Body);
     }
 
     template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::SimulatePrePhysics(const Chaos::FReal Dt, FPhysicsContext& Context,
-                                                                 const InputType& Input,
-                                                                 const FStateWrapper<StateType>& PrevState,
-                                                                 FStateWrapper<StateType>& OutState) {
+                                                                            const InputType& Input,
+                                                                            const FStateWrapper<StateType>& PrevState,
+                                                                            FStateWrapper<StateType>& OutState) {
         SimOutput Output(OutState);
         SimulatePrePhysics(Dt, Context, Input, PrevState.Body, Output);
     }
 
     template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::SimulatePostPhysics(const Chaos::FReal Dt, const FPhysicsContext& Context,
-                                                                  const InputType& Input,
-                                                                  const FStateWrapper<StateType>& PrevState,
-                                                                  FStateWrapper<StateType>& OutState) {
+                                                                             const InputType& Input,
+                                                                             const FStateWrapper<StateType>& PrevState,
+                                                                             FStateWrapper<StateType>& OutState) {
         SimOutput Output(OutState);
         SimulatePostPhysics(Dt, Context, Input, PrevState.Body, Output);
     }

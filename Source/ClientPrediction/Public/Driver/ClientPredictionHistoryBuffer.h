@@ -1,7 +1,6 @@
 ﻿#pragma once
 
 #include "ClientPredictionModelTypes.h"
-#include "Math/UnitConversion.h"
 
 namespace ClientPrediction {
     template <typename StateType>

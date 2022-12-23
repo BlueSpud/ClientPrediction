@@ -1,7 +1,5 @@
 ﻿#pragma once
 
-#include <atomic>
-
 #include "Driver/ClientPredictionModelDriver.h"
 #include "Driver/Input/ClientPredictionAutoProxyInputBuf.h"
 #include "Driver/Drivers/ClientPredictionSimulatedDriver.h"

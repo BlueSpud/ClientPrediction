@@ -1,0 +1,157 @@
+﻿#pragma once
+
+#include "Driver/ClientPredictionModelDriver.h"
+#include "Driver/ClientPredictionRepProxy.h"
+#include "World/ClientPredictionWorldManager.h"
+
+namespace ClientPrediction {
+    extern CLIENTPREDICTION_API float ClientPredictionSimProxyDelay;
+
+    template <typename InputType, typename StateType>
+    class FModelSimProxyDriver final : public IModelDriver<InputType, StateType> {
+    public:
+        FModelSimProxyDriver(IModelDriverDelegate<InputType, StateType>* Delegate, FRepProxy& SimProxyRep);
+
+    private:
+        void BindToRepProxy(FRepProxy& SimProxyRep);
+
+    public:
+        virtual void ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) override;
+
+    private:
+        void QueueState(const FStateWrapper<StateType>& State);
+        void BuildStateTimes(FStateWrapper<StateType>& State);
+
+    public:
+        virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
+    private:
+        void GetInterpolatedStateAssumingStatesNotEmpty(Chaos::FReal DelayedTime, StateType& OutState);
+
+    private:
+        IModelDriverDelegate<InputType, StateType>* Delegate = nullptr;
+        TArray<FStateWrapper<StateType>> States;
+
+        /** This is the tick that was first received from the authority. */
+        int32 StartingTick = INDEX_NONE;
+        Chaos::FReal StartTime = -1.0;
+
+        /** If the buffer is empty this is the state that will be used. */
+        StateType LastState = {};
+        Chaos::FReal LastTime = -1.0;
+    };
+
+    template <typename InputType, typename StateType>
+    FModelSimProxyDriver<InputType, StateType>::FModelSimProxyDriver(IModelDriverDelegate<InputType, StateType>* Delegate, FRepProxy& SimProxyRep) : Delegate(Delegate) {
+        check(Delegate);
+        BindToRepProxy(SimProxyRep);
+
+        FStateWrapper<StateType> StartState{};
+        Delegate->GenerateInitialState(StartState);
+
+        StartState.TickNumber = INDEX_NONE;
+        StartState.InputPacketTickNumber = INDEX_NONE;
+        StartState.Events = 0;
+        StartState.StartTime = 0.0;
+        StartState.EndTime = 0.0;
+
+        States.Add(StartState);
+        LastState = StartState.Body;
+    }
+
+    template <typename InputType, typename StateType>
+    void FModelSimProxyDriver<InputType, StateType>::BindToRepProxy(FRepProxy& SimProxyRep) {
+        SimProxyRep.SerializeFunc = [&](FArchive& Ar) {
+            FStateWrapper<StateType> State{};
+            State.NetSerialize(Ar);
+
+            QueueState(State);
+        };
+    }
+
+    template <typename InputType, typename StateType>
+    void FModelSimProxyDriver<InputType, StateType>::ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) { QueueState(State); }
+
+    template <typename InputType, typename StateType>
+    void FModelSimProxyDriver<InputType, StateType>::QueueState(const FStateWrapper<StateType>& State) {
+        if (StartingTick == INDEX_NONE) {
+            StartingTick = State.TickNumber;
+
+            FStateWrapper<StateType> StateWithTimes = State;
+            BuildStateTimes(StateWithTimes);
+            States.Add(StateWithTimes);
+
+            return;
+        }
+
+        // TODO Check if state is too old
+        const bool bAlreadyHasState = States.ContainsByPredicate([&](const auto& Candidate) {
+            return Candidate.TickNumber == State.TickNumber;
+        });
+
+        if (!bAlreadyHasState) {
+            FStateWrapper<StateType> StateWithTimes = State;
+            BuildStateTimes(StateWithTimes);
+
+            States.Add(StateWithTimes);
+            States.Sort([](const auto& A, const auto& B) { return A.TickNumber < B.TickNumber; });
+        }
+    }
+
+    template <typename InputType, typename StateType>
+    void FModelSimProxyDriver<InputType, StateType>::BuildStateTimes(FStateWrapper<StateType>& State) {
+        State.StartTime = static_cast<Chaos::FReal>(State.TickNumber - StartingTick) * ClientPredictionFixedDt;
+        State.EndTime = State.StartTime + ClientPredictionFixedDt;
+    }
+
+    template <typename InputType, typename StateType>
+    void FModelSimProxyDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
+        if (StartingTick == INDEX_NONE) { return; }
+
+        const Chaos::FReal AbsoluteWorldTime = Delegate->GetWorldTimeNoDilation();
+        Chaos::FReal WorldTime = AbsoluteWorldTime - StartTime;
+        if (StartTime == -1.0) {
+            StartTime = AbsoluteWorldTime;
+            LastTime = StartTime;
+
+            WorldTime = 0.0;
+        }
+
+        // We don't use the delta from the function call because that is subject to physics time dilation
+        const Chaos::FReal WorldDt = WorldTime - LastTime;
+        LastTime = WorldTime;
+
+        if (States.IsEmpty()) {
+            Delegate->Finalize(LastState, WorldDt);
+            return;
+        }
+
+        const Chaos::FReal DelayedTime = WorldTime - ClientPredictionSimProxyDelay;
+
+        StateType InterpolatedState;
+        GetInterpolatedStateAssumingStatesNotEmpty(DelayedTime, InterpolatedState);
+
+        UE_LOG(LogTemp, Warning, TEXT("Interpolating"));
+        Delegate->Finalize(InterpolatedState, WorldDt);
+        LastState = InterpolatedState;
+    }
+
+    template <typename InputType, typename StateType>
+    void FModelSimProxyDriver<InputType, StateType>::GetInterpolatedStateAssumingStatesNotEmpty(Chaos::FReal DelayedTime, StateType& OutState) {
+        for (int32 i = 0; i < States.Num(); i++) {
+            if (DelayedTime < States[i].EndTime) {
+                if (i == 0) {
+                    OutState = States[0].Body;
+                    return;
+                }
+
+                // Interpolate
+                OutState = States[i].Body;
+
+
+                return;
+            }
+        }
+
+        OutState = States.Last().Body;
+    }
+}
