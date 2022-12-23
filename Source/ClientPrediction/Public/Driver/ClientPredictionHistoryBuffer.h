@@ -70,14 +70,17 @@ namespace ClientPrediction {
                 if (i != 0) {
                     const FStateWrapper<StateType>& Start = History[i - 1];
                     const FStateWrapper<StateType>& End = History[i];
+                    OutState = Start.Body;
 
                     const Chaos::FReal PrevEndTime = Start.EndTime;
                     const Chaos::FReal TimeFromPrevEnd = Time - PrevEndTime;
                     const Chaos::FReal TotalTime = End.EndTime - Start.EndTime;
-                    const Chaos::FReal Alpha = FMath::Clamp(TimeFromPrevEnd / TotalTime, 0.0, 1.0);
 
-                    OutState = Start.Body;
-                    OutState.Interpolate(End.Body, Alpha);
+                    if (TotalTime > 0.0) {
+                        const Chaos::FReal Alpha = FMath::Clamp(TimeFromPrevEnd / TotalTime, 0.0, 1.0);
+                        OutState.Interpolate(End.Body, Alpha);
+                    }
+
                     return;
                 }
 

@@ -180,7 +180,7 @@ namespace ClientPrediction {
         }
         break;
         case ROLE_SimulatedProxy:
-            ModelDriver = MakeUnique<FModelSimProxyDriver<InputType, StateType>>(this, SimProxyRep);
+            ModelDriver = MakeUnique<FModelSimProxyDriver<InputType, StateType>>(CachedComponent, this, SimProxyRep);
             break;
         default:
             break;

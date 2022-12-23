@@ -10,7 +10,7 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     class FModelSimProxyDriver final : public IModelDriver<InputType, StateType> {
     public:
-        FModelSimProxyDriver(IModelDriverDelegate<InputType, StateType>* Delegate, FRepProxy& SimProxyRep);
+        FModelSimProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FRepProxy& SimProxyRep);
 
     private:
         void BindToRepProxy(FRepProxy& SimProxyRep);
@@ -24,10 +24,12 @@ namespace ClientPrediction {
 
     public:
         virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
-    private:
-        void GetInterpolatedStateAssumingStatesNotEmpty(Chaos::FReal DelayedTime, StateType& OutState);
 
     private:
+        void GetInterpolatedStateAssumingStatesNotEmpty(Chaos::FReal DelayedTime, FStateWrapper<StateType>& OutState);
+
+    private:
+        UPrimitiveComponent* UpdatedComponent = nullptr;
         IModelDriverDelegate<InputType, StateType>* Delegate = nullptr;
         TArray<FStateWrapper<StateType>> States;
 
@@ -36,12 +38,13 @@ namespace ClientPrediction {
         Chaos::FReal StartTime = -1.0;
 
         /** If the buffer is empty this is the state that will be used. */
-        StateType LastState = {};
+        FStateWrapper<StateType> LastState = {};
         Chaos::FReal LastTime = -1.0;
     };
 
     template <typename InputType, typename StateType>
-    FModelSimProxyDriver<InputType, StateType>::FModelSimProxyDriver(IModelDriverDelegate<InputType, StateType>* Delegate, FRepProxy& SimProxyRep) : Delegate(Delegate) {
+    FModelSimProxyDriver<InputType, StateType>::FModelSimProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate,
+                                                                     FRepProxy& SimProxyRep) : UpdatedComponent(UpdatedComponent), Delegate(Delegate) {
         check(Delegate);
         BindToRepProxy(SimProxyRep);
 
@@ -55,7 +58,7 @@ namespace ClientPrediction {
         StartState.EndTime = 0.0;
 
         States.Add(StartState);
-        LastState = StartState.Body;
+        LastState = StartState;
     }
 
     template <typename InputType, typename StateType>
@@ -121,37 +124,51 @@ namespace ClientPrediction {
         LastTime = WorldTime;
 
         if (States.IsEmpty()) {
-            Delegate->Finalize(LastState, WorldDt);
+            Delegate->Finalize(LastState.Body, WorldDt);
             return;
         }
 
         const Chaos::FReal DelayedTime = WorldTime - ClientPredictionSimProxyDelay;
 
-        StateType InterpolatedState;
+        FStateWrapper<StateType> InterpolatedState;
         GetInterpolatedStateAssumingStatesNotEmpty(DelayedTime, InterpolatedState);
 
-        UE_LOG(LogTemp, Warning, TEXT("Interpolating"));
-        Delegate->Finalize(InterpolatedState, WorldDt);
+        check(UpdatedComponent);
+        Chaos::FRigidBodyHandle_External& Handle = UpdatedComponent->BodyInstance.ActorHandle->GetGameThreadAPI();
+        Handle.SetObjectState(Chaos::EObjectStateType::Static);
+        Handle.SetX(LastState.PhysicsState.X);
+        Handle.SetR(LastState.PhysicsState.R);
+
+        Delegate->Finalize(InterpolatedState.Body, WorldDt);
         LastState = InterpolatedState;
     }
 
     template <typename InputType, typename StateType>
-    void FModelSimProxyDriver<InputType, StateType>::GetInterpolatedStateAssumingStatesNotEmpty(Chaos::FReal DelayedTime, StateType& OutState) {
+    void FModelSimProxyDriver<InputType, StateType>::GetInterpolatedStateAssumingStatesNotEmpty(Chaos::FReal DelayedTime, FStateWrapper<StateType>& OutState) {
         for (int32 i = 0; i < States.Num(); i++) {
             if (DelayedTime < States[i].EndTime) {
                 if (i == 0) {
-                    OutState = States[0].Body;
+                    OutState = States[0];
                     return;
                 }
 
-                // Interpolate
-                OutState = States[i].Body;
+                const FStateWrapper<StateType>& Start = States[i - 1];
+                const FStateWrapper<StateType>& End = States[i];
+                OutState = Start;
 
+                const Chaos::FReal PrevEndTime = Start.EndTime;
+                const Chaos::FReal TimeFromPrevEnd = DelayedTime - PrevEndTime;
+                const Chaos::FReal TotalTime = End.EndTime - Start.EndTime;
+
+                if (TotalTime > 0.0) {
+                    const Chaos::FReal Alpha = FMath::Clamp(TimeFromPrevEnd / TotalTime, 0.0, 1.0);
+                    OutState.Interpolate(End, Alpha);
+                }
 
                 return;
             }
         }
 
-        OutState = States.Last().Body;
+        OutState = States.Last();
     }
 }

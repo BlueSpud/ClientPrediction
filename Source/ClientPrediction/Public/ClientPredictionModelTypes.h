@@ -42,6 +42,8 @@ namespace ClientPrediction {
 
         void FillState(const class Chaos::FRigidBodyHandle_Internal* Handle);
         void Reconcile(class Chaos::FRigidBodyHandle_Internal* Handle) const;
+
+        void Interpolate(const FStateWrapper Other, const Chaos::FReal Alpha);
     };
 
     template <typename StateType>
@@ -100,6 +102,17 @@ namespace ClientPrediction {
         Handle->SetR(PhysicsState.R);
         Handle->SetW(PhysicsState.W);
         Handle->SetObjectState(PhysicsState.ObjectState);
+    }
+
+    template <typename StateType>
+    void FStateWrapper<StateType>::Interpolate(const FStateWrapper Other, const Chaos::FReal Alpha) {
+        PhysicsState.ObjectState = Other.PhysicsState.ObjectState;
+        PhysicsState.X = FMath::Lerp<FVector>({PhysicsState.X}, {Other.PhysicsState.X}, Alpha);
+        PhysicsState.V = FMath::Lerp<FVector>({PhysicsState.V}, {Other.PhysicsState.V}, Alpha);
+        PhysicsState.R = FMath::Lerp<FQuat>({PhysicsState.R}, {Other.PhysicsState.R}, Alpha);
+        PhysicsState.W = FMath::Lerp<FVector>({PhysicsState.W}, {Other.PhysicsState.W}, Alpha);
+
+        Body.Interpolate(Other.Body, Alpha);
     }
 
     struct FControlPacket {
