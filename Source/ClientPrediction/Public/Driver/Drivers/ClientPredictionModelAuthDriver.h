@@ -31,6 +31,7 @@ namespace ClientPrediction {
 
     private:
         void SendCurrentStateToRemotes();
+        void SendState(FStateWrapper<StateType> State);
         void SuggestTimeDilation();
 
     public:
@@ -46,8 +47,8 @@ namespace ClientPrediction {
         FAuthInputBuf<InputType> InputBuf; // Written to on game thread, read from physics thread
         Chaos::FReal LastSuggestedTimeDilation = 1.0; // Only used on game thread
 
-        FCriticalSection LastStateGtMutex;
-        FStateWrapper<StateType> LastStateGt; // Written from physics thread, read on game thread
+        FCriticalSection PendingStatesMutex;
+        TQueue<FStateWrapper<StateType>> PendingStates; // Written from physics thread, read on game thread
         int32 LastEmittedState = INDEX_NONE; // Only used on game thread
     };
 
@@ -83,8 +84,8 @@ namespace ClientPrediction {
     void FModelAuthDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
         PostTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
 
-        FScopeLock Lock(&LastStateGtMutex);
-        LastStateGt = CurrentState;
+        FScopeLock Lock(&PendingStatesMutex);
+        PendingStates.Enqueue(CurrentState);
     }
 
     template <typename InputType, typename StateType>
@@ -96,20 +97,30 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::SendCurrentStateToRemotes() {
-        FStateWrapper<StateType> SendingState = LastStateGt;
-        {
-            FScopeLock Lock(&LastStateGtMutex);
-            SendingState = LastStateGt;
+        FScopeLock Lock(&PendingStatesMutex);
+
+        while (!PendingStates.IsEmpty()) {
+            FStateWrapper<StateType> Front;
+            PendingStates.Peek(Front);
+            SendState(Front);
+
+            PendingStates.Pop();
         }
+    }
 
-        if (SendingState.TickNumber != INDEX_NONE && SendingState.TickNumber != LastEmittedState) {
-            AutoProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { SendingState.NetSerialize(Ar); };
-            SimProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { SendingState.NetSerialize(Ar); };
+    template <typename InputType, typename StateType>
+    void FModelAuthDriver<InputType, StateType>::SendState(FStateWrapper<StateType> State) {
+        if (State.TickNumber != INDEX_NONE && State.TickNumber != LastEmittedState) {
+            if (State.Events == 0) {
+                AutoProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { State.NetSerialize(Ar); };
+                SimProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { State.NetSerialize(Ar); };
 
-            AutoProxyRep.Dispatch();
-            SimProxyRep.Dispatch();
+                AutoProxyRep.Dispatch();
+                SimProxyRep.Dispatch();
 
-            LastEmittedState = SendingState.TickNumber;
+                LastEmittedState = State.TickNumber;
+            }
+            else { Delegate->EmitReliableAuthorityState(State); }
         }
     }
 
