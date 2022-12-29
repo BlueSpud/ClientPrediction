@@ -71,6 +71,19 @@ void UClientPredictionComponent::EmitReliableAuthorityState(FNetSerializationPro
     RecvReliableAuthorityState(Proxy);
 }
 
+void UClientPredictionComponent::GetNetworkConditions(ClientPrediction::FNetworkConditions& NetworkConditions) const {
+    NetworkConditions = {};
+
+    const AActor* Owner = GetOwner();
+    if (!Owner) { return; }
+
+    const UNetConnection* NetConnection = Owner->GetNetConnection();
+    if (NetConnection == nullptr) { return; }
+
+    NetworkConditions.Latency = NetConnection->AvgLag;
+    NetworkConditions.Jitter = NetConnection->GetAverageJitterInMS() / 1000.0;
+}
+
 void UClientPredictionComponent::RecvInputPacket_Implementation(FNetSerializationProxy Proxy) {
     if (PhysicsModel != nullptr) {
         PhysicsModel->ReceiveInputPackets(Proxy);

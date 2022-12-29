@@ -116,7 +116,7 @@ namespace ClientPrediction {
         Solver->SetThreadingMode_External(Chaos::EThreadingModeTemp::SingleThread);
         PhysScene->SetNetworkDeltaTimeScale(1.0);
 
-        const int32 AdjustedNumTicks = FMath::Min(static_cast<int32>(NumTicks), ClientPredictionMaxForcedSimulationTicks);
+        const int32 AdjustedNumTicks = NumTicks; // FMath::Min(static_cast<int32>(NumTicks), ClientPredictionMaxForcedSimulationTicks);
         const Chaos::FReal SimulationTime = static_cast<Chaos::FReal>(AdjustedNumTicks) * Solver->GetAsyncDeltaTime();
 
         Solver->AdvanceAndDispatch_External(SimulationTime);

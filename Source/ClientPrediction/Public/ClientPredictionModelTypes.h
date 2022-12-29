@@ -21,7 +21,6 @@ namespace ClientPrediction {
 
     template <typename StateType>
     struct FStateWrapper {
-        // TODO this maybe needs some re-working since we probably want to sync the proxies / authority somehow
         /** The tick number that the state was generated on. So if receiving from the authority, this is the index according to the authority. */
         int32 TickNumber = INDEX_NONE;
 
@@ -132,5 +131,10 @@ namespace ClientPrediction {
     private:
         /** This stores time dilation in the range [-127, 127] (since 128 can't be represented with an int8)*/
         int8 TimeDilation = 0;
+    };
+
+    struct FNetworkConditions {
+        Chaos::FReal Latency = 0.0;
+        Chaos::FReal Jitter = 0.0;
     };
 }

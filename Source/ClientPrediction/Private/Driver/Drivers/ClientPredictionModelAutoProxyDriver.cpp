@@ -8,4 +8,8 @@ namespace ClientPrediction {
     CLIENTPREDICTION_API float ClientPredictionMaxTimeDilation = 0.01;
     FAutoConsoleVariableRef CVarClientPredictionMaxTimeDilation(TEXT("cp.MaxTimeDilation"), ClientPredictionMaxTimeDilation,
                                                                 TEXT("The maximum time dilation used by the auto proxies"));
+
+    CLIENTPREDICTION_API float ClientPredictionAuthorityCatchupTimescale = 0.1;
+    FAutoConsoleVariableRef CVarClientPredictionAuthorityCatchupTimescale(TEXT("cp.ClientPredictionAuthorityCatchupTimescale"), ClientPredictionAuthorityCatchupTimescale,
+                                                                TEXT("If the authority ever gets too far behind the auto proxy, this is the timescale that will be used for the auto proxy to allow the authority to catch back up"));
 }

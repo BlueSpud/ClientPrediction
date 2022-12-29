@@ -19,6 +19,7 @@ namespace ClientPrediction {
 
         virtual void EmitInputPackets(FNetSerializationProxy& Proxy) = 0;
         virtual void EmitReliableAuthorityState(FNetSerializationProxy& Proxy) = 0;
+        virtual void GetNetworkConditions(FNetworkConditions& NetworkConditions) const = 0;
     };
 
     // Interface
@@ -90,6 +91,7 @@ namespace ClientPrediction {
         virtual void SetTimeDilation(const Chaos::FReal TimeDilation) override final;
         virtual void ForceSimulate(const uint32 NumTicks) override final;
         virtual Chaos::FReal GetWorldTimeNoDilation() const override final;
+        virtual void GetNetworkConditions(FNetworkConditions& NetworkConditions) const override final;
 
         // IModelDriverDelegate
         virtual void GenerateInitialState(FStateWrapper<StateType>& State) override final;
@@ -256,6 +258,12 @@ namespace ClientPrediction {
         }
 
         return -1.0;
+    }
+
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::GetNetworkConditions(FNetworkConditions& NetworkConditions) const {
+        check(Delegate)
+        Delegate->GetNetworkConditions(NetworkConditions);
     }
 
     template <typename InputType, typename StateType, typename EventType>

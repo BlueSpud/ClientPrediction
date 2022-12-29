@@ -59,7 +59,7 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     Chaos::FRigidBodyHandle_Internal* FSimulatedModelDriver<InputType, StateType>::GetPhysicsHandle() const {
         FBodyInstance* BodyInstance = UpdatedComponent->GetBodyInstance();
-        check(BodyInstance)
+        if (BodyInstance == nullptr) { return nullptr; }
 
         Chaos::FRigidBodyHandle_Internal* PhysicsHandle = BodyInstance->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
         check(PhysicsHandle);
@@ -76,6 +76,11 @@ namespace ClientPrediction {
         CurrentState.InputPacketTickNumber = CurrentInput.PacketNumber;
 
         auto* Handle = GetPhysicsHandle();
+        if (Handle == nullptr) {
+            UE_LOG(LogTemp, Error, TEXT("Tried post-simulate without a valid physics handle"));
+            return;
+        }
+
         FPhysicsContext Context(Handle, UpdatedComponent);
         Delegate->SimulatePrePhysics(Dt, Context, CurrentInput.Body, LastState, CurrentState);
     }
@@ -83,6 +88,10 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     void FSimulatedModelDriver<InputType, StateType>::PostTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
         const auto Handle = GetPhysicsHandle();
+        if (Handle == nullptr) {
+            UE_LOG(LogTemp, Error, TEXT("Tried post-simulate without a valid physics handle"));
+            return;
+        }
 
         CurrentState.FillState(Handle);
         CurrentState.StartTime = StartTime;
@@ -113,7 +122,6 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     void FSimulatedModelDriver<InputType, StateType>::UpdateHistory(const FStateWrapper<StateType>& State) {
         FScopeLock EventQueueLock(&EventQueueMutex);
-
 
         FStateWrapper<StateType> PreviousHistoryState{};
         bool bEventQueueIsDirty = false;

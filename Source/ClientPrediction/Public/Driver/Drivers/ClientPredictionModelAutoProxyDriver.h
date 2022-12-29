@@ -6,12 +6,12 @@
 #include "Driver/ClientPredictionRepProxy.h"
 #include "Driver/Input/ClientPredictionInput.h"
 #include "ClientPredictionModelTypes.h"
+#include "World/ClientPredictionWorldManager.h"
 
 namespace ClientPrediction {
     extern CLIENTPREDICTION_API int32 ClientPredictionInputSlidingWindowSize;
     extern CLIENTPREDICTION_API float ClientPredictionMaxTimeDilation;
-
-    static constexpr Chaos::FReal kFastForwardTimescale = 2.0;
+    extern CLIENTPREDICTION_API float ClientPredictionAuthorityCatchupTimescale;
 
     template <typename InputType, typename StateType>
     class FModelAutoProxyDriver final : public FSimulatedModelDriver<InputType, StateType>, public IRewindCallback {
@@ -23,8 +23,10 @@ namespace ClientPrediction {
 
     private:
         void BindToRepProxy(FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep);
+
     public:
         virtual void ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) override;
+
     private:
         void QueueAuthorityState(const FStateWrapper<StateType>& State);
 
@@ -36,9 +38,6 @@ namespace ClientPrediction {
 
         virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) override;
         virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
-
-    private:
-        void FastForwardIfNeeded();
 
     public:
         virtual int32 GetRewindTickNumber(int32 CurrentTickNumber, const class Chaos::FRewindData& RewindData) override;
@@ -155,38 +154,50 @@ namespace ClientPrediction {
     void FModelAutoProxyDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
         InterpolateStateGameThread(SimTime, Dt);
 
-        const Chaos::FReal NewTimeDilation = 1.0 + LastControlPacket.GetTimeDilation() * ClientPredictionMaxTimeDilation;
-        Delegate->SetTimeDilation(NewTimeDilation);
-
-        FastForwardIfNeeded();
-    }
-
-    template <typename InputType, typename StateType>
-    void FModelAutoProxyDriver<InputType, StateType>::FastForwardIfNeeded() {
-        // If for some reason the auto proxy has fallen behind the authority, fast forward to catch back up.
+        Chaos::FReal NewTimeDilation = 1.0 + LastControlPacket.GetTimeDilation() * ClientPredictionMaxTimeDilation;
         int32 NumForceSimulatedTicks = 0;
+
         {
             FScopeLock Lock(&PendingAuthorityStatesMutex);
             if (!PendingAuthorityStates.IsEmpty()) {
                 const int32 LocalTickNumber = PendingAuthorityStates[0].InputPacketTickNumber;
-                const int32 LastTick = History.GetLatestTickNumber();
+                const int32 CurrentTickNumber = History.GetLatestTickNumber();
 
-                NumForceSimulatedTicks = LocalTickNumber > LastTick ? LocalTickNumber - LastTick : 0;
+                // If the auto proxy has fallen behind the authority, fast forward to catch back up.
+                if (LocalTickNumber > CurrentTickNumber) {
+                    FNetworkConditions NetConditions{};
+                    Delegate->GetNetworkConditions(NetConditions);
+
+                    // We simulate by a full RTT since the authority state we're getting the delta from is already 1/2 RTT old
+                    const int32 LatencyTicks = FMath::CeilToInt32((NetConditions.Latency + NetConditions.Jitter) / ClientPredictionFixedDt);
+                    NumForceSimulatedTicks = LocalTickNumber - CurrentTickNumber + LatencyTicks;
+                }
+
+                // If the auto proxy is far ahead of the authority, slow down time significantly so the authority can catch up
+                if (PendingAuthorityStates.Last().InputPacketTickNumber <= CurrentTickNumber - RewindBufferSize) {
+                    UE_LOG(LogTemp, Warning, TEXT("Auto proxy is too far ahead of the authority"));
+                    NewTimeDilation = ClientPredictionAuthorityCatchupTimescale;
+                }
             }
         }
 
-        // TODO this works fine for low-latency clients, but for clients with high latency we need to simulate additional ticks
-        // to compensate for that. Ideally, we would simulate to be 1/2 RTT ahead of the authority and then the size of the input buffer
-        // plus maybe a small fudge factor
         if (NumForceSimulatedTicks > 0) {
             UE_LOG(LogTemp, Warning, TEXT("Force simulating %d"), NumForceSimulatedTicks);
             Delegate->ForceSimulate(NumForceSimulatedTicks);
         }
+
+        Delegate->SetTimeDilation(NewTimeDilation);
     }
 
     template <typename InputType, typename StateType>
     int32 FModelAutoProxyDriver<InputType, StateType>::GetRewindTickNumber(int32 CurrentTickNumber, const Chaos::FRewindData& RewindData) {
         FScopeLock Lock(&PendingAuthorityStatesMutex);
+
+        // If the latest authority state is too old to reconcile with, just don't rewind. This will be handled by stopping the auto proxy
+        // to allow the authority to catch up.
+        if (!PendingAuthorityStates.IsEmpty() && PendingAuthorityStates.Last().InputPacketTickNumber <= CurrentTickNumber - RewindBufferSize) {
+            return INDEX_NONE;
+        }
 
         while (!PendingAuthorityStates.IsEmpty()) {
             const int32 AuthLocalTickNumber = PendingAuthorityStates[0].InputPacketTickNumber;
@@ -200,11 +211,6 @@ namespace ClientPrediction {
 
             const bool bStateHasInvalidTickNumber = AuthLocalTickNumber == INDEX_NONE;
             const bool bStateHasAlreadyBeenAcked = AuthLocalTickNumber <= LastAckedTick;
-
-            // TODO This may not be sufficient to cover this case. This scenario should only occur if the authority was to fall FAR behind the client
-            // but that can happen. There are a couple solutions that could be implemented:
-            // - Maintain a tick offset, rewind to the earliest tick in the buffer and adjust the offset as needed
-            // - Dilate time so the auto proxy isn't so far behind the authority, maybe even just completely skip some frames
             const bool bStateIsTooOld = AuthLocalTickNumber <= CurrentTickNumber - RewindBufferSize;
 
             if (bStateHasInvalidTickNumber || bStateHasAlreadyBeenAcked || bStateIsTooOld) { continue; }
