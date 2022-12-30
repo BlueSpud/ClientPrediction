@@ -73,7 +73,7 @@ namespace ClientPrediction {
     void FModelAutoProxyDriver<InputType, StateType>::BindToRepProxy(FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep) {
         AutoProxyRep.SerializeFunc = [&](FArchive& Ar) {
             FStateWrapper<StateType> State{};
-            State.NetSerialize(Ar);
+            State.NetSerialize(Ar, true);
 
             QueueAuthorityState(State);
         };

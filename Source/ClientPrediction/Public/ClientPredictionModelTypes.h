@@ -36,7 +36,7 @@ namespace ClientPrediction {
         float StartTime = 0.0;
         float EndTime = 0.0;
 
-        void NetSerialize(FArchive& Ar);
+        void NetSerialize(FArchive& Ar, bool bSerializeFullState);
         bool ShouldReconcile(const FStateWrapper& State) const;
 
         void FillState(const class Chaos::FRigidBodyHandle_Internal* Handle);
@@ -46,9 +46,10 @@ namespace ClientPrediction {
     };
 
     template <typename StateType>
-    void FStateWrapper<StateType>::NetSerialize(FArchive& Ar) {
+    void FStateWrapper<StateType>::NetSerialize(FArchive& Ar, bool bSerializeFullState) {
         Ar << TickNumber;
-        Ar << InputPacketTickNumber;
+        if (bSerializeFullState) { Ar << InputPacketTickNumber; }
+
         Ar << PhysicsState.ObjectState;
 
         // Serialize manually to make sure that they are serialized as doubles
@@ -69,8 +70,11 @@ namespace ClientPrediction {
         Ar << PhysicsState.W.Y;
         Ar << PhysicsState.W.Z;
 
-        Ar << Events;
-        Body.NetSerialize(Ar);
+        if (bSerializeFullState) {
+            Ar << Events;
+        }
+
+        Body.NetSerialize(Ar, bSerializeFullState);
     }
 
     template <typename StateType>

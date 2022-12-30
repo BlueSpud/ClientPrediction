@@ -112,8 +112,8 @@ namespace ClientPrediction {
     void FModelAuthDriver<InputType, StateType>::SendState(FStateWrapper<StateType> State) {
         if (State.TickNumber != INDEX_NONE && State.TickNumber != LastEmittedState) {
             if (State.Events == 0) {
-                AutoProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { State.NetSerialize(Ar); };
-                SimProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { State.NetSerialize(Ar); };
+                AutoProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { State.NetSerialize(Ar, true); };
+                SimProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { State.NetSerialize(Ar, false); };
 
                 AutoProxyRep.Dispatch();
                 SimProxyRep.Dispatch();

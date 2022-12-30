@@ -207,7 +207,7 @@ namespace ClientPrediction {
         if (ModelDriver == nullptr) { return; }
 
         FStateWrapper<StateType> State;
-        Proxy.NetSerializeFunc = [&](FArchive& Ar) { State.NetSerialize(Ar); };
+        Proxy.NetSerializeFunc = [&](FArchive& Ar) { State.NetSerialize(Ar, true); };
 
         Proxy.Deserialize();
         ModelDriver->ReceiveReliableAuthorityState(State);
@@ -234,7 +234,7 @@ namespace ClientPrediction {
         check(Delegate);
 
         FNetSerializationProxy Proxy;
-        Proxy.NetSerializeFunc = [=](FArchive& Ar) mutable { State.NetSerialize(Ar); };
+        Proxy.NetSerializeFunc = [=](FArchive& Ar) mutable { State.NetSerialize(Ar, true); };
         Delegate->EmitReliableAuthorityState(Proxy);
     }
 
