@@ -1,11 +1,17 @@
 ﻿#pragma once
 
+#include "ClientPredictionModelAuthDriver.h"
 #include "Driver/ClientPredictionModelDriver.h"
 #include "Driver/ClientPredictionRepProxy.h"
+#include "Logging/LogMacros.h"
 #include "World/ClientPredictionWorldManager.h"
 
 namespace ClientPrediction {
     extern CLIENTPREDICTION_API float ClientPredictionSimProxyDelay;
+    extern CLIENTPREDICTION_API float ClientPredictionSimProxyTimeDilationMargin;
+    extern CLIENTPREDICTION_API float ClientPredictionSimProxyAggressiveTimeDilationMargin;
+    extern CLIENTPREDICTION_API float ClientPredictionSimProxyTimeDilation;
+    extern CLIENTPREDICTION_API float ClientPredictionSimProxyAggressiveTimeDilation;
 
     template <typename InputType, typename StateType>
     class FModelSimProxyDriver final : public IModelDriver<InputType, StateType> {
@@ -27,10 +33,15 @@ namespace ClientPrediction {
 
     private:
         Chaos::FReal GetWorldDt();
-        Chaos::FReal GetTimeLeftInBuffer(Chaos::FReal Start) const;
         void GetInterpolatedStateAssumingStatesNotEmpty(Chaos::FReal DelayedTime, FStateWrapper<StateType>& OutState);
+
+        void DispatchEvents(Chaos::FReal StartTime, Chaos::FReal EndTime);
         void Finalize(Chaos::FReal Dt);
         void ApplyPhysicsState();
+
+        void UpdateTimescale(const Chaos::FReal DelayedTime);
+        Chaos::FReal GetTimeLeftInBuffer(Chaos::FReal Start) const;
+        void TrimStateBuffer(const Chaos::FReal DelayedTime);
 
     private:
         UPrimitiveComponent* UpdatedComponent = nullptr;
@@ -39,10 +50,10 @@ namespace ClientPrediction {
 
         /** This is the tick that was first received from the authority. */
         int32 StartingTick = INDEX_NONE;
-        Chaos::FReal StartTime = -1.0;
 
         /** If the buffer is empty this is the state that will be used. */
         FStateWrapper<StateType> LastState = {};
+        Chaos::FReal WorldStartTime = -1.0;
         Chaos::FReal LastWorldTime = -1.0;
 
         Chaos::FReal CurrentTime = 0.0;
@@ -83,25 +94,26 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelSimProxyDriver<InputType, StateType>::QueueState(const FStateWrapper<StateType>& State) {
+        FStateWrapper<StateType> StateWithTimes = State;
+        BuildStateTimes(StateWithTimes);
+
         if (StartingTick == INDEX_NONE) {
             StartingTick = State.TickNumber;
-
-            FStateWrapper<StateType> StateWithTimes = State;
-            BuildStateTimes(StateWithTimes);
             States.Add(StateWithTimes);
 
             return;
         }
 
-        // TODO Check if state is too old
+        // If the state is in the past, any events that were included need to be dispatched
+        if (StateWithTimes.StartTime <= CurrentTime) {
+            Delegate->DispatchEvents(StateWithTimes, StateWithTimes.Events);
+        }
+
         const bool bAlreadyHasState = States.ContainsByPredicate([&](const auto& Candidate) {
             return Candidate.TickNumber == State.TickNumber;
         });
 
         if (!bAlreadyHasState) {
-            FStateWrapper<StateType> StateWithTimes = State;
-            BuildStateTimes(StateWithTimes);
-
             States.Add(StateWithTimes);
             States.Sort([](const auto& A, const auto& B) { return A.TickNumber < B.TickNumber; });
         }
@@ -118,7 +130,10 @@ namespace ClientPrediction {
         if (StartingTick == INDEX_NONE) { return; }
 
         const Chaos::FReal WorldDt = GetWorldDt();
+        const Chaos::FReal LastTime = CurrentTime;
         CurrentTime += WorldDt * Timescale;
+
+        DispatchEvents(LastTime, CurrentTime);
 
         const Chaos::FReal DelayedTime = CurrentTime - ClientPredictionSimProxyDelay;
         if (States.IsEmpty()) {
@@ -128,16 +143,19 @@ namespace ClientPrediction {
 
         GetInterpolatedStateAssumingStatesNotEmpty(DelayedTime, LastState);
         Finalize(WorldDt);
+
+        UpdateTimescale(DelayedTime);
+        TrimStateBuffer(DelayedTime);
     }
 
     template <typename InputType, typename StateType>
     Chaos::FReal FModelSimProxyDriver<InputType, StateType>::GetWorldDt() {
         const Chaos::FReal AbsoluteWorldTime = Delegate->GetWorldTimeNoDilation();
-        Chaos::FReal WorldTime = AbsoluteWorldTime - StartTime;
+        Chaos::FReal WorldTime = AbsoluteWorldTime - WorldStartTime;
 
-        if (StartTime == -1.0) {
-            StartTime = AbsoluteWorldTime;
-            LastWorldTime = StartTime;
+        if (WorldStartTime == -1.0) {
+            WorldStartTime = AbsoluteWorldTime;
+            LastWorldTime = WorldStartTime;
 
             WorldTime = 0.0;
         }
@@ -147,16 +165,6 @@ namespace ClientPrediction {
         LastWorldTime = WorldTime;
 
         return WorldDt;
-    }
-
-    template <typename InputType, typename StateType>
-    Chaos::FReal FModelSimProxyDriver<InputType, StateType>::GetTimeLeftInBuffer(Chaos::FReal Start) const {
-        if (States.IsEmpty()) { return 0.0; }
-
-        const FStateWrapper<StateType>& LastState = States.Last();
-        if (LastState.EndTime <= Start) { return 0.0; }
-
-        return LastState.EndTime - Start;
     }
 
     template <typename InputType, typename StateType>
@@ -189,6 +197,15 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType>
+    void FModelSimProxyDriver<InputType, StateType>::DispatchEvents(Chaos::FReal StartTime, Chaos::FReal EndTime) {
+        for (const FStateWrapper<StateType>& State : States) {
+            if (State.StartTime > StartTime && State.EndTime <= EndTime) {
+                Delegate->DispatchEvents(State, State.Events);
+            }
+        }
+    }
+
+    template <typename InputType, typename StateType>
     void FModelSimProxyDriver<InputType, StateType>::Finalize(Chaos::FReal Dt) {
         ApplyPhysicsState();
         Delegate->Finalize(LastState.Body, Dt);
@@ -202,5 +219,48 @@ namespace ClientPrediction {
         Handle.SetObjectState(Chaos::EObjectStateType::Static);
         Handle.SetX(LastState.PhysicsState.X);
         Handle.SetR(LastState.PhysicsState.R);
+    }
+
+    template <typename InputType, typename StateType>
+    void FModelSimProxyDriver<InputType, StateType>::UpdateTimescale(const Chaos::FReal DelayedTime) {
+        const Chaos::FReal TimeLeftInBuffer = GetTimeLeftInBuffer(DelayedTime);
+        const Chaos::FReal PercentageDifference = (TimeLeftInBuffer - ClientPredictionSimProxyDelay) / ClientPredictionSimProxyDelay;
+
+        Chaos::FReal TargetTimescale = 1.0;
+        if (PercentageDifference >= ClientPredictionSimProxyTimeDilationMargin) {
+            TargetTimescale = 1.0 + (PercentageDifference >= ClientPredictionSimProxyAggressiveTimeDilationMargin
+                                         ? ClientPredictionSimProxyAggressiveTimeDilation
+                                         : ClientPredictionSimProxyTimeDilation);
+        }
+
+        if (PercentageDifference <= ClientPredictionSimProxyTimeDilationMargin) {
+            TargetTimescale = 1.0 - (PercentageDifference <= ClientPredictionSimProxyAggressiveTimeDilationMargin
+                                         ? ClientPredictionSimProxyAggressiveTimeDilation
+                                         : ClientPredictionSimProxyTimeDilation);
+        }
+
+        Timescale = FMath::Lerp(Timescale, TargetTimescale, ClientPredictionTimeDilationAlpha);
+    }
+
+    template <typename InputType, typename StateType>
+    Chaos::FReal FModelSimProxyDriver<InputType, StateType>::GetTimeLeftInBuffer(Chaos::FReal Start) const {
+        if (States.IsEmpty()) { return 0.0; }
+
+        const FStateWrapper<StateType>& LastBufferState = States.Last();
+        if (LastBufferState.EndTime <= Start) { return 0.0; }
+
+        return LastBufferState.EndTime - Start;
+    }
+
+    template <typename InputType, typename StateType>
+    void FModelSimProxyDriver<InputType, StateType>::TrimStateBuffer(const Chaos::FReal DelayedTime) {
+        while (States.Num() > 1) {
+            // If time has progressed past the end time of the next state, then the first state in the buffer is no longer
+            // needed for interpolation and can be removed.
+            if (States[1].EndTime < DelayedTime) {
+                States.RemoveAt(0);
+            }
+            else { break; }
+        }
     }
 }

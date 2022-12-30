@@ -82,7 +82,7 @@ namespace ClientPrediction {
         DroppedInputPacketIndices.Add(ExpectedPacketNumber);
         OutPacket = LastInputPacket;
 
-        UE_LOG(LogTemp, Error, TEXT("Dropped input packet %d (buffer size: %d)"), ExpectedPacketNumber, InputPackets.Num());
+        // UE_LOG(LogTemp, Error, TEXT("Dropped input packet %d (buffer size: %d)"), ExpectedPacketNumber, InputPackets.Num());
     }
 
     template <typename InputType>
