@@ -26,7 +26,11 @@ namespace ClientPrediction {
         virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
 
     private:
+        Chaos::FReal GetWorldDt();
+        Chaos::FReal GetTimeLeftInBuffer(Chaos::FReal Start) const;
         void GetInterpolatedStateAssumingStatesNotEmpty(Chaos::FReal DelayedTime, FStateWrapper<StateType>& OutState);
+        void Finalize(Chaos::FReal Dt);
+        void ApplyPhysicsState();
 
     private:
         UPrimitiveComponent* UpdatedComponent = nullptr;
@@ -39,7 +43,10 @@ namespace ClientPrediction {
 
         /** If the buffer is empty this is the state that will be used. */
         FStateWrapper<StateType> LastState = {};
-        Chaos::FReal LastTime = -1.0;
+        Chaos::FReal LastWorldTime = -1.0;
+
+        Chaos::FReal CurrentTime = 0.0;
+        Chaos::FReal Timescale = 1.0;
     };
 
     template <typename InputType, typename StateType>
@@ -110,37 +117,46 @@ namespace ClientPrediction {
     void FModelSimProxyDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
         if (StartingTick == INDEX_NONE) { return; }
 
+        const Chaos::FReal WorldDt = GetWorldDt();
+        CurrentTime += WorldDt * Timescale;
+
+        const Chaos::FReal DelayedTime = CurrentTime - ClientPredictionSimProxyDelay;
+        if (States.IsEmpty()) {
+            Finalize(WorldDt);
+            return;
+        }
+
+        GetInterpolatedStateAssumingStatesNotEmpty(DelayedTime, LastState);
+        Finalize(WorldDt);
+    }
+
+    template <typename InputType, typename StateType>
+    Chaos::FReal FModelSimProxyDriver<InputType, StateType>::GetWorldDt() {
         const Chaos::FReal AbsoluteWorldTime = Delegate->GetWorldTimeNoDilation();
         Chaos::FReal WorldTime = AbsoluteWorldTime - StartTime;
+
         if (StartTime == -1.0) {
             StartTime = AbsoluteWorldTime;
-            LastTime = StartTime;
+            LastWorldTime = StartTime;
 
             WorldTime = 0.0;
         }
 
         // We don't use the delta from the function call because that is subject to physics time dilation
-        const Chaos::FReal WorldDt = WorldTime - LastTime;
-        LastTime = WorldTime;
+        const Chaos::FReal WorldDt = WorldTime - LastWorldTime;
+        LastWorldTime = WorldTime;
 
-        if (States.IsEmpty()) {
-            Delegate->Finalize(LastState.Body, WorldDt);
-            return;
-        }
+        return WorldDt;
+    }
 
-        const Chaos::FReal DelayedTime = WorldTime - ClientPredictionSimProxyDelay;
+    template <typename InputType, typename StateType>
+    Chaos::FReal FModelSimProxyDriver<InputType, StateType>::GetTimeLeftInBuffer(Chaos::FReal Start) const {
+        if (States.IsEmpty()) { return 0.0; }
 
-        FStateWrapper<StateType> InterpolatedState;
-        GetInterpolatedStateAssumingStatesNotEmpty(DelayedTime, InterpolatedState);
+        const FStateWrapper<StateType>& LastState = States.Last();
+        if (LastState.EndTime <= Start) { return 0.0; }
 
-        check(UpdatedComponent);
-        Chaos::FRigidBodyHandle_External& Handle = UpdatedComponent->BodyInstance.ActorHandle->GetGameThreadAPI();
-        Handle.SetObjectState(Chaos::EObjectStateType::Static);
-        Handle.SetX(LastState.PhysicsState.X);
-        Handle.SetR(LastState.PhysicsState.R);
-
-        Delegate->Finalize(InterpolatedState.Body, WorldDt);
-        LastState = InterpolatedState;
+        return LastState.EndTime - Start;
     }
 
     template <typename InputType, typename StateType>
@@ -170,5 +186,21 @@ namespace ClientPrediction {
         }
 
         OutState = States.Last();
+    }
+
+    template <typename InputType, typename StateType>
+    void FModelSimProxyDriver<InputType, StateType>::Finalize(Chaos::FReal Dt) {
+        ApplyPhysicsState();
+        Delegate->Finalize(LastState.Body, Dt);
+    }
+
+    template <typename InputType, typename StateType>
+    void FModelSimProxyDriver<InputType, StateType>::ApplyPhysicsState() {
+        check(UpdatedComponent);
+
+        Chaos::FRigidBodyHandle_External& Handle = UpdatedComponent->BodyInstance.ActorHandle->GetGameThreadAPI();
+        Handle.SetObjectState(Chaos::EObjectStateType::Static);
+        Handle.SetX(LastState.PhysicsState.X);
+        Handle.SetR(LastState.PhysicsState.R);
     }
 }
