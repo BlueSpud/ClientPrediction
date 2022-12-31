@@ -77,9 +77,11 @@ namespace ClientPrediction {
          */
         virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, const InputType& Input, const StateType& PrevState, SimOutput& OutState) = 0;
 
+        /** Performs any additional setup for the initial simulation state. */
+        virtual void GenerateInitialState(StateType& State) const {};
+
         // FPhysicsModelBase
         virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) override final;
-        virtual void Finalize(const StateType& State, Chaos::FReal Dt) override final;
 
         virtual ~FPhysicsModel() override = default;
         virtual void Cleanup() override final;
@@ -95,6 +97,7 @@ namespace ClientPrediction {
 
         // IModelDriverDelegate
         virtual void GenerateInitialState(FStateWrapper<StateType>& State) override final;
+        virtual void Finalize(const StateType& State, Chaos::FReal Dt) override final;
 
         virtual void EmitInputPackets(TArray<FInputPacketWrapper<InputType>>& Packets) override final;
         virtual void EmitReliableAuthorityState(FStateWrapper<StateType> State) override final;
@@ -217,7 +220,21 @@ namespace ClientPrediction {
     void FPhysicsModel<InputType, StateType, EventType>::GenerateInitialState(FStateWrapper<StateType>& State) {
         State = {};
 
-        // TODO Actually generate initial state
+        check(CachedComponent)
+        const auto& ActorHandle = CachedComponent->BodyInstance.GetPhysicsActorHandle();
+
+        if (ActorHandle != nullptr) {
+            const auto& Handle = ActorHandle->GetGameThreadAPI();
+
+            State.PhysicsState.ObjectState = Handle.ObjectState();
+
+            State.PhysicsState.X = Handle.X();
+            State.PhysicsState.V = Handle.V();
+            State.PhysicsState.R = Handle.R();
+            State.PhysicsState.W = Handle.W();
+        }
+
+        GenerateInitialState(State.Body);
     }
 
     template <typename InputType, typename StateType, typename EventType>

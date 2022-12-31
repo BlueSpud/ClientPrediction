@@ -1,18 +1,18 @@
 {
 	"FileVersion": 3,
-	"Version": 1,
-	"VersionName": "1.0",
+	"Version": 2,
+	"VersionName": "v0.2",
 	"FriendlyName": "ClientPrediction",
 	"Description": "Client Physics Prediction",
 	"Category": "Other",
-	"CreatedBy": "Logan",
+	"CreatedBy": "BlueSpud",
 	"CreatedByURL": "",
 	"DocsURL": "",
 	"MarketplaceURL": "",
 	"SupportURL": "",
 	"CanContainContent": true,
-	"IsBetaVersion": true,
-	"IsExperimentalVersion": false,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": true,
 	"Installed": false,
 	"Modules": [
 		{
