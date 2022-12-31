@@ -68,14 +68,14 @@ namespace ClientPrediction {
          * WARNING: This is called on the physics thread, so any objects shared between the physics thread and the
          * game thread need to be properly synchronized.
          */
-        virtual void SimulatePrePhysics(Chaos::FReal Dt, FPhysicsContext& Context, const InputType& Input, const StateType& PrevState, SimOutput& OutState) = 0;
+        virtual void SimulatePrePhysics(Chaos::FReal Dt, FPhysicsContext& Context, const InputType& Input, const StateType& PrevState, SimOutput& Output) = 0;
 
         /**
          * Simulates the model after physics has been run for this ticket.
          * WARNING: This is called on the physics thread, so any objects shared between the physics thread and the
          * game thread need to be properly synchronized.
          */
-        virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, const InputType& Input, const StateType& PrevState, SimOutput& OutState) = 0;
+        virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, const InputType& Input, const StateType& PrevState, SimOutput& Output) = 0;
 
         /** Performs any additional setup for the initial simulation state. */
         virtual void GenerateInitialState(StateType& State) const {};

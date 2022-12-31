@@ -78,7 +78,7 @@ namespace ClientPrediction {
             return;
         }
 
-        FPhysicsContext Context(Handle, UpdatedComponent);
+        FPhysicsContext Context(Handle, UpdatedComponent, {LastState.PhysicsState.R, LastState.PhysicsState.X});
         Delegate->SimulatePrePhysics(Dt, Context, CurrentInput.Body, LastState, CurrentState);
     }
 
@@ -94,7 +94,7 @@ namespace ClientPrediction {
         CurrentState.StartTime = StartTime;
         CurrentState.EndTime = EndTime;
 
-        const FPhysicsContext Context(Handle, UpdatedComponent);
+        const FPhysicsContext Context(Handle, UpdatedComponent, {LastState.PhysicsState.R, LastState.PhysicsState.X});
         Delegate->SimulatePostPhysics(Dt, Context, CurrentInput.Body, LastState, CurrentState);
 
         UpdateHistory(CurrentState);
