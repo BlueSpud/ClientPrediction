@@ -61,10 +61,7 @@ namespace ClientPrediction {
         FBodyInstance* BodyInstance = UpdatedComponent->GetBodyInstance();
         if (BodyInstance == nullptr) { return nullptr; }
 
-        Chaos::FRigidBodyHandle_Internal* PhysicsHandle = BodyInstance->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
-        check(PhysicsHandle);
-
-        return PhysicsHandle;
+        return BodyInstance->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
     }
 
     template <typename InputType, typename StateType>

@@ -94,15 +94,14 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelSimProxyDriver<InputType, StateType>::QueueState(const FStateWrapper<StateType>& State) {
+        if (StartingTick == INDEX_NONE) {
+            StartingTick = State.TickNumber;
+        }
+
         FStateWrapper<StateType> StateWithTimes = State;
         BuildStateTimes(StateWithTimes);
 
-        if (StartingTick == INDEX_NONE) {
-            StartingTick = State.TickNumber;
-            States.Add(StateWithTimes);
-
-            return;
-        }
+        UE_LOG(LogTemp, Warning, TEXT("%d"), StateWithTimes.TickNumber);
 
         // If the state is in the past, any events that were included need to be dispatched
         if (StateWithTimes.StartTime <= CurrentTime) {
