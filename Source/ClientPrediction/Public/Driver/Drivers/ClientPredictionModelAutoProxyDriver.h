@@ -150,8 +150,8 @@ namespace ClientPrediction {
         PendingCorrection.Reconcile(PhysicsHandle);
         PendingPhysicsCorrectionFrame = INDEX_NONE;
 
-        LastState = PendingCorrection;
-        UpdateHistory(LastState);
+        CurrentState = PendingCorrection;
+        UpdateHistory(CurrentState);
     }
 
     template <typename InputType, typename StateType>

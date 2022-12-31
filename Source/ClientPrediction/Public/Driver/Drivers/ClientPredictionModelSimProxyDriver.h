@@ -212,7 +212,10 @@ namespace ClientPrediction {
     void FModelSimProxyDriver<InputType, StateType>::ApplyPhysicsState() {
         check(UpdatedComponent);
 
-        Chaos::FRigidBodyHandle_External& Handle = UpdatedComponent->BodyInstance.ActorHandle->GetGameThreadAPI();
+        const FPhysicsActorHandle ActorHandle = UpdatedComponent->BodyInstance.ActorHandle;
+        if (ActorHandle == nullptr) { return; }
+
+        Chaos::FRigidBodyHandle_External& Handle = ActorHandle->GetGameThreadAPI();
         Handle.SetObjectState(Chaos::EObjectStateType::Static);
         Handle.SetX(LastState.PhysicsState.X);
         Handle.SetR(LastState.PhysicsState.R);
