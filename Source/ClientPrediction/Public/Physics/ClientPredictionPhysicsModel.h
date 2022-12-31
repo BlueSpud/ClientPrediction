@@ -101,7 +101,8 @@ namespace ClientPrediction {
 
         virtual void EmitInputPackets(TArray<FInputPacketWrapper<InputType>>& Packets) override final;
         virtual void EmitReliableAuthorityState(FStateWrapper<StateType> State) override final;
-        virtual void ProduceInput(FInputPacketWrapper<InputType>& Packet) override final;
+        virtual void ProduceInput(InputType& Packet) override final;
+        virtual void ModifyInputPhysicsThread(InputType& Packet, const FStateWrapper<StateType>& State, Chaos::FReal Dt) override final;
 
         virtual void SimulatePrePhysics(Chaos::FReal Dt, FPhysicsContext& Context, const InputType& Input, const FStateWrapper<StateType>& PrevState,
                                         FStateWrapper<StateType>& OutState) override final;
@@ -114,6 +115,13 @@ namespace ClientPrediction {
     public:
         DECLARE_DELEGATE_OneParam(FPhysicsModelProduceInput, InputType&)
         FPhysicsModelProduceInput ProduceInputDelegate;
+
+        /**
+         * This delegate will be executed on the PHYSICS THREAD and can be used to modify input packets using the current state of the simulation.
+         * This will be called ONLY ONCE per input packet, and any changes made an an auto proxy will also be sent to the authority.
+         */
+        DECLARE_DELEGATE_FourParams(FPhysicsModelModifyInputPhysicsThread, InputType& Packet, const StateType& State, const FPhysicsState& PhysicsState, Chaos::FReal Dt)
+        FPhysicsModelModifyInputPhysicsThread ModifyInputPhysicsThreadDelegate;
 
         DECLARE_DELEGATE_TwoParams(FPhysicsModelFinalize, const StateType&, Chaos::FReal Dt)
         FPhysicsModelFinalize FinalizeDelegate;
@@ -284,8 +292,13 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType, typename EventType>
-    void FPhysicsModel<InputType, StateType, EventType>::ProduceInput(FInputPacketWrapper<InputType>& Packet) {
-        ProduceInputDelegate.ExecuteIfBound(Packet.Body);
+    void FPhysicsModel<InputType, StateType, EventType>::ProduceInput(InputType& Packet) {
+        ProduceInputDelegate.ExecuteIfBound(Packet);
+    }
+
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::ModifyInputPhysicsThread(InputType& Packet, const FStateWrapper<StateType>& State, Chaos::FReal Dt) {
+        ModifyInputPhysicsThreadDelegate.ExecuteIfBound(Packet, State.Body, State.PhysicsState, Dt);
     }
 
     template <typename InputType, typename StateType, typename EventType>

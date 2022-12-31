@@ -101,8 +101,6 @@ namespace ClientPrediction {
         FStateWrapper<StateType> StateWithTimes = State;
         BuildStateTimes(StateWithTimes);
 
-        UE_LOG(LogTemp, Warning, TEXT("%d"), StateWithTimes.TickNumber);
-
         // If the state is in the past, any events that were included need to be dispatched
         if (StateWithTimes.StartTime <= CurrentTime) {
             Delegate->DispatchEvents(StateWithTimes, StateWithTimes.Events);

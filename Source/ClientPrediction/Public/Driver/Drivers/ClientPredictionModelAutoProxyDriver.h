@@ -39,6 +39,9 @@ namespace ClientPrediction {
         virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) override;
         virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
 
+    private:
+        void EmitInputs();
+
     public:
         virtual int32 GetRewindTickNumber(int32 CurrentTickNumber, const class Chaos::FRewindData& RewindData) override;
 
@@ -53,8 +56,11 @@ namespace ClientPrediction {
         TArray<FStateWrapper<StateType>> PendingAuthorityStates; // Written to from the game thread, read by the physics thread
         int32 LastAckedTick = INDEX_NONE; // Only used on the physics thread but might be used on the game thread later
 
-        // Game thread
-        TArray<FInputPacketWrapper<InputType>> InputSlidingWindow;
+        FCriticalSection InputSendMutex;
+        int32 LastModifiedInputPacket = INDEX_NONE; // Only used on physics thread
+        TQueue<FInputPacketWrapper<InputType>> InputSendQueue; // Written to from the physics, read by the game thread
+        TArray<FInputPacketWrapper<InputType>> InputSlidingWindow; // Only used on game thread
+
         FControlPacket LastControlPacket{};
     };
 
@@ -111,17 +117,9 @@ namespace ClientPrediction {
     void FModelAutoProxyDriver<InputType, StateType>::PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) {
         FInputPacketWrapper<InputType> Packet;
         Packet.PacketNumber = TickNumber;
-        Delegate->ProduceInput(Packet);
+        Delegate->ProduceInput(Packet.Body);
 
         InputBuf.QueueInputPacket(Packet);
-
-        // Bundle the new packet up with the most recent inputs and send it to the authority
-        InputSlidingWindow.Add(Packet);
-        while (InputSlidingWindow.Num() > ClientPredictionInputSlidingWindowSize) {
-            InputSlidingWindow.RemoveAt(0);
-        }
-
-        Delegate->EmitInputPackets(InputSlidingWindow);
     }
 
     template <typename InputType, typename StateType>
@@ -129,6 +127,17 @@ namespace ClientPrediction {
         ApplyCorrectionIfNeeded(TickNumber);
 
         check(InputBuf.InputForTick(TickNumber, CurrentInput))
+
+        // We guard against modifying packets older than LastModifiedInputPacket, so that they can't be re-modified during a resim.
+        // Once the packet has been modified once, it is considered final and can be sent to the authority.
+        if (LastModifiedInputPacket < CurrentInput.PacketNumber) {
+            Delegate->ModifyInputPhysicsThread(CurrentInput.Body, CurrentState, Dt);
+            LastModifiedInputPacket = CurrentInput.PacketNumber;
+
+            FScopeLock Lock(&InputSendMutex);
+            InputSendQueue.Enqueue(CurrentInput);
+        }
+
         PreTickSimulateWithCurrentInput(TickNumber, Dt);
     }
 
@@ -152,6 +161,8 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
+        EmitInputs();
+
         InterpolateStateGameThread(SimTime, Dt);
 
         Chaos::FReal NewTimeDilation = 1.0 + LastControlPacket.GetTimeDilation() * ClientPredictionMaxTimeDilation;
@@ -187,6 +198,25 @@ namespace ClientPrediction {
         }
 
         Delegate->SetTimeDilation(NewTimeDilation);
+    }
+
+    template <typename InputType, typename StateType>
+    void FModelAutoProxyDriver<InputType, StateType>::EmitInputs() {
+        FScopeLock Lock(&InputSendMutex);
+
+        while (!InputSendQueue.IsEmpty()) {
+            FInputPacketWrapper<InputType> Packet;
+            InputSendQueue.Peek(Packet);
+            InputSendQueue.Pop();
+
+            // Bundle the new packet up with the most recent inputs and send it to the authority
+            InputSlidingWindow.Add(Packet);
+            while (InputSlidingWindow.Num() > ClientPredictionInputSlidingWindowSize) {
+                InputSlidingWindow.RemoveAt(0);
+            }
+
+            Delegate->EmitInputPackets(InputSlidingWindow);
+        }
     }
 
     template <typename InputType, typename StateType>

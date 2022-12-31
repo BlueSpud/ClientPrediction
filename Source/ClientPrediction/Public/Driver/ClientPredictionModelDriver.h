@@ -17,7 +17,8 @@ namespace ClientPrediction {
 
         virtual void EmitInputPackets(TArray<FInputPacketWrapper<InputType>>& Packets) = 0;
         virtual void EmitReliableAuthorityState(FStateWrapper<StateType> State) = 0;
-        virtual void ProduceInput(FInputPacketWrapper<InputType>& Packet) = 0;
+        virtual void ProduceInput(InputType& Packet) = 0;
+        virtual void ModifyInputPhysicsThread(InputType& Packet, const FStateWrapper<StateType>& State, Chaos::FReal Dt) = 0;
 
         virtual void SetTimeDilation(const Chaos::FReal TimeDilation) = 0;
         virtual void ForceSimulate(const uint32 NumTicks) = 0;

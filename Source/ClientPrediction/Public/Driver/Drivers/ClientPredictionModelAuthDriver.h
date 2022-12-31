@@ -65,7 +65,7 @@ namespace ClientPrediction {
         if (bTakesInput) {
             FInputPacketWrapper<InputType> Packet;
             Packet.PacketNumber = TickNumber;
-            Delegate->ProduceInput(Packet);
+            Delegate->ProduceInput(Packet.Body);
 
             InputBuf.QueueInputPackets({Packet});
         }
@@ -77,6 +77,7 @@ namespace ClientPrediction {
             InputBuf.GetNextInputPacket(CurrentInput);
         }
 
+        if (bTakesInput) { Delegate->ModifyInputPhysicsThread(CurrentInput.Body, CurrentState, Dt); }
         PreTickSimulateWithCurrentInput(TickNumber, Dt);
     }
 
