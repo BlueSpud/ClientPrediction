@@ -5,6 +5,7 @@
 #include "Physics/ClientPredictionPhysicsContext.h"
 #include "Driver/Input/ClientPredictionInput.h"
 #include "ClientPredictionModelTypes.h"
+#include "World/ClientPredictionWorldManager.h"
 
 namespace ClientPrediction {
     template <typename InputType, typename StateType>
@@ -37,9 +38,21 @@ namespace ClientPrediction {
     class IModelDriver : public ITickCallback {
     public:
         virtual ~IModelDriver() override = default;
+        virtual void Register(struct FWorldManager* WorldManager);
+        virtual void Unregister(struct FWorldManager* WorldManager);
 
         // Input packet / state receiving
         virtual void ReceiveInputPackets(const TArray<FInputPacketWrapper<InputType>>& Packets) {}
         virtual void ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) {}
     };
+
+    template <typename InputType, typename StateType>
+    void IModelDriver<InputType, StateType>::Register(FWorldManager* WorldManager) {
+        WorldManager->AddTickCallback(this);
+    }
+
+    template <typename InputType, typename StateType>
+    void IModelDriver<InputType, StateType>::Unregister(FWorldManager* WorldManager) {
+        WorldManager->RemoveTickCallback(this);
+    }
 }

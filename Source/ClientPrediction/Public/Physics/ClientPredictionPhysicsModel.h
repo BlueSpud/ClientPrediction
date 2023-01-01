@@ -162,7 +162,7 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::Cleanup() {
         if (CachedWorldManager != nullptr && ModelDriver != nullptr) {
-            CachedWorldManager->RemoveCallback(ModelDriver.Get());
+           ModelDriver->Unregister(CachedWorldManager);
         }
 
         CachedWorldManager = nullptr;
@@ -177,7 +177,7 @@ namespace ClientPrediction {
         check(Delegate)
 
         if (ModelDriver != nullptr) {
-            CachedWorldManager->RemoveCallback(ModelDriver.Get());
+            ModelDriver->Unregister(CachedWorldManager);
         }
 
         int32 RewindBufferSize = CachedWorldManager->GetRewindBufferSize();
@@ -187,9 +187,7 @@ namespace ClientPrediction {
                                                                              bShouldTakeInput);
             break;
         case ROLE_AutonomousProxy: {
-            auto NewDriver = MakeUnique<FModelAutoProxyDriver<InputType, StateType>>(CachedComponent, this, AutoProxyRep, ControlProxyRep, RewindBufferSize);
-            CachedWorldManager->AddRewindCallback(NewDriver.Get());
-            ModelDriver = MoveTemp(NewDriver);
+            ModelDriver = MakeUnique<FModelAutoProxyDriver<InputType, StateType>>(CachedComponent, this, AutoProxyRep, ControlProxyRep, RewindBufferSize);
         }
         break;
         case ROLE_SimulatedProxy:
@@ -199,7 +197,7 @@ namespace ClientPrediction {
             break;
         }
 
-        CachedWorldManager->AddTickCallback(ModelDriver.Get());
+        ModelDriver->Register(CachedWorldManager);
     }
 
     template <typename InputType, typename StateType, typename EventType>

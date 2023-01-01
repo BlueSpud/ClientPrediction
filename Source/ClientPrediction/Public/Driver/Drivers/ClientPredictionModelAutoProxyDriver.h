@@ -21,6 +21,9 @@ namespace ClientPrediction {
 
         virtual ~FModelAutoProxyDriver() override = default;
 
+        virtual void Register(struct FWorldManager* WorldManager) override;
+        virtual void Unregister(struct FWorldManager* WorldManager) override;
+
     private:
         void BindToRepProxy(FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep);
 
@@ -73,6 +76,18 @@ namespace ClientPrediction {
                                                                        int32 RewindBufferSize) :
         FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), RewindBufferSize(RewindBufferSize) {
         BindToRepProxy(AutoProxyRep, ControlProxyRep);
+    }
+
+    template <typename InputType, typename StateType>
+    void FModelAutoProxyDriver<InputType, StateType>::Register(FWorldManager* WorldManager) {
+        FSimulatedModelDriver<InputType, StateType>::Register(WorldManager);
+        WorldManager->AddRewindCallback(this);
+    }
+
+    template <typename InputType, typename StateType>
+    void FModelAutoProxyDriver<InputType, StateType>::Unregister(FWorldManager* WorldManager) {
+        FSimulatedModelDriver<InputType, StateType>::Unregister(WorldManager);
+        WorldManager->RemoveRewindCallback(this);
     }
 
     template <typename InputType, typename StateType>

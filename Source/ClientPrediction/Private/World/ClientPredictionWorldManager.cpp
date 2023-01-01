@@ -18,10 +18,12 @@ namespace ClientPrediction {
                                                                    "physics ticks to stay relatively in-sync with the server, and should probably remain untouched."));
 
     CLIENTPREDICTION_API int32 ClientPredictionHistoryTimeMs = 500;
-    FAutoConsoleVariableRef CVarClientPredictionHistoryTimeMs(TEXT("cp.RewindHistoryTime"), ClientPredictionHistoryTimeMs, TEXT("The amount of time (in ms) to store for rewind"));
+    FAutoConsoleVariableRef CVarClientPredictionHistoryTimeMs(TEXT("cp.RewindHistoryTime"), ClientPredictionHistoryTimeMs,
+                                                              TEXT("The amount of time (in ms) to store for rewind"));
 
     CLIENTPREDICTION_API int32 ClientPredictionMaxForcedSimulationTicks = 50;
-    FAutoConsoleVariableRef CVarClientPredictionMaxForcedSimulationTicks(TEXT("cp.MaxForceSimulationTicks"), ClientPredictionMaxForcedSimulationTicks, TEXT("The maximum number of forced simulation ticks"));
+    FAutoConsoleVariableRef CVarClientPredictionMaxForcedSimulationTicks(
+        TEXT("cp.MaxForceSimulationTicks"), ClientPredictionMaxForcedSimulationTicks, TEXT("The maximum number of forced simulation ticks"));
 
     TMap<UWorld*, FWorldManager*> FWorldManager::Managers;
 
@@ -85,19 +87,26 @@ namespace ClientPrediction {
         PostPhysSceneTickDelegate = PhysScene->OnPhysScenePostTick.AddRaw(this, &FWorldManager::OnPhysScenePostTick);
     }
 
-    void FWorldManager::AddTickCallback(ITickCallback* Callback) { TickCallbacks.Add(Callback); }
+    void FWorldManager::AddTickCallback(ITickCallback* Callback) {
+        FScopeLock Lock(&CallbacksMutex);
+        TickCallbacks.Add(Callback);
+    }
+
+    void FWorldManager::RemoveTickCallback(ITickCallback* Callback) {
+        FScopeLock Lock(&CallbacksMutex);
+        if (TickCallbacks.Contains(Callback)) {
+            TickCallbacks.Remove(Callback);
+        }
+    }
 
     void FWorldManager::AddRewindCallback(IRewindCallback* Callback) {
+        FScopeLock Lock(&CallbacksMutex);
         RewindCallback = Callback;
     }
 
-    void FWorldManager::RemoveCallback(const void* Callback) {
-        const auto* TickCallback = static_cast<const ITickCallback*>(Callback);
-        if (TickCallbacks.Contains(TickCallback)) {
-            TickCallbacks.Remove(TickCallback);
-        }
-
-        if (RewindCallback == static_cast<const IRewindCallback*>(Callback)) {
+    void FWorldManager::RemoveRewindCallback(IRewindCallback* Callback) {
+        FScopeLock Lock(&CallbacksMutex);
+        if (RewindCallback == Callback) {
             RewindCallback = nullptr;
         }
     }
@@ -154,6 +163,7 @@ namespace ClientPrediction {
     void FWorldManager::ProcessInputs_External(int32 PhysicsStep) {
         const Chaos::FReal Dt = Solver->GetLastDt();
 
+        FScopeLock Lock(&CallbacksMutex);
         for (ITickCallback* Callback : TickCallbacks) {
             Callback->PrepareTickGameThread(PhysicsStep, Dt);
         }
@@ -162,6 +172,7 @@ namespace ClientPrediction {
     void FWorldManager::ProcessInputs_Internal(int32 PhysicsStep) {
         const Chaos::FReal Dt = Solver->GetLastDt();
 
+        FScopeLock Lock(&CallbacksMutex);
         for (ITickCallback* Callback : TickCallbacks) {
             Callback->PreTickPhysicsThread(PhysicsStep, Dt);
         }
@@ -173,6 +184,7 @@ namespace ClientPrediction {
     void FWorldManager::PostAdvance_Internal(Chaos::FReal Dt) {
         const Chaos::FReal TickEndTime = CachedSolverStartTime + Dt;
 
+        FScopeLock Lock(&CallbacksMutex);
         for (ITickCallback* Callback : TickCallbacks) {
             Callback->PostTickPhysicsThread(CachedLastTickNumber, Dt, CachedSolverStartTime, TickEndTime);
         }
@@ -184,6 +196,7 @@ namespace ClientPrediction {
         const Chaos::FReal Dt = LastResultsTime == -1.0 ? 0.0 : ResultsTime - LastResultsTime;
         check(Dt >= 0.0)
 
+        FScopeLock Lock(&CallbacksMutex);
         for (ITickCallback* Callback : TickCallbacks) {
             Callback->PostPhysicsGameThread(ResultsTime, Dt);
         }
@@ -191,7 +204,8 @@ namespace ClientPrediction {
         LastResultsTime = ResultsTime;
     }
 
-    int32 FWorldManager::TriggerRewindIfNeeded_Internal(int32 CurrentTickNumber) const {
+    int32 FWorldManager::TriggerRewindIfNeeded_Internal(int32 CurrentTickNumber) {
+        FScopeLock Lock(&CallbacksMutex);
         if (RewindCallback == nullptr) { return INDEX_NONE; }
 
         const Chaos::FRewindData& RewindData = *Solver->GetRewindData();

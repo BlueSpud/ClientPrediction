@@ -27,8 +27,10 @@ namespace ClientPrediction {
 
     public:
         void AddTickCallback(class ITickCallback* Callback);
+        void RemoveTickCallback(class ITickCallback* Callback);
+
         void AddRewindCallback(class IRewindCallback* Callback);
-        void RemoveCallback(const void* Callback);
+        void RemoveRewindCallback(class IRewindCallback* Callback);
 
         int32 GetRewindBufferSize() const { return RewindBufferSize; }
 
@@ -68,7 +70,7 @@ namespace ClientPrediction {
         void OnPhysScenePostTick(FChaosScene* TickedPhysScene);
 
         /** [Physics thread] Called to determine if a rewind is needed, INDEX_NONE is no rewind. */
-        int32 TriggerRewindIfNeeded_Internal(int32 CurrentTickNumber) const;
+        int32 TriggerRewindIfNeeded_Internal(int32 CurrentTickNumber);
 
         FPhysScene* PhysScene = nullptr;
         Chaos::FPhysicsSolver* Solver = nullptr;
@@ -82,6 +84,7 @@ namespace ClientPrediction {
         Chaos::FReal CachedSolverStartTime = 0.0;
         Chaos::FReal LastResultsTime = -1.0;
 
+        FCriticalSection CallbacksMutex;
         TSet<class ITickCallback*> TickCallbacks;
         class IRewindCallback* RewindCallback = nullptr;
     };
