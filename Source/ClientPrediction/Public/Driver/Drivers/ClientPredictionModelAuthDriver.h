@@ -118,10 +118,10 @@ namespace ClientPrediction {
 
                 AutoProxyRep.Dispatch();
                 SimProxyRep.Dispatch();
-
-                LastEmittedState = State.TickNumber;
             }
             else { Delegate->EmitReliableAuthorityState(State); }
+
+            LastEmittedState = State.TickNumber;
         }
     }
 
