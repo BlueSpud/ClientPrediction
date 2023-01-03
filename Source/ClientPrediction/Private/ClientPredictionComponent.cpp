@@ -5,9 +5,8 @@ UClientPredictionComponent::UClientPredictionComponent() {
     SetIsReplicatedByDefault(true);
     bWantsInitializeComponent = true;
 
-    PrimaryComponentTick.bCanEverTick = true;
-    PrimaryComponentTick.bStartWithTickEnabled = true;
-    PrimaryComponentTick.TickGroup = ETickingGroup::TG_PrePhysics;
+    PrimaryComponentTick.bCanEverTick = false;
+    PrimaryComponentTick.bStartWithTickEnabled = false;
 }
 
 void UClientPredictionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const {

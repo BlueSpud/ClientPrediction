@@ -72,14 +72,9 @@ namespace ClientPrediction {
                     const FStateWrapper<StateType>& End = History[i];
                     OutState = Start.Body;
 
-                    const Chaos::FReal PrevEndTime = Start.EndTime;
-                    const Chaos::FReal TimeFromPrevEnd = Time - PrevEndTime;
-                    const Chaos::FReal TotalTime = End.EndTime - Start.EndTime;
-
-                    if (TotalTime > 0.0) {
-                        const Chaos::FReal Alpha = FMath::Clamp(TimeFromPrevEnd / TotalTime, 0.0, 1.0);
-                        OutState.Interpolate(End.Body, Alpha);
-                    }
+                    const Chaos::FReal Denominator = End.EndTime - End.StartTime;
+                    const Chaos::FReal Alpha = Denominator != 0.0 ? FMath::Min(1.0, (Time - End.StartTime) / Denominator) : 1.0;
+                    OutState.Interpolate(End.Body, Alpha);
 
                     return;
                 }
