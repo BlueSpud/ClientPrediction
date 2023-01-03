@@ -33,8 +33,8 @@ namespace ClientPrediction {
         uint8 Events = 0;
 
         // These are not sent over the network, they're used for local interpolation only
-        float StartTime = 0.0;
-        float EndTime = 0.0;
+        Chaos::FReal StartTime = 0.0;
+        Chaos::FReal EndTime = 0.0;
 
         void NetSerialize(FArchive& Ar, bool bSerializeFullState);
         bool ShouldReconcile(const FStateWrapper& State) const;
