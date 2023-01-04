@@ -1,76 +1,66 @@
 ﻿#pragma once
 
 #include "ClientPredictionNetSerialization.h"
-#include "ClientPredictionModel.h"
 #include "Driver/ClientPredictionRepProxy.h"
+
+#include "Physics/ClientPredictionPhysicsModel.h"
 
 #include "ClientPredictionComponent.generated.h"
 
-UCLASS( ClassGroup=(ClientPrediction), meta=(BlueprintSpawnableComponent) )
-class CLIENTPREDICTION_API UClientPredictionComponent : public UActorComponent {
-
-	GENERATED_BODY()
-
-public:
-
-	UClientPredictionComponent();
-	virtual ~UClientPredictionComponent() override = default;
-
-	virtual void InitializeComponent() override;
-	virtual void PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) override;
-	virtual void PreNetReceive() override;
-	void CheckOwnerRoleChanged();
-
-	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-
-	template <typename ModelType>
-	ModelType* CreateModel();
-
-private:
-
-	UFUNCTION(Server, Unreliable)
-	void RecvInputPacket(FNetSerializationProxy Proxy);
-
-	UFUNCTION(NetMulticast, Reliable)
-	void RecvReliableAuthorityState(FNetSerializationProxy Proxy);
-
-	FNetworkConditions GetNetworkConditions() const;
+UCLASS(ClassGroup=(ClientPrediction), meta=(BlueprintSpawnableComponent))
+class CLIENTPREDICTION_API UClientPredictionComponent : public UActorComponent,
+                                                        public ClientPrediction::IPhysicsModelDelegate {
+    GENERATED_BODY()
 
 public:
+    UClientPredictionComponent();
+    virtual ~UClientPredictionComponent() override = default;
 
-	TUniquePtr<IClientPredictionModel> Model;
+    virtual void InitializeComponent() override;
+    virtual void PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) override;
+    virtual void PreNetReceive() override;
+    void CheckOwnerRoleChanged();
+
+    virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+    template <typename ModelType>
+    ModelType* CreateModel();
 
 private:
+    virtual void EmitInputPackets(FNetSerializationProxy& Proxy) override;
+    virtual void EmitReliableAuthorityState(FNetSerializationProxy& Proxy) override;
+    virtual void GetNetworkConditions(ClientPrediction::FNetworkConditions& NetworkConditions) const override;
 
-	UPROPERTY(Replicated)
-	FClientPredictionRepProxy AutoProxyRep;
+    UFUNCTION(Server, Unreliable)
+    void RecvInputPacket(FNetSerializationProxy Proxy);
 
-	UPROPERTY(Replicated)
-	FClientPredictionRepProxy SimProxyRep;
+    UFUNCTION(NetMulticast, Reliable)
+    void RecvReliableAuthorityState(FNetSerializationProxy Proxy);
 
-	UPROPERTY()
-	class UPrimitiveComponent* UpdatedComponent;
+private:
+    UPROPERTY(Replicated)
+    FRepProxy AutoProxyRep;
 
-	ENetRole CachedRole = ENetRole::ROLE_None;
-	uint8 bCachedAuthorityTakesInput = -1;
+    UPROPERTY(Replicated)
+    FRepProxy SimProxyRep;
 
+    UPROPERTY(Replicated)
+    FRepProxy ControlProxyRep;
+
+    UPROPERTY()
+    class UPrimitiveComponent* UpdatedComponent;
+
+    ENetRole CachedRole = ENetRole::ROLE_None;
+    uint8 bCachedAuthorityTakesInput = -1;
+
+    TUniquePtr<ClientPrediction::FPhysicsModelBase> PhysicsModel;
 };
 
 template <typename ModelType>
 ModelType* UClientPredictionComponent::CreateModel() {
-	Model = MakeUnique<ModelType>();
+    ModelType* Model = new ModelType();
+    PhysicsModel = TUniquePtr<ModelType>(Model);
 
-	Model->EmitInputPackets = [&](FNetSerializationProxy& Proxy) {
-		RecvInputPacket(Proxy);
-	};
-
-	Model->EmitReliableAuthorityState = [&](FNetSerializationProxy& Proxy) {
-		RecvReliableAuthorityState(Proxy);
-	};
-
-	Model->GetNetworkConditions = [&]() { return GetNetworkConditions(); };
-	return static_cast<ModelType*>(Model.Get());
+    return Model;
 }

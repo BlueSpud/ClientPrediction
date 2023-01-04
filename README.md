@@ -2,15 +2,10 @@
 
 ## What Is This Plugin?
 This plugin enables client prediction / rollback with an authoritative server. 
-It acomplishes the same task as the Network Prediction plugin that is bundled with Unreal, however this plugin has recently disabled physics. 
-ClientPrediction can be used for general purpose client prediction / rollback, however Network Prediction is probably a better choice for that.
-Networked physics in Network Prediction was disabled because it wasn't performant and added too much complexity. For more details, see [here](https://github.com/EpicGames/UnrealEngine/blob/137d565974b861bb0d0727813353fe740dad4bcf/Engine/Plugins/Runtime/NetworkPrediction/readme.txt).
-ClientPrediction avoids the problems by using an immediate mode physics simulation, which is very performant. This allows physics to be run at a fixed timestep while the engine is still ticking at a variable rate.
-Moreover, ClientPrediction performs rollback per-actor, so a rollback also won't affect the entire world.
+It accomplishes the same task as the Network Prediction plugin that is bundled with Unreal, however Network Prediction seems to be abandoned (see [here](https://forums.unrealengine.com/t/status-of-network-prediction-plugin-looking-for-epic-response/502509/7)). 
+Client Prediction currently assumes that there is only one actor that will be predicted and forces async physics. Due to an engine limitation, `Async Physics Tick Enabled` shouldn't be used for an actor. Instead, register a callback with `ClientPrediction::FWorldManager::AddTickCallback`.
 
-## A Note About Immediate Mode
-Immediate mode physics makes several trade offs, namely that the simulation is running in a copy of the main physics scene. 
-ClientPrediction is ideal for a game where a single actor is controlled by the player and where collision between players is rare / not critical.
+The entire physics scene is not synced with the authority currently, so using dynamic objects is not supported right now. Additionally, sim proxies are not updated during the async physics steps which may cause strange interactions with auto proxies.
 
-## Stats
-There are some statistics that can be displayed about ClientPrediction by inserting a `#declare CLIENT_PREDICTION_STATS` statement before including ClientPrediction files and then using the command `stat ClientPrediction` from the Unreal Console. 
+## Example
+An example project can be found [here](https://github.com/BlueSpud/ClientPredictionExample)

@@ -1,97 +1,103 @@
 ﻿#include "ClientPredictionComponent.h"
-
 #include "Net/UnrealNetwork.h"
 
-#include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsActorHandle_Chaos.h"
-#include "Physics/ImmediatePhysics/ImmediatePhysicsChaos/ImmediatePhysicsSimulation_Chaos.h"
-
-#include "Declares.h"
-
 UClientPredictionComponent::UClientPredictionComponent() {
-	SetIsReplicatedByDefault(true);
-	bWantsInitializeComponent = true;
+    SetIsReplicatedByDefault(true);
+    bWantsInitializeComponent = true;
 
-	PrimaryComponentTick.bCanEverTick = true;
-	PrimaryComponentTick.bStartWithTickEnabled = true;
-	PrimaryComponentTick.TickGroup = ETickingGroup::TG_PrePhysics;
+    PrimaryComponentTick.bCanEverTick = false;
+    PrimaryComponentTick.bStartWithTickEnabled = false;
 }
 
-void UClientPredictionComponent::GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifetimeProps) const {
-	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+void UClientPredictionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const {
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	DOREPLIFETIME_CONDITION(UClientPredictionComponent, AutoProxyRep, COND_AutonomousOnly);
-	DOREPLIFETIME_CONDITION(UClientPredictionComponent, SimProxyRep, COND_SimulatedOnly);
+    DOREPLIFETIME_CONDITION(UClientPredictionComponent, AutoProxyRep, COND_AutonomousOnly);
+    DOREPLIFETIME_CONDITION(UClientPredictionComponent, SimProxyRep, COND_SimulatedOnly);
+    DOREPLIFETIME_CONDITION(UClientPredictionComponent, ControlProxyRep, COND_AutonomousOnly);
 }
 
 void UClientPredictionComponent::InitializeComponent() {
-	Super::InitializeComponent();
+    Super::InitializeComponent();
 
-	UpdatedComponent = Cast<UPrimitiveComponent>(GetOwner()->GetRootComponent());
-	check(UpdatedComponent);
+    UpdatedComponent = Cast<UPrimitiveComponent>(GetOwner()->GetRootComponent());
+    check(UpdatedComponent);
 
-	CheckOwnerRoleChanged();
+    check(PhysicsModel);
+    PhysicsModel->Initialize(UpdatedComponent, this);
+
+    CheckOwnerRoleChanged();
 }
 
 void UClientPredictionComponent::PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) {
-	Super::PreReplication(ChangedPropertyTracker);
-	CheckOwnerRoleChanged();
+    Super::PreReplication(ChangedPropertyTracker);
+    CheckOwnerRoleChanged();
 }
 
 void UClientPredictionComponent::PreNetReceive() {
-	Super::PreNetReceive();
-	CheckOwnerRoleChanged();
+    Super::PreNetReceive();
+    CheckOwnerRoleChanged();
 }
 
 void UClientPredictionComponent::CheckOwnerRoleChanged() {
-	const AActor* OwnerActor = GetOwner();
-	const ENetRole CurrentRole = OwnerActor->GetLocalRole();
-	const bool bAuthorityTakesInput = OwnerActor->GetNetConnection() == nullptr;
+    if (PhysicsModel == nullptr) { return; }
 
-	if (CachedRole == CurrentRole && bCachedAuthorityTakesInput == static_cast<uint8>(bAuthorityTakesInput)) { return; }
+    const AActor* OwnerActor = GetOwner();
+    const ENetRole CurrentRole = OwnerActor->GetLocalRole();
+    const bool bAuthorityTakesInput = OwnerActor->GetNetConnection() == nullptr;
 
-	CachedRole = CurrentRole;
-	bCachedAuthorityTakesInput = bAuthorityTakesInput;
+    if (CachedRole == CurrentRole && bCachedAuthorityTakesInput == static_cast<uint8>(bAuthorityTakesInput)) { return; }
 
-	Model->SetNetRole(CurrentRole, bAuthorityTakesInput, AutoProxyRep, SimProxyRep);
+    CachedRole = CurrentRole;
+    bCachedAuthorityTakesInput = bAuthorityTakesInput;
+
+    PhysicsModel->SetNetRole(CurrentRole, bAuthorityTakesInput, AutoProxyRep, SimProxyRep, ControlProxyRep);
 }
 
 void UClientPredictionComponent::BeginPlay() {
-	Super::BeginPlay();
-
-	CheckOwnerRoleChanged();
-	Model->Initialize(UpdatedComponent);
+    Super::BeginPlay();
+    CheckOwnerRoleChanged();
 }
 
 void UClientPredictionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
-	Super::EndPlay(EndPlayReason);
+    Super::EndPlay(EndPlayReason);
+    if (PhysicsModel != nullptr) {
+        PhysicsModel->Cleanup();
+    }
 }
 
-void UClientPredictionComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) {
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
-	Model->Update(DeltaTime, UpdatedComponent);
+void UClientPredictionComponent::EmitReliableAuthorityState(FNetSerializationProxy& Proxy) {
+    RecvReliableAuthorityState(Proxy);
 }
 
-void UClientPredictionComponent::RecvReliableAuthorityState_Implementation(FNetSerializationProxy Proxy) {
-	Model->ReceiveReliableAuthorityState(Proxy);
-}
+void UClientPredictionComponent::GetNetworkConditions(ClientPrediction::FNetworkConditions& NetworkConditions) const {
+    NetworkConditions = {};
 
-FNetworkConditions UClientPredictionComponent::GetNetworkConditions() const {
-	const AActor* Owner = GetOwner();
-	if (!Owner) { return {}; }
+    const AActor* Owner = GetOwner();
+    if (!Owner) { return; }
 
-	const UNetConnection* NetConnection = Owner->GetNetConnection();
-	if (NetConnection == nullptr) { return {}; }
+    const UNetConnection* NetConnection = Owner->GetNetConnection();
+    if (NetConnection == nullptr) { return; }
 
-	FNetworkConditions Conditions;
-	Conditions.RttMs = NetConnection->AvgLag;
-	Conditions.JitterMs = NetConnection->GetAverageJitterInMS() / 1000.0;
-	Conditions.PercentPacketLoss = NetConnection->GetOutLossPercentage().GetLossPercentage();
-
-	return Conditions;
+    NetworkConditions.Latency = NetConnection->AvgLag;
+    NetworkConditions.Jitter = NetConnection->GetAverageJitterInMS() / 1000.0;
 }
 
 void UClientPredictionComponent::RecvInputPacket_Implementation(FNetSerializationProxy Proxy) {
-	check(Model);
-	Model->ReceiveInputPackets(Proxy);
+    if (PhysicsModel != nullptr) {
+        PhysicsModel->ReceiveInputPackets(Proxy);
+    }
 }
+
+void UClientPredictionComponent::EmitInputPackets(FNetSerializationProxy& Proxy) {
+    if (PhysicsModel != nullptr) {
+        RecvInputPacket(Proxy);
+    }
+}
+
+void UClientPredictionComponent::RecvReliableAuthorityState_Implementation(FNetSerializationProxy Proxy) {
+    if (PhysicsModel != nullptr) {
+        PhysicsModel->ReceiveReliableAuthorityState(Proxy);
+    }
+}
+

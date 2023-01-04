@@ -26,7 +26,7 @@ public class ClientPrediction : ModuleRules
 			new string[]
 			{
 				"Core",
-				"Chaos", "Engine"
+				"Chaos", "PhysicsCore", "Engine"
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);
