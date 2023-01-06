@@ -116,8 +116,28 @@ namespace ClientPrediction {
         PhysScene->SetNetworkDeltaTimeScale(TimeDilation);
     }
 
-    void FWorldManager::ForceSimulate(const uint32 NumTicks) const {
-        if (PhysScene == nullptr || Solver == nullptr) { return; }
+    void FWorldManager::ForceSimulate(const uint32 NumTicks) {
+        if (bIsForceSimulating) { return; }
+
+        FScopeLock Lock(&ForcedSimulationTicksMutex);
+        ForcedSimulationTicks += NumTicks;
+    }
+
+    void FWorldManager::DoForceSimulateIfNeeded() {
+        if (PhysScene == nullptr || Solver == nullptr || bIsForceSimulating) { return; }
+
+        int32 AdjustedNumTicks;
+        {
+            FScopeLock Lock(&ForcedSimulationTicksMutex);
+            if (ForcedSimulationTicks == 0) { return; }
+
+            AdjustedNumTicks = ForcedSimulationTicks;
+            ForcedSimulationTicks = 0;
+        }
+
+        //AdjustedNumTicks =  FMath::Min(static_cast<int32>(AdjustedNumTicks), ClientPredictionMaxForcedSimulationTicks);
+        const Chaos::FReal SimulationTime = static_cast<Chaos::FReal>(AdjustedNumTicks) * Solver->GetAsyncDeltaTime();
+        bIsForceSimulating = true;
 
         const Chaos::EThreadingModeTemp CachedThreadingMode = Solver->GetThreadingMode();
         const float CachedTimeDilation = PhysScene->GetNetworkDeltaTimeScale();
@@ -125,14 +145,13 @@ namespace ClientPrediction {
         Solver->SetThreadingMode_External(Chaos::EThreadingModeTemp::SingleThread);
         PhysScene->SetNetworkDeltaTimeScale(1.0);
 
-        const int32 AdjustedNumTicks = NumTicks; // FMath::Min(static_cast<int32>(NumTicks), ClientPredictionMaxForcedSimulationTicks);
-        const Chaos::FReal SimulationTime = static_cast<Chaos::FReal>(AdjustedNumTicks) * Solver->GetAsyncDeltaTime();
-
         Solver->AdvanceAndDispatch_External(SimulationTime);
         Solver->UpdateGameThreadStructures();
 
         PhysScene->SetNetworkDeltaTimeScale(CachedTimeDilation);
         Solver->SetThreadingMode_External(CachedThreadingMode);
+
+        bIsForceSimulating = false;
     }
 
     FWorldManager::~FWorldManager() {
@@ -196,15 +215,20 @@ namespace ClientPrediction {
         const Chaos::FReal Dt = LastResultsTime == -1.0 ? 0.0 : ResultsTime - LastResultsTime;
         check(Dt >= 0.0)
 
-        FScopeLock Lock(&CallbacksMutex);
-        for (ITickCallback* Callback : TickCallbacks) {
-            Callback->PostPhysicsGameThread(ResultsTime, Dt);
+        {
+            FScopeLock Lock(&CallbacksMutex);
+            for (ITickCallback* Callback : TickCallbacks) {
+                Callback->PostPhysicsGameThread(ResultsTime, Dt);
+            }
         }
 
+        if (!bIsForceSimulating) { DoForceSimulateIfNeeded(); }
         LastResultsTime = ResultsTime;
     }
 
     int32 FWorldManager::TriggerRewindIfNeeded_Internal(int32 CurrentTickNumber) {
+        if (bIsForceSimulating) { return INDEX_NONE; }
+
         FScopeLock Lock(&CallbacksMutex);
         if (RewindCallback == nullptr) { return INDEX_NONE; }
 

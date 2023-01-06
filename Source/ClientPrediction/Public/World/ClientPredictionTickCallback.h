@@ -44,6 +44,7 @@ namespace ClientPrediction {
          * @brief Called after physics finishes on the game thread. It's possible that none, one or many physics ticks were executed.
          * At this point, physics results have been marshalled to the game thread.
          * @param [in] SimTime The absolute time of the simulation. This should be used for interpolation between two states generated on the physics thread.
+         * @param [in] Dt The time between now and the last call to PostPhysicsGameThread.
          */
         virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {}
     };

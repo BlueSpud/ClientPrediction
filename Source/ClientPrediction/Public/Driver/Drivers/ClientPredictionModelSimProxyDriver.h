@@ -53,8 +53,7 @@ namespace ClientPrediction {
 
         /** If the buffer is empty this is the state that will be used. */
         FStateWrapper<StateType> CurrentState = {};
-        Chaos::FReal WorldStartTime = -1.0;
-        Chaos::FReal LastWorldTime = -1.0;
+        Chaos::FReal LastAbsoluteWorldTime = -1.0;
 
         Chaos::FReal CurrentTime = -ClientPredictionSimProxyDelay;
         Chaos::FReal Timescale = 1.0;
@@ -94,10 +93,6 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelSimProxyDriver<InputType, StateType>::QueueState(const FStateWrapper<StateType>& State) {
-        if (StartingTick == INDEX_NONE) {
-            StartingTick = State.TickNumber;
-        }
-
         FStateWrapper<StateType> StateWithTimes = State;
         BuildStateTimes(StateWithTimes);
 
@@ -118,6 +113,10 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelSimProxyDriver<InputType, StateType>::BuildStateTimes(FStateWrapper<StateType>& State) {
+        if (StartingTick == INDEX_NONE) {
+            StartingTick = State.TickNumber;
+        }
+
         State.StartTime = static_cast<Chaos::FReal>(State.TickNumber - StartingTick) * ClientPredictionFixedDt;
         State.EndTime = State.StartTime + ClientPredictionFixedDt;
     }
@@ -147,18 +146,12 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     Chaos::FReal FModelSimProxyDriver<InputType, StateType>::GetWorldDt() {
         const Chaos::FReal AbsoluteWorldTime = Delegate->GetWorldTimeNoDilation();
-        Chaos::FReal WorldTime = AbsoluteWorldTime - WorldStartTime;
-
-        if (WorldStartTime == -1.0) {
-            WorldStartTime = AbsoluteWorldTime;
-            LastWorldTime = WorldStartTime;
-
-            WorldTime = 0.0;
+        if (LastAbsoluteWorldTime == -1.0) {
+            LastAbsoluteWorldTime = AbsoluteWorldTime;
         }
 
-        // We don't use the delta from the function call because that is subject to physics time dilation
-        const Chaos::FReal WorldDt = WorldTime - LastWorldTime;
-        LastWorldTime = WorldTime;
+        const Chaos::FReal WorldDt = AbsoluteWorldTime - LastAbsoluteWorldTime;
+        LastAbsoluteWorldTime = AbsoluteWorldTime;
 
         return WorldDt;
     }
