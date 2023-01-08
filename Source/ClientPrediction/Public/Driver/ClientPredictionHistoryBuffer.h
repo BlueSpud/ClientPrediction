@@ -39,7 +39,13 @@ namespace ClientPrediction {
             }
         }
 
-        if (!bUpdatedExistingState) { History.Add(State); }
+        if (!bUpdatedExistingState) {
+            // Ensure that history is contiguous
+            check(History.IsEmpty() || History.Last().TickNumber == 0 || History.Last().TickNumber + 1 == State.TickNumber)
+
+            History.Add(State);
+        }
+
         while (History.Num() > Capacity) {
             History.RemoveAt(0);
         }

@@ -48,7 +48,7 @@ namespace ClientPrediction {
         check(Delegate);
 
         Delegate->GenerateInitialState(CurrentState);
-        CurrentState.TickNumber = INDEX_NONE;
+        CurrentState.TickNumber = 0;
         CurrentState.InputPacketTickNumber = INDEX_NONE;
         CurrentState.Events = 0;
 

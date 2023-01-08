@@ -68,7 +68,7 @@ namespace ClientPrediction {
         FStateWrapper<StateType> StartState{};
         Delegate->GenerateInitialState(StartState);
 
-        StartState.TickNumber = INDEX_NONE;
+        StartState.TickNumber = 0;
         StartState.InputPacketTickNumber = INDEX_NONE;
         StartState.Events = 0;
         StartState.StartTime = 0.0;

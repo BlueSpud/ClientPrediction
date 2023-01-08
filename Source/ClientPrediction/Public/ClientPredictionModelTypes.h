@@ -100,11 +100,11 @@ namespace ClientPrediction {
 
     template <typename StateType>
     void FStateWrapper<StateType>::Reconcile(Chaos::FRigidBodyHandle_Internal* Handle) const {
+        Handle->SetObjectState(PhysicsState.ObjectState);
         Handle->SetX(PhysicsState.X);
         Handle->SetV(PhysicsState.V);
         Handle->SetR(PhysicsState.R);
         Handle->SetW(PhysicsState.W);
-        Handle->SetObjectState(PhysicsState.ObjectState);
     }
 
     template <typename StateType>

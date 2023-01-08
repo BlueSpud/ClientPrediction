@@ -269,6 +269,8 @@ namespace ClientPrediction {
             check(HistoricState.TickNumber == AuthLocalTickNumber)
 
             if (AuthState.ShouldReconcile(HistoricState)) {
+                UE_LOG(LogTemp, Error, TEXT("Rewinding and rolling back to %d"), AuthLocalTickNumber + 1);
+
                 // When we perform a correction, we add one to the frame, since LastAuthorityState will be the state
                 // of the simulation during PostTickPhysicsThread (after physics has been simulated), so it is the beginning
                 // state for LocalTickNumber + 1
@@ -279,11 +281,13 @@ namespace ClientPrediction {
                 PendingCorrection.EndTime = HistoricState.EndTime;
                 PendingCorrection.TickNumber = HistoricState.TickNumber;
 
-                // Clear the event queue, it will be repopulated during re-simulate
+                // TODO this needs some work, since during a resim the events might not be dirty and won't get re-added to the queue.
+                // Remove events for ticks that will be re-simulated, since their state / events might be different
                 FScopeLock EventQueueLock(&EventQueueMutex);
-                EventQueue.Empty();
+                while (!EventQueue.IsEmpty() && EventQueue.Last().State.TickNumber >= PendingCorrection.TickNumber) {
+                    EventQueue.RemoveAt(EventQueue.Num() - 1);
+                }
 
-                UE_LOG(LogTemp, Error, TEXT("Rewinding and rolling back to %d"), AuthLocalTickNumber);
                 return AuthLocalTickNumber + 1;
             }
         }
