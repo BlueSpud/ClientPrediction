@@ -238,6 +238,13 @@ namespace ClientPrediction {
             State.PhysicsState.V = Handle.V();
             State.PhysicsState.R = Handle.R();
             State.PhysicsState.W = Handle.W();
+        } else {
+            State.PhysicsState.ObjectState = Chaos::EObjectStateType::Uninitialized;
+
+            State.PhysicsState.X = CachedComponent->GetComponentLocation();
+            State.PhysicsState.V = CachedComponent->GetComponentVelocity();
+            State.PhysicsState.R = CachedComponent->GetComponentRotation().Quaternion();
+            State.PhysicsState.W = CachedComponent->GetPhysicsAngularVelocityInDegrees();
         }
 
         GenerateInitialState(State.Body);
