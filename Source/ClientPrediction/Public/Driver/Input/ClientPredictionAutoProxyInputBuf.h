@@ -10,7 +10,7 @@ namespace ClientPrediction {
         void QueueInputPacket(const Wrapper& Packet);
         void Ack(const int32 PacketNumber);
 
-        bool InputForTick(int32 TickNumber, Wrapper& OutPacket);
+        Wrapper* InputForTick(int32 TickNumber);
 
     private:
         TArray<Wrapper> InputPackets;
@@ -41,16 +41,15 @@ namespace ClientPrediction {
     }
 
     template <typename InputType>
-    bool FAutoProxyInputBuf<InputType>::InputForTick(int32 TickNumber, Wrapper& OutPacket) {
+    typename FAutoProxyInputBuf<InputType>::Wrapper* FAutoProxyInputBuf<InputType>::InputForTick(int32 TickNumber) {
         FScopeLock Lock(&Mutex);
 
-        for (const Wrapper& Packet : InputPackets) {
+        for (Wrapper& Packet : InputPackets) {
             if (Packet.PacketNumber == TickNumber) {
-                OutPacket = Packet;
-                return true;
+                return &Packet;
             }
         }
 
-        return false;
+        return nullptr;
     }
 }

@@ -141,18 +141,22 @@ namespace ClientPrediction {
     void FModelAutoProxyDriver<InputType, StateType>::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
         ApplyCorrectionIfNeeded(TickNumber);
 
-        check(InputBuf.InputForTick(TickNumber, CurrentInput))
+        // This provides mutable pointer to the input in the input buffer so that any modifications made in the next step will also update the
+        // input stored in the input buffer
+        FInputPacketWrapper<InputType>* BufferedInput = InputBuf.InputForTick(TickNumber);
+        check(BufferedInput)
 
         // We guard against modifying packets older than LastModifiedInputPacket, so that they can't be re-modified during a resim.
         // Once the packet has been modified once, it is considered final and can be sent to the authority.
-        if (LastModifiedInputPacket < CurrentInput.PacketNumber) {
-            Delegate->ModifyInputPhysicsThread(CurrentInput.Body, CurrentState, Dt);
-            LastModifiedInputPacket = CurrentInput.PacketNumber;
+        if (LastModifiedInputPacket < BufferedInput->PacketNumber) {
+            Delegate->ModifyInputPhysicsThread(BufferedInput->Body, CurrentState, Dt);
+            LastModifiedInputPacket = BufferedInput->PacketNumber;
 
             FScopeLock Lock(&InputSendMutex);
-            InputSendQueue.Enqueue(CurrentInput);
+            InputSendQueue.Enqueue(*BufferedInput);
         }
 
+        CurrentInput = *BufferedInput;
         PreTickSimulateWithCurrentInput(TickNumber, Dt);
     }
 
