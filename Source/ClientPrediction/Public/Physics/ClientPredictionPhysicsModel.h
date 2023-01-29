@@ -120,13 +120,13 @@ namespace ClientPrediction {
          * This delegate will be executed on the PHYSICS THREAD and can be used to modify input packets using the current state of the simulation.
          * This will be called ONLY ONCE per input packet, and any changes made an an auto proxy will also be sent to the authority.
          */
-        DECLARE_DELEGATE_FourParams(FPhysicsModelModifyInputPhysicsThread, InputType& Packet, const StateType& State, const FPhysicsState& PhysicsState, Chaos::FReal Dt)
+        DECLARE_DELEGATE_FourParams(FPhysicsModelModifyInputPhysicsThread, InputType&, const StateType&, const FPhysicsState&, Chaos::FReal)
         FPhysicsModelModifyInputPhysicsThread ModifyInputPhysicsThreadDelegate;
 
-        DECLARE_DELEGATE_TwoParams(FPhysicsModelFinalize, const StateType&, Chaos::FReal Dt)
+        DECLARE_DELEGATE_TwoParams(FPhysicsModelFinalize, const StateType&, Chaos::FReal)
         FPhysicsModelFinalize FinalizeDelegate;
 
-        DECLARE_DELEGATE_ThreeParams(FPhysicsModelDispatchEvent, EventType, const StateType& State, const FPhysicsState& PhysState)
+        DECLARE_DELEGATE_ThreeParams(FPhysicsModelDispatchEvent, EventType, const StateType&, const FPhysicsState&)
         FPhysicsModelDispatchEvent DispatchEventDelegate;
 
     private:
