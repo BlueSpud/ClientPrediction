@@ -18,6 +18,8 @@ namespace ClientPrediction {
 		const FTransform& GetPreviousTransform() const;
 
 		FVector GetLinearVelocity() const;
+		FVector GetLinearVelocityAtLocation(const FVector& WorldLocation) const;
+
 		FVector GetAngularVelocity() const;
 
 		// World query methods

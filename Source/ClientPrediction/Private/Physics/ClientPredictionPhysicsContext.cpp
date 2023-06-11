@@ -57,6 +57,10 @@ namespace ClientPrediction {
 	const FTransform& FPhysicsContext::GetPreviousTransform() const { return PrevTransform; }
 
 	FVector FPhysicsContext::GetLinearVelocity() const { return BodyHandle->V(); }
+	FVector FPhysicsContext::GetLinearVelocityAtLocation(const FVector& WorldLocation) const {
+		return FPhysicsInterface::GetWorldVelocityAtPoint_AssumesLocked(BodyHandle, WorldLocation);
+	}
+
 	FVector FPhysicsContext::GetAngularVelocity() const { return BodyHandle->W(); }
 
 	bool FPhysicsContext::LineTraceSingle(FHitResult& OutHit, const FVector& Start, const FVector& End) const {
@@ -65,6 +69,7 @@ namespace ClientPrediction {
 
 		FCollisionQueryParams QueryParams = FCollisionQueryParams::DefaultQueryParam;
 		QueryParams.AddIgnoredActor(Component->GetOwner());
+		QueryParams.bTraceComplex = false;
 
 		return World->LineTraceSingleByChannel(OutHit, Start, End, ECC_WorldStatic, QueryParams);
 	}
