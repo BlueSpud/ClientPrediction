@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include "ClientPredictionSettings.h"
+
 #include "ClientPredictionInput.h"
 
 namespace ClientPrediction {
@@ -7,11 +9,16 @@ namespace ClientPrediction {
     struct FAuthInputBuf {
         using Wrapper = FInputPacketWrapper<InputType>;
 
-        FAuthInputBuf(const uint16 DroppedPacketMemoryTickLength) : DroppedPacketMemoryTickLength(DroppedPacketMemoryTickLength) {}
+        FAuthInputBuf(const UClientPredictionSettings* Settings, bool bIsAuthorityGeneratingInput) : Settings(Settings),
+                                                                                                     bIsAuthorityGeneratingInput(bIsAuthorityGeneratingInput) {}
 
-        void QueueInputPackets(const TArray<Wrapper>& Packets);
-        void GetNextInputPacket(Wrapper& OutPacket);
+        void QueueInputPackets(const TArray<Wrapper>& Packets, const float CurrentRtt);
+        void GetNextInputPacket(Wrapper& OutPacket, Chaos::FReal Dt);
 
+    private:
+        void AddTimeSpentInInputBuffer(Chaos::FReal Dt);
+
+    public:
         uint32 GetBufferSize() {
             FScopeLock Lock(&Mutex);
             return InputPackets.Num();
@@ -29,15 +36,15 @@ namespace ClientPrediction {
         TArray<Wrapper> InputPackets;
         Wrapper LastInputPacket{};
 
-        /** This is the number of ticks to remember that a packet was dropped. */
-        uint16 DroppedPacketMemoryTickLength = 0;
+        const UClientPredictionSettings* Settings = nullptr;
         TArray<int32> DroppedInputPacketIndices;
+        bool bIsAuthorityGeneratingInput = false;
 
         FCriticalSection Mutex;
     };
 
     template <typename InputType>
-    void FAuthInputBuf<InputType>::QueueInputPackets(const TArray<Wrapper>& Packets) {
+    void FAuthInputBuf<InputType>::QueueInputPackets(const TArray<Wrapper>& Packets, const float CurrentRtt) {
         FScopeLock Lock(&Mutex);
 
         for (const Wrapper& Packet : Packets) {
@@ -49,6 +56,8 @@ namespace ClientPrediction {
 
             if (!bAlreadyHasPacket) {
                 InputPackets.Add(Packet);
+                InputPackets.Last().EstimatedDelayFromClient = CurrentRtt / 2.0;
+                InputPackets.Last().EstimatedClientSimProxyDelay = CurrentRtt + Settings->SimProxyDelay;
             }
         }
 
@@ -58,12 +67,14 @@ namespace ClientPrediction {
     }
 
     template <typename InputType>
-    void FAuthInputBuf<InputType>::GetNextInputPacket(Wrapper& OutPacket) {
+    void FAuthInputBuf<InputType>::GetNextInputPacket(Wrapper& OutPacket, Chaos::FReal Dt) {
         FScopeLock Lock(&Mutex);
 
         if (LastInputPacket.PacketNumber == INDEX_NONE) {
             if (!InputPackets.IsEmpty()) {
                 ConsumeFirstPacket(OutPacket);
+
+                AddTimeSpentInInputBuffer(Dt);
                 return;
             }
         }
@@ -74,6 +85,8 @@ namespace ClientPrediction {
         if (!InputPackets.IsEmpty()) {
             if (InputPackets[0].PacketNumber == ExpectedPacketNumber) {
                 ConsumeFirstPacket(OutPacket);
+
+                AddTimeSpentInInputBuffer(Dt);
                 return;
             }
         }
@@ -82,7 +95,17 @@ namespace ClientPrediction {
         DroppedInputPacketIndices.Add(ExpectedPacketNumber);
         OutPacket = LastInputPacket;
 
-        // UE_LOG(LogTemp, Error, TEXT("Dropped input packet %d (buffer size: %d)"), ExpectedPacketNumber, InputPackets.Num());
+        AddTimeSpentInInputBuffer(Dt);
+    }
+
+    template <typename InputType>
+    void FAuthInputBuf<InputType>::AddTimeSpentInInputBuffer(Chaos::FReal Dt) {
+        if (bIsAuthorityGeneratingInput) { return; }
+
+        for (Wrapper& Packet : InputPackets) {
+            Packet.EstimatedDelayFromClient += Dt;
+            Packet.EstimatedClientSimProxyDelay += Dt;
+        }
     }
 
     template <typename InputType>
@@ -93,7 +116,7 @@ namespace ClientPrediction {
 
     template <typename InputType>
     void FAuthInputBuf<InputType>::TrimDroppedPacketsBuffer(const int32 ExpectedPacketNumber) {
-        while (!DroppedInputPacketIndices.IsEmpty() && DroppedInputPacketIndices[0] < ExpectedPacketNumber - DroppedPacketMemoryTickLength) {
+        while (!DroppedInputPacketIndices.IsEmpty() && DroppedInputPacketIndices[0] < ExpectedPacketNumber - Settings->DroppedPacketMemoryTickLength) {
             DroppedInputPacketIndices.RemoveAt(0);
         }
     }

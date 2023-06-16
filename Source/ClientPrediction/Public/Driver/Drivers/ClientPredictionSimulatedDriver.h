@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include "ClientPredictionSettings.h"
+
 #include "Driver/ClientPredictionHistoryBuffer.h"
 #include "Driver/ClientPredictionModelDriver.h"
 
@@ -31,6 +33,8 @@ namespace ClientPrediction {
         IModelDriverDelegate<InputType, StateType>* Delegate = nullptr;
         FHistoryBuffer<StateType> History;
 
+        const UClientPredictionSettings* Settings = nullptr;
+
         FInputPacketWrapper<InputType> CurrentInput{}; // Only used on physics thread
         FStateWrapper<StateType> CurrentState{}; // Only used on physics thread
         FStateWrapper<StateType> LastState{}; // Only used on physics thread
@@ -43,7 +47,7 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     FSimulatedModelDriver<InputType, StateType>::FSimulatedModelDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate,
                                                                        int32 HistoryBufferSize)
-        : UpdatedComponent(UpdatedComponent), Delegate(Delegate), History(HistoryBufferSize) {
+        : UpdatedComponent(UpdatedComponent), Delegate(Delegate), History(HistoryBufferSize), Settings(GetDefault<UClientPredictionSettings>()) {
         check(UpdatedComponent);
         check(Delegate);
 
@@ -71,6 +75,9 @@ namespace ClientPrediction {
         CurrentState = {};
         CurrentState.TickNumber = TickNumber;
         CurrentState.InputPacketTickNumber = CurrentInput.PacketNumber;
+
+        CurrentState.EstimatedDelayFromClient = CurrentInput.EstimatedDelayFromClient;
+        CurrentState.EstimatedClientSimProxyDelay = CurrentInput.EstimatedClientSimProxyDelay;
 
         auto* Handle = GetPhysicsHandle();
         if (Handle == nullptr) {
@@ -111,7 +118,7 @@ namespace ClientPrediction {
             const FEvent<StateType>& Front = EventQueue[0];
             if (Front.State.StartTime > SimTime) { break; }
 
-            Delegate->DispatchEvents(Front.State, Front.Events);
+            Delegate->DispatchEvents(Front.State, Front.Events, Front.State.EstimatedDelayFromClient, Front.State.EstimatedClientSimProxyDelay);
             EventQueue.RemoveAt(0);
         }
     }

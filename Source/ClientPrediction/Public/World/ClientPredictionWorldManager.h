@@ -3,12 +3,9 @@
 #include "CoreMinimal.h"
 #include "RewindData.h"
 
-namespace ClientPrediction {
-    extern CLIENTPREDICTION_API float ClientPredictionFixedDt;
-    extern CLIENTPREDICTION_API float ClientPredictionMaxPhysicsTime;
-    extern CLIENTPREDICTION_API int32 ClientPredictionHistoryTimeMs;
-    extern CLIENTPREDICTION_API int32 ClientPredictionMaxedForceSimulationTicks;
+#include "ClientPredictionSettings.h"
 
+namespace ClientPrediction {
     struct CLIENTPREDICTION_API FWorldManager {
     private:
         static TMap<class UWorld*, FWorldManager*> Managers;
@@ -73,6 +70,8 @@ namespace ClientPrediction {
 
         /** [Physics thread] Called to determine if a rewind is needed, INDEX_NONE is no rewind. */
         int32 TriggerRewindIfNeeded_Internal(int32 CurrentTickNumber);
+
+        const UClientPredictionSettings* Settings = nullptr;
 
         FPhysScene* PhysScene = nullptr;
         Chaos::FPhysicsSolver* Solver = nullptr;

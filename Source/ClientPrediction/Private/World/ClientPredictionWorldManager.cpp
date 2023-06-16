@@ -4,27 +4,10 @@
 #include "World/ClientPredictionTickCallback.h"
 
 #include "PBDRigidsSolver.h"
+#include "Physics/PhysicsInterfaceScene.h"
 #include "PhysicsEngine/PhysicsSettings.h"
 
 namespace ClientPrediction {
-    CLIENTPREDICTION_API float ClientPredictionFixedDt = 1.0 / 60.0;
-    FAutoConsoleVariableRef CVarClientPredictionFixedDt(TEXT("cp.FixedDt"), ClientPredictionFixedDt,
-                                                        TEXT("The fixed timestep for ClientPrediction. This is also used as the async physics step"));
-
-    CLIENTPREDICTION_API float ClientPredictionMaxPhysicsTime = 1.0;
-    FAutoConsoleVariableRef CVarClientPredictionMaxPhysicsTime(TEXT("cp.MaxPhysicsTime"), ClientPredictionMaxPhysicsTime,
-                                                               TEXT("The maximum time physics can be simulated per frame. "
-                                                                   "This is set to a high value to make sure that clients with low framerates still simulate enough "
-                                                                   "physics ticks to stay relatively in-sync with the server, and should probably remain untouched."));
-
-    CLIENTPREDICTION_API int32 ClientPredictionHistoryTimeMs = 500;
-    FAutoConsoleVariableRef CVarClientPredictionHistoryTimeMs(TEXT("cp.RewindHistoryTime"), ClientPredictionHistoryTimeMs,
-                                                              TEXT("The amount of time (in ms) to store for rewind"));
-
-    CLIENTPREDICTION_API int32 ClientPredictionMaxForcedSimulationTicks = 50;
-    FAutoConsoleVariableRef CVarClientPredictionMaxForcedSimulationTicks(
-        TEXT("cp.MaxForceSimulationTicks"), ClientPredictionMaxForcedSimulationTicks, TEXT("The maximum number of forced simulation ticks"));
-
     TMap<UWorld*, FWorldManager*> FWorldManager::Managers;
 
     // Initialization
@@ -52,7 +35,7 @@ namespace ClientPrediction {
         delete WorldManager;
     }
 
-    FWorldManager::FWorldManager(const UWorld* World) {
+    FWorldManager::FWorldManager(const UWorld* World) : Settings(GetDefault<UClientPredictionSettings>()) {
         PhysScene = World->GetPhysicsScene();
         if (PhysScene == nullptr) { return; }
 
@@ -64,15 +47,15 @@ namespace ClientPrediction {
     }
 
     void FWorldManager::SetupPhysicsScene() {
-        Solver->EnableAsyncMode(ClientPredictionFixedDt);
+        Solver->EnableAsyncMode(Settings->FixedDt);
         check(Solver->IsUsingAsyncResults());
 
         // TODO Investigate if InUseCollisionResimCache can be used
-        RewindBufferSize = FMath::CeilToInt32(static_cast<float>(ClientPredictionHistoryTimeMs) / 1000.0 / ClientPredictionFixedDt);
+        RewindBufferSize = FMath::CeilToInt32(static_cast<float>(Settings->HistoryTimeMs) / 1000.0 / Settings->FixedDt);
         Solver->EnableRewindCapture(RewindBufferSize, false, MakeUnique<FChaosRewindCallback>());
         check(Solver->IsDetemerministic());
 
-        UPhysicsSettings::Get()->MaxPhysicsDeltaTime = ClientPredictionMaxPhysicsTime;
+        UPhysicsSettings::Get()->MaxPhysicsDeltaTime = Settings->MaxPhysicsTime;
     }
 
     void FWorldManager::CreateCallbacks() {

@@ -1,18 +1,12 @@
 ﻿#pragma once
 
-#include "ClientPredictionModelAuthDriver.h"
+#include "Logging/LogMacros.h"
+
+#include "ClientPredictionSettings.h"
 #include "Driver/ClientPredictionModelDriver.h"
 #include "Driver/ClientPredictionRepProxy.h"
-#include "Logging/LogMacros.h"
-#include "World/ClientPredictionWorldManager.h"
 
 namespace ClientPrediction {
-    extern CLIENTPREDICTION_API float ClientPredictionSimProxyDelay;
-    extern CLIENTPREDICTION_API float ClientPredictionSimProxyTimeDilationMargin;
-    extern CLIENTPREDICTION_API float ClientPredictionSimProxyAggressiveTimeDilationMargin;
-    extern CLIENTPREDICTION_API float ClientPredictionSimProxyTimeDilation;
-    extern CLIENTPREDICTION_API float ClientPredictionSimProxyAggressiveTimeDilation;
-
     template <typename InputType, typename StateType>
     class FModelSimProxyDriver final : public IModelDriver<InputType, StateType> {
     public:
@@ -48,6 +42,8 @@ namespace ClientPrediction {
         IModelDriverDelegate<InputType, StateType>* Delegate = nullptr;
         TArray<FStateWrapper<StateType>> States;
 
+        const UClientPredictionSettings* Settings = nullptr;
+
         /** This is the tick that was first received from the authority. */
         int32 StartingTick = INDEX_NONE;
 
@@ -55,13 +51,14 @@ namespace ClientPrediction {
         FStateWrapper<StateType> CurrentState = {};
         Chaos::FReal LastAbsoluteWorldTime = -1.0;
 
-        Chaos::FReal CurrentTime = -ClientPredictionSimProxyDelay;
+        Chaos::FReal CurrentTime = -Settings->SimProxyDelay;
         Chaos::FReal Timescale = 1.0;
     };
 
     template <typename InputType, typename StateType>
     FModelSimProxyDriver<InputType, StateType>::FModelSimProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate,
-                                                                     FRepProxy& SimProxyRep) : UpdatedComponent(UpdatedComponent), Delegate(Delegate) {
+                                                                     FRepProxy& SimProxyRep) : UpdatedComponent(UpdatedComponent), Delegate(Delegate),
+                                                                                               Settings(GetDefault<UClientPredictionSettings>()) {
         check(Delegate);
         BindToRepProxy(SimProxyRep);
 
@@ -98,7 +95,7 @@ namespace ClientPrediction {
 
         // If the state is in the past, any events that were included need to be dispatched
         if (StateWithTimes.StartTime <= CurrentTime) {
-            Delegate->DispatchEvents(StateWithTimes, StateWithTimes.Events);
+            Delegate->DispatchEvents(StateWithTimes, StateWithTimes.Events, 0.0, 0.0);
         }
 
         const bool bAlreadyHasState = States.ContainsByPredicate([&](const auto& Candidate) {
@@ -117,8 +114,8 @@ namespace ClientPrediction {
             StartingTick = State.TickNumber;
         }
 
-        State.StartTime = static_cast<Chaos::FReal>(State.TickNumber - StartingTick) * ClientPredictionFixedDt;
-        State.EndTime = State.StartTime + ClientPredictionFixedDt;
+        State.StartTime = static_cast<Chaos::FReal>(State.TickNumber - StartingTick) * Settings->FixedDt;
+        State.EndTime = State.StartTime + Settings->FixedDt;
     }
 
     template <typename InputType, typename StateType>
@@ -189,7 +186,7 @@ namespace ClientPrediction {
     void FModelSimProxyDriver<InputType, StateType>::DispatchEvents(Chaos::FReal StartTime, Chaos::FReal EndTime) {
         for (const FStateWrapper<StateType>& State : States) {
             if (State.StartTime > StartTime && State.StartTime <= EndTime) {
-                Delegate->DispatchEvents(State, State.Events);
+                Delegate->DispatchEvents(State, State.Events, 0.0, 0.0);
             }
         }
     }
@@ -212,22 +209,22 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     void FModelSimProxyDriver<InputType, StateType>::UpdateTimescale() {
         const Chaos::FReal TimeLeftInBuffer = GetTimeLeftInBuffer();
-        const Chaos::FReal PercentageDifference = (TimeLeftInBuffer - ClientPredictionSimProxyDelay) / ClientPredictionSimProxyDelay;
+        const Chaos::FReal PercentageDifference = (TimeLeftInBuffer - Settings->SimProxyDelay) / Settings->SimProxyDelay;
 
         Chaos::FReal TargetTimescale = 1.0;
-        if (PercentageDifference >= ClientPredictionSimProxyTimeDilationMargin) {
-            TargetTimescale = 1.0 + (PercentageDifference >= ClientPredictionSimProxyAggressiveTimeDilationMargin
-                                         ? ClientPredictionSimProxyAggressiveTimeDilation
-                                         : ClientPredictionSimProxyTimeDilation);
+        if (PercentageDifference >= Settings->SimProxyTimeDilationMargin) {
+            TargetTimescale = 1.0 + (PercentageDifference >= Settings->SimProxyAggressiveTimeDilationMargin
+                                         ? Settings->SimProxyAggressiveTimeDilationMargin
+                                         : Settings->SimProxyTimeDilation);
         }
 
-        if (PercentageDifference <= ClientPredictionSimProxyTimeDilationMargin) {
-            TargetTimescale = 1.0 - (PercentageDifference <= ClientPredictionSimProxyAggressiveTimeDilationMargin
-                                         ? ClientPredictionSimProxyAggressiveTimeDilation
-                                         : ClientPredictionSimProxyTimeDilation);
+        if (PercentageDifference <= Settings->SimProxyTimeDilationMargin) {
+            TargetTimescale = 1.0 - (PercentageDifference <= Settings->SimProxyAggressiveTimeDilationMargin
+                                         ? Settings->SimProxyAggressiveTimeDilation
+                                         : Settings->SimProxyTimeDilation);
         }
 
-        Timescale = FMath::Lerp(Timescale, TargetTimescale, ClientPredictionTimeDilationAlpha);
+        Timescale = FMath::Lerp(Timescale, TargetTimescale, Settings->TimeDilationAlpha);
     }
 
     template <typename InputType, typename StateType>

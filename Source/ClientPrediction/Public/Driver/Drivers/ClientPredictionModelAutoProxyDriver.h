@@ -9,10 +9,6 @@
 #include "World/ClientPredictionWorldManager.h"
 
 namespace ClientPrediction {
-    extern CLIENTPREDICTION_API int32 ClientPredictionInputSlidingWindowSize;
-    extern CLIENTPREDICTION_API float ClientPredictionMaxTimeDilation;
-    extern CLIENTPREDICTION_API float ClientPredictionAuthorityCatchupTimescale;
-
     template <typename InputType, typename StateType>
     class FModelAutoProxyDriver final : public FSimulatedModelDriver<InputType, StateType>, public IRewindCallback {
     public:
@@ -184,7 +180,7 @@ namespace ClientPrediction {
 
         InterpolateStateGameThread(SimTime, Dt);
 
-        Chaos::FReal NewTimeDilation = 1.0 + LastControlPacket.GetTimeDilation() * ClientPredictionMaxTimeDilation;
+        Chaos::FReal NewTimeDilation = 1.0 + LastControlPacket.GetTimeDilation() * Settings->MaxTimeDilation;
         int32 NumForceSimulatedTicks = 0;
 
         {
@@ -199,14 +195,14 @@ namespace ClientPrediction {
                     Delegate->GetNetworkConditions(NetConditions);
 
                     // We simulate by a full RTT since the authority state we're getting the delta from is already 1/2 RTT old
-                    const int32 LatencyTicks = FMath::CeilToInt32((NetConditions.Latency + NetConditions.Jitter) / ClientPredictionFixedDt);
+                    const int32 LatencyTicks = FMath::CeilToInt32((NetConditions.Latency + NetConditions.Jitter) / Settings->FixedDt);
                     NumForceSimulatedTicks = LocalTickNumber - CurrentTickNumber + LatencyTicks;
                 }
 
                 // If the auto proxy is far ahead of the authority, slow down time significantly so the authority can catch up
                 if (PendingAuthorityStates.Last().InputPacketTickNumber <= CurrentTickNumber - RewindBufferSize) {
                     UE_LOG(LogTemp, Warning, TEXT("Auto proxy is too far ahead of the authority"));
-                    NewTimeDilation = ClientPredictionAuthorityCatchupTimescale;
+                    NewTimeDilation = Settings->AuthorityCatchupTimescale;
                 }
             }
         }
@@ -230,7 +226,7 @@ namespace ClientPrediction {
 
             // Bundle the new packet up with the most recent inputs and send it to the authority
             InputSlidingWindow.Add(Packet);
-            while (InputSlidingWindow.Num() > ClientPredictionInputSlidingWindowSize) {
+            while (InputSlidingWindow.Num() > Settings->InputSlidingWindowSize) {
                 InputSlidingWindow.RemoveAt(0);
             }
 

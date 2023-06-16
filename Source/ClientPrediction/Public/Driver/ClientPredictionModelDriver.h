@@ -31,7 +31,8 @@ namespace ClientPrediction {
         virtual void SimulatePostPhysics(const Chaos::FReal Dt, const FPhysicsContext& Context, const InputType& Input, const FStateWrapper<StateType>& PrevState,
                                          FStateWrapper<StateType>& OutState) = 0;
 
-        virtual void DispatchEvents(const FStateWrapper<StateType>& State, const uint8 Events) = 0;
+        virtual void DispatchEvents(const FStateWrapper<StateType>& State, const uint8 Events, Chaos::FReal EstimatedDelayFromClient,
+                                    Chaos::FReal EstimatedClientSimProxyDelay) = 0;
     };
 
     template <typename InputType, typename StateType>

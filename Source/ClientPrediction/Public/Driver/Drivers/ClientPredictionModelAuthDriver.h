@@ -8,10 +8,6 @@
 #include "Driver/Input/ClientPredictionInput.h"
 
 namespace ClientPrediction {
-    extern CLIENTPREDICTION_API int32 ClientPredictionDesiredInputBufferSize;
-    extern CLIENTPREDICTION_API int32 ClientPredictionDroppedPacketMemoryTickLength;
-    extern CLIENTPREDICTION_API float ClientPredictionTimeDilationAlpha;
-
     template <typename InputType, typename StateType>
     class FModelAuthDriver final : public FSimulatedModelDriver<InputType, StateType> {
     public:
@@ -57,8 +53,8 @@ namespace ClientPrediction {
                                                              IModelDriverDelegate<InputType, StateType>* Delegate,
                                                              FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep,
                                                              FRepProxy& ControlProxyRep, int32 RewindBufferSize, const bool bTakesInput)
-        : FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), AutoProxyRep(AutoProxyRep),
-          SimProxyRep(SimProxyRep), ControlProxyRep(ControlProxyRep), bTakesInput(bTakesInput), InputBuf(ClientPredictionDroppedPacketMemoryTickLength) {}
+        : FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), AutoProxyRep(AutoProxyRep), SimProxyRep(SimProxyRep), ControlProxyRep(ControlProxyRep),
+          bTakesInput(bTakesInput), InputBuf(Settings, bTakesInput) {}
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) {
@@ -67,14 +63,14 @@ namespace ClientPrediction {
             Packet.PacketNumber = TickNumber;
             Delegate->ProduceInput(Packet.Body);
 
-            InputBuf.QueueInputPackets({Packet});
+            InputBuf.QueueInputPackets({Packet}, 0.0);
         }
     }
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
-        if (CurrentInput.PacketNumber != INDEX_NONE || InputBuf.GetBufferSize() >= static_cast<uint32>(ClientPredictionDesiredInputBufferSize) || bTakesInput) {
-            InputBuf.GetNextInputPacket(CurrentInput);
+        if (CurrentInput.PacketNumber != INDEX_NONE || InputBuf.GetBufferSize() >= static_cast<uint32>(Settings->DesiredInputBufferSize) || bTakesInput) {
+            InputBuf.GetNextInputPacket(CurrentInput, Dt);
         }
 
         if (bTakesInput) { Delegate->ModifyInputPhysicsThread(CurrentInput.Body, CurrentState, Dt); }
@@ -128,10 +124,10 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::SuggestTimeDilation() {
         const uint16 InputBufferSize = InputBuf.GetBufferSize();
-        const uint16 DesiredInputBufferSize = ClientPredictionDesiredInputBufferSize + InputBuf.GetNumRecentlyDroppedInputPackets();
+        const uint16 DesiredInputBufferSize = Settings->DesiredInputBufferSize + InputBuf.GetNumRecentlyDroppedInputPackets();
 
         const Chaos::FReal TargetTimeDilation = InputBufferSize > DesiredInputBufferSize ? -1.0 : (InputBufferSize < DesiredInputBufferSize ? 1.0 : 0.0);
-        LastSuggestedTimeDilation = FMath::Lerp(LastSuggestedTimeDilation, TargetTimeDilation, ClientPredictionTimeDilationAlpha);
+        LastSuggestedTimeDilation = FMath::Lerp(LastSuggestedTimeDilation, TargetTimeDilation, Settings->TimeDilationAlpha);
 
         FControlPacket ControlPacket{};
         ControlPacket.SetTimeDilation(LastSuggestedTimeDilation);
@@ -141,8 +137,10 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType>
-    void FModelAuthDriver<InputType, StateType>::ReceiveInputPackets(
-        const TArray<FInputPacketWrapper<InputType>>& Packets) {
-        InputBuf.QueueInputPackets(Packets);
+    void FModelAuthDriver<InputType, StateType>::ReceiveInputPackets(const TArray<FInputPacketWrapper<InputType>>& Packets) {
+        FNetworkConditions NetworkConditions{};
+        Delegate->GetNetworkConditions(NetworkConditions);
+
+        InputBuf.QueueInputPackets(Packets, NetworkConditions.Latency);
     }
 }

@@ -37,6 +37,7 @@ public class ClientPrediction : ModuleRules
 			{
 				"CoreUObject",
 				"Engine",
+				"Settings"
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);

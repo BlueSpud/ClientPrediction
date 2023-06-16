@@ -1,5 +1,8 @@
 #include "ClientPrediction.h"
 
+#include "ISettingsModule.h"
+
+#include "ClientPredictionSettings.h"
 #include "World/ClientPredictionWorldManager.h"
 
 #define LOCTEXT_NAMESPACE "FClientPredictionModule"
@@ -10,6 +13,17 @@ FDelegateHandle FClientPredictionModule::OnPostWorldInitializationDelegate;
 FDelegateHandle FClientPredictionModule::OnWorldCleanupDelegate;
 
 void FClientPredictionModule::StartupModule() {
+#if WITH_EDITOR
+    ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings");
+    if (SettingsModule != nullptr) {
+        SettingsModule->RegisterSettings("Project", "Project", "ClientPrediction",
+                                         LOCTEXT("ClientPredictionSettingsName", "ClientPrediction"),
+                                         LOCTEXT("ClientPredictionSettingsDescription", "Settings for ClientPrediction"),
+                                         GetMutableDefault<UClientPredictionSettings>()
+        );
+    }
+#endif
+
     OnPostWorldInitializationDelegate = FWorldDelegates::OnPostWorldInitialization.AddStatic(&OnPostWorldInitialize);
     OnWorldCleanupDelegate = FWorldDelegates::OnWorldCleanup.AddStatic(&OnWorldCleanup);
 }
