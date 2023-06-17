@@ -52,5 +52,8 @@ public:
     float SimProxyTimeDilation = 0.02;
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
+    float SimProxyTimeDilationAlpha = 0.02;
+
+    UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
     float SimProxyAggressiveTimeDilation = 0.2;
 };

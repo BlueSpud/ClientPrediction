@@ -224,7 +224,7 @@ namespace ClientPrediction {
                                          : Settings->SimProxyTimeDilation);
         }
 
-        Timescale = FMath::Lerp(Timescale, TargetTimescale, Settings->TimeDilationAlpha);
+        Timescale = FMath::Lerp(Timescale, TargetTimescale, Settings->SimProxyTimeDilationAlpha);
     }
 
     template <typename InputType, typename StateType>
