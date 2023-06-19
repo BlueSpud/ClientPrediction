@@ -5,92 +5,102 @@
 
 #include "ClientPredictionSettings.h"
 
+class AClientPredictionReplicationManager;
+
 namespace ClientPrediction {
-    struct CLIENTPREDICTION_API FWorldManager {
-    private:
-        static TMap<class UWorld*, FWorldManager*> Managers;
+	struct CLIENTPREDICTION_API FWorldManager {
+	private:
+		static TMap<class UWorld*, FWorldManager*> Managers;
 
-    public:
-        static FWorldManager* InitializeWorld(class UWorld* World);
-        static FWorldManager* ManagerForWorld(const class UWorld* World);
-        static void CleanupWorld(const class UWorld* World);
+	public:
+		static FWorldManager* InitializeWorld(class UWorld* World);
+		static FWorldManager* ManagerForWorld(const class UWorld* World);
+		static void CleanupWorld(const class UWorld* World);
 
-        virtual ~FWorldManager();
+		virtual ~FWorldManager();
 
-    private:
-        explicit FWorldManager(const class UWorld* World);
-        void SetupPhysicsScene();
-        void CreateCallbacks();
+	private:
+		explicit FWorldManager(class UWorld* World);
+		void SetupPhysicsScene();
+		void CreateCallbacks();
 
-    public:
-        void AddTickCallback(class ITickCallback* Callback);
-        void RemoveTickCallback(class ITickCallback* Callback);
+	public:
+		void CreateReplicationManagerForPlayer(class APlayerController* PlayerController);
+		void DestroyReplicationManagerForPlayer(class AController* Controller);
+		void RegisterReplicationManager(class APlayerController* PlayerController, AClientPredictionReplicationManager* Manager);
 
-        void AddRewindCallback(class IRewindCallback* Callback);
-        void RemoveRewindCallback(class IRewindCallback* Callback);
+		void AddTickCallback(class ITickCallback* Callback);
+		void RemoveTickCallback(class ITickCallback* Callback);
 
-        int32 GetRewindBufferSize() const { return RewindBufferSize; }
+		void AddRewindCallback(class IRewindCallback* Callback);
+		void RemoveRewindCallback(class IRewindCallback* Callback);
 
-        // These should only be called from the game thread
-        void SetTimeDilation(const Chaos::FReal TimeDilation) const;
+		int32 GetRewindBufferSize() const { return RewindBufferSize; }
 
-        void ForceSimulate(const uint32 NumTicks);
-    private:
-        void DoForceSimulateIfNeeded();
+		// These should only be called from the game thread
+		void SetTimeDilation(const Chaos::FReal TimeDilation) const;
 
-        DECLARE_DELEGATE_OneParam(FTickCallback, int32);
-        DECLARE_DELEGATE_RetVal_OneParam(int32, FRewindTickCallback, int32);
+		void ForceSimulate(const uint32 NumTicks);
 
-        struct FChaosRewindCallback : public Chaos::IRewindCallback {
-            /** [Game thread] Called before each tick */
-            virtual void ProcessInputs_External(int32 PhysicsStep, const TArray<Chaos::FSimCallbackInputAndObject>& SimCallbackInputs) override;
+	private:
+		void DoForceSimulateIfNeeded();
 
-            /** [Physics thread] Called before each tick */
-            virtual void ProcessInputs_Internal(int32 PhysicsStep, const TArray<Chaos::FSimCallbackInputAndObject>& SimCallbackInputs) override;
+		DECLARE_DELEGATE_OneParam(FTickCallback, int32);
+		DECLARE_DELEGATE_RetVal_OneParam(int32, FRewindTickCallback, int32);
 
-            /** [Physics thread] Called to determine if a rewind is needed, INDEX_NONE is no rewind. */
-            virtual int32 TriggerRewindIfNeeded_Internal(int32 LatestStepCompleted) override;
+		struct FChaosRewindCallback : public Chaos::IRewindCallback {
+			/** [Game thread] Called before each tick */
+			virtual void ProcessInputs_External(int32 PhysicsStep, const TArray<Chaos::FSimCallbackInputAndObject>& SimCallbackInputs) override;
 
-            FTickCallback ProcessInputs_ExternalDelegate;
-            FTickCallback ProcessInputs_InternalDelegate;
-            FRewindTickCallback TriggerRewindIfNeeded_InternalDelegate;
-        };
+			/** [Physics thread] Called before each tick */
+			virtual void ProcessInputs_Internal(int32 PhysicsStep, const TArray<Chaos::FSimCallbackInputAndObject>& SimCallbackInputs) override;
 
-        /** [Physics thread] Called before each tick */
-        virtual void ProcessInputs_Internal(int32 PhysicsStep);
+			/** [Physics thread] Called to determine if a rewind is needed, INDEX_NONE is no rewind. */
+			virtual int32 TriggerRewindIfNeeded_Internal(int32 LatestStepCompleted) override;
 
-        /** [Game thread] Called before each tick */
-        virtual void ProcessInputs_External(int32 PhysicsStep);
+			FTickCallback ProcessInputs_ExternalDelegate;
+			FTickCallback ProcessInputs_InternalDelegate;
+			FRewindTickCallback TriggerRewindIfNeeded_InternalDelegate;
+		};
 
-        /** [Physics thread] Called after each tick */
-        void PostAdvance_Internal(Chaos::FReal Dt);
+		/** [Physics thread] Called before each tick */
+		virtual void ProcessInputs_Internal(int32 PhysicsStep);
 
-        /** [Physics thread] Called after physics finishes */
-        void OnPhysScenePostTick(FChaosScene* TickedPhysScene);
+		/** [Game thread] Called before each tick */
+		virtual void ProcessInputs_External(int32 PhysicsStep);
 
-        /** [Physics thread] Called to determine if a rewind is needed, INDEX_NONE is no rewind. */
-        int32 TriggerRewindIfNeeded_Internal(int32 CurrentTickNumber);
+		/** [Physics thread] Called after each tick */
+		void PostAdvance_Internal(Chaos::FReal Dt);
 
-        const UClientPredictionSettings* Settings = nullptr;
+		/** [Physics thread] Called after physics finishes */
+		void OnPhysScenePostTick(FChaosScene* TickedPhysScene);
 
-        FPhysScene* PhysScene = nullptr;
-        Chaos::FPhysicsSolver* Solver = nullptr;
-        FChaosRewindCallback* ChaosRewindCallback = nullptr;
-        int32 RewindBufferSize = 0;
+		/** [Physics thread] Called to determine if a rewind is needed, INDEX_NONE is no rewind. */
+		int32 TriggerRewindIfNeeded_Internal(int32 CurrentTickNumber);
 
-        FDelegateHandle PostAdvanceDelegate;
-        FDelegateHandle PostPhysSceneTickDelegate;
+		const UClientPredictionSettings* Settings = nullptr;
 
-        int32 CachedLastTickNumber = INDEX_NONE;
-        Chaos::FReal CachedSolverStartTime = 0.0;
-        Chaos::FReal LastResultsTime = -1.0;
+		class UWorld* World = nullptr;
+		TMap<class APlayerController*, AClientPredictionReplicationManager*> ReplicationManagers;
 
-        FCriticalSection CallbacksMutex;
-        TSet<class ITickCallback*> TickCallbacks;
-        class IRewindCallback* RewindCallback = nullptr;
+		FPhysScene* PhysScene = nullptr;
+		Chaos::FPhysicsSolver* Solver = nullptr;
+		FChaosRewindCallback* ChaosRewindCallback = nullptr;
+		int32 RewindBufferSize = 0;
 
-        FCriticalSection ForcedSimulationTicksMutex;
-        uint32 ForcedSimulationTicks = 0;
-        TAtomic<bool> bIsForceSimulating = false;
-    };
+		FDelegateHandle PostAdvanceDelegate;
+		FDelegateHandle PostPhysSceneTickDelegate;
+
+		int32 CachedLastTickNumber = INDEX_NONE;
+		Chaos::FReal CachedSolverStartTime = 0.0;
+		Chaos::FReal LastResultsTime = -1.0;
+
+		FCriticalSection CallbacksMutex;
+		TSet<class ITickCallback*> TickCallbacks;
+		class IRewindCallback* RewindCallback = nullptr;
+
+		FCriticalSection ForcedSimulationTicksMutex;
+		uint32 ForcedSimulationTicks = 0;
+		TAtomic<bool> bIsForceSimulating = false;
+	};
 }
