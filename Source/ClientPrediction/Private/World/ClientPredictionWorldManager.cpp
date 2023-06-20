@@ -72,6 +72,11 @@ namespace ClientPrediction {
 	}
 
 	void FWorldManager::CreateReplicationManagerForPlayer(APlayerController* PlayerController) {
+		if (PlayerController->GetNetConnection() == nullptr) {
+			return;
+		}
+
+		// TODO investigate if swapping player controllers will cause issues here
 		FActorSpawnParameters SpawnParameters{};
 		SpawnParameters.Owner = PlayerController;
 		SpawnParameters.Name = FName(PlayerController->GetName().Append("_ClientPredictionReplicationManager"));
@@ -80,12 +85,13 @@ namespace ClientPrediction {
 		AClientPredictionReplicationManager* Manger = World->SpawnActor<AClientPredictionReplicationManager>(SpawnParameters);
 		check(Manger)
 
+		check(LocalReplicationManager == nullptr);
 		ReplicationManagers.Add(PlayerController, Manger);
 	}
 
 	void FWorldManager::DestroyReplicationManagerForPlayer(AController* Controller) {
 		const APlayerController* PlayerController = Cast<APlayerController>(Controller);
-		if (PlayerController) { return; }
+		if (PlayerController || PlayerController->GetNetConnection() == nullptr) { return; }
 
 		if (ReplicationManagers.Contains(PlayerController)) {
 			ReplicationManagers[PlayerController]->Destroy();
@@ -93,9 +99,11 @@ namespace ClientPrediction {
 		}
 	}
 
-	void FWorldManager::RegisterReplicationManager(APlayerController* PlayerController, AClientPredictionReplicationManager* Manager) {
-		check(!ReplicationManagers.Contains(PlayerController))
-		ReplicationManagers.Add(PlayerController, Manager);
+	void FWorldManager::RegisterLocalReplicationManager(APlayerController* PlayerController, AClientPredictionReplicationManager* Manager) {
+		check(LocalReplicationManager == nullptr);
+		check(ReplicationManagers.IsEmpty());
+
+		LocalReplicationManager = Manager;
 	}
 
 	void FWorldManager::AddTickCallback(ITickCallback* Callback) {
@@ -235,6 +243,16 @@ namespace ClientPrediction {
 
 		if (!bIsForceSimulating) { DoForceSimulateIfNeeded(); }
 		LastResultsTime = ResultsTime;
+
+		// The order that these are done in doesn't matter since a world manager should never have entries in both the replication managers
+		// and have a local replication manager.
+		for (const auto& Pair : ReplicationManagers) {
+			Pair.Value->PostTickAuthority();
+		}
+
+		if (LocalReplicationManager != nullptr) {
+			LocalReplicationManager->PostTickRemote();
+		}
 	}
 
 	int32 FWorldManager::TriggerRewindIfNeeded_Internal(int32 CurrentTickNumber) {

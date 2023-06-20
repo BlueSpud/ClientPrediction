@@ -53,16 +53,26 @@ void FClientPredictionModule::OnWorldCleanup(UWorld* InWorld, bool bSessionEnded
 }
 
 void FClientPredictionModule::OnPlayerLogin(AGameModeBase* /* Gamemode */, APlayerController* PlayerController) {
-	if (PlayerController->GetRemoteRole() == ENetRole::ROLE_Authority) { return; }
+	const UWorld* World = PlayerController->GetWorld();
+	const ENetMode NetMode = World->GetNetMode();
 
-	ClientPrediction::FWorldManager* WorldManager = ClientPrediction::FWorldManager::ManagerForWorld(PlayerController->GetWorld());
+	if (NetMode != ENetMode::NM_DedicatedServer && NetMode != ENetMode::NM_ListenServer) {
+		return;
+	}
+
+	ClientPrediction::FWorldManager* WorldManager = ClientPrediction::FWorldManager::ManagerForWorld(World);
 	if (WorldManager != nullptr) {
 		WorldManager->CreateReplicationManagerForPlayer(PlayerController);
 	}
 }
 
 void FClientPredictionModule::OnPlayerLogout(AGameModeBase* /* Gamemode */, AController* PlayerController) {
-	if (PlayerController->GetRemoteRole() == ENetRole::ROLE_Authority) { return; }
+	const UWorld* World = PlayerController->GetWorld();
+	const ENetMode NetMode = World->GetNetMode();
+
+	if (NetMode != ENetMode::NM_DedicatedServer && NetMode != ENetMode::NM_ListenServer) {
+		return;
+	}
 
 	ClientPrediction::FWorldManager* WorldManager = ClientPrediction::FWorldManager::ManagerForWorld(PlayerController->GetWorld());
 	if (WorldManager != nullptr) {

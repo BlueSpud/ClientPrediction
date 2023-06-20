@@ -23,6 +23,12 @@ struct CLIENTPREDICTION_API FClientPredictionModelId {
 		return ::GetTypeHash(OwningActor);
 	}
 
+	/** Maps the ID to the player that owns the simulation. This is only valid on the authority */
+	UPlayer* MapToOwningPlayer() const {
+		AActor* Actor = Cast<AActor>(OwningActor);
+		return Actor != nullptr ? Actor->GetNetOwningPlayer() : nullptr;
+	}
+
 private:
 	UObject* OwningActor = nullptr;
 };

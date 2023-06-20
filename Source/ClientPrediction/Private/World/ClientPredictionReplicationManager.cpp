@@ -22,5 +22,21 @@ void AClientPredictionReplicationManager::PostNetInit() {
 	ClientPrediction::FWorldManager* Manager = ClientPrediction::FWorldManager::ManagerForWorld(GetWorld());
 	if (Manager == nullptr) { return; }
 
-	Manager->RegisterReplicationManager(OwningController, this);
+	Manager->RegisterLocalReplicationManager(OwningController, this);
+}
+
+void AClientPredictionReplicationManager::PostTickAuthority() {
+	const UPlayer* OwningPlayer = GetOwner()->GetNetOwningPlayer();
+	check(OwningPlayer);
+
+	// Go to state store, get all simulation outputs
+	// Determine which outputs belong to this player using FClientPredictionModelId::MapToOwningPlayer
+	// Serialize based on the relevance (auto proxies have always relevance and get all of the data)
+	// Send data to client
+
+	// Ask the input store for the recommended client time dilation and send that as well
+}
+
+void AClientPredictionReplicationManager::PostTickRemote() {
+
 }

@@ -27,7 +27,7 @@ namespace ClientPrediction {
 	public:
 		void CreateReplicationManagerForPlayer(class APlayerController* PlayerController);
 		void DestroyReplicationManagerForPlayer(class AController* Controller);
-		void RegisterReplicationManager(class APlayerController* PlayerController, AClientPredictionReplicationManager* Manager);
+		void RegisterLocalReplicationManager(class APlayerController* PlayerController, AClientPredictionReplicationManager* Manager);
 
 		void AddTickCallback(class ITickCallback* Callback);
 		void RemoveTickCallback(class ITickCallback* Callback);
@@ -82,6 +82,7 @@ namespace ClientPrediction {
 
 		class UWorld* World = nullptr;
 		TMap<class APlayerController*, AClientPredictionReplicationManager*> ReplicationManagers;
+		AClientPredictionReplicationManager* LocalReplicationManager = nullptr;
 
 		FPhysScene* PhysScene = nullptr;
 		Chaos::FPhysicsSolver* Solver = nullptr;
