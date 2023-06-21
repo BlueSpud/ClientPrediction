@@ -33,12 +33,14 @@ void AClientPredictionReplicationManager::PostNetInit() {
 	Manager->RegisterLocalReplicationManager(OwningController, this);
 }
 
-void AClientPredictionReplicationManager::PostTickAuthority(int32 TickNumber, const ClientPrediction::FStateManager& StateManager) {
+void AClientPredictionReplicationManager::PostTickAuthority(int32 TickNumber) {
+	if (StateManager == nullptr) { return; }
+
 	const UPlayer* OwningPlayer = GetOwner()->GetNetOwningPlayer();
 	check(OwningPlayer);
 
 	ClientPrediction::FTickSnapshot TickSnapshot{};
-	StateManager.GetProducedDataForTick(TickNumber, TickSnapshot);
+	StateManager->GetProducedDataForTick(TickNumber, TickSnapshot);
 
 	FScopeLock QueuedSnapshotLock(&QueuedSnapshotMutex);
 	QueuedSnapshot = {};
@@ -72,14 +74,9 @@ void AClientPredictionReplicationManager::PostSceneTickGameThreadAuthority() {
 }
 
 void AClientPredictionReplicationManager::SnapshotReceivedRemote() {
-
-	UE_LOG(LogTemp, Error, TEXT("FRAME %d"), RemoteSnapshot.TickNumber);
-
-	for (const auto& AutoProxy : RemoteSnapshot.AutoProxyModels) {
-		UE_LOG(LogTemp, Warning, TEXT("AUTO PROXY %d"), AutoProxy.Data.Num());
-	}
+	if (StateManager == nullptr) { return; }
 
 	for (const auto& SimProxy : RemoteSnapshot.SimProxyModels) {
-		UE_LOG(LogTemp, Warning, TEXT("SIM PROXY %d"), SimProxy.Data.Num());
+		StateManager->PushStateToConsumer(RemoteSnapshot.TickNumber, SimProxy.ModelId, SimProxy.Data);
 	}
 }

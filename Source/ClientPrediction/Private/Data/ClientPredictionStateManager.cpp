@@ -50,7 +50,9 @@ namespace ClientPrediction {
 		}
 	}
 
-	void FStateManager::GetProducedDataForTick(const int32 TickNumber, FTickSnapshot& OutSnapshot) const {
+	void FStateManager::GetProducedDataForTick(const int32 TickNumber, FTickSnapshot& OutSnapshot) {
+		FScopeLock ProducedStateMutex(&ProducedStatesMutex);
+
 		OutSnapshot.TickNumber = TickNumber;
 		OutSnapshot.StateData.Reset();
 
@@ -67,11 +69,23 @@ namespace ClientPrediction {
 	}
 
 	void FStateManager::ReleasedProducedData(const int32 TickNumber) {
+		FScopeLock ProducedStateMutex(&ProducedStatesMutex);
+
 		for (auto& Pair : ProducedStates) {
 			TArray<FSerializedState>& ProducedData = Pair.Value;
 			while (!ProducedData.IsEmpty() && ProducedData[0].TickNumber <= TickNumber) {
 				ProducedData.RemoveAt(0);
 			}
 		}
+	}
+
+	void FStateManager::PushStateToConsumer(int32 TickNumber, const FClientPredictionModelId& ModelId, const TArray<uint8>& Data) {
+		FScopeLock ConsumerLock(&ConsumerMutex);
+
+		if (!Consumers.Contains(ModelId)) {
+			return;
+		}
+
+		Consumers[ModelId]->ConsumeStateForTick(TickNumber, Data);
 	}
 };

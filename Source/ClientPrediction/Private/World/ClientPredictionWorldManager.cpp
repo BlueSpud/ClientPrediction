@@ -87,6 +87,8 @@ namespace ClientPrediction {
 
 		check(LocalReplicationManager == nullptr);
 		ReplicationManagers.Add(PlayerController, Manger);
+
+		Manger->SetStateManager(&StateManager);
 	}
 
 	void FWorldManager::DestroyReplicationManagerForPlayer(AController* Controller) {
@@ -104,6 +106,7 @@ namespace ClientPrediction {
 		check(ReplicationManagers.IsEmpty());
 
 		LocalReplicationManager = Manager;
+		LocalReplicationManager->SetStateManager(&StateManager);
 	}
 
 	void FWorldManager::AddTickCallback(ITickCallback* Callback) {
@@ -230,7 +233,7 @@ namespace ClientPrediction {
 		StateManager.ProduceData(CachedLastTickNumber);
 
 		for (const auto& Pair : ReplicationManagers) {
-			Pair.Value->PostTickAuthority(CachedLastTickNumber, StateManager);
+			Pair.Value->PostTickAuthority(CachedLastTickNumber);
 		}
 
 		StateManager.ReleasedProducedData(CachedLastTickNumber);

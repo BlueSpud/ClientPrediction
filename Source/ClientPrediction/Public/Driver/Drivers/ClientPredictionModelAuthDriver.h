@@ -12,7 +12,7 @@ namespace ClientPrediction {
     class FModelAuthDriver final : public FSimulatedModelDriver<InputType, StateType>, public StateProducerBase<FStateWrapper<StateType>> {
     public:
         FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate,
-                         FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep, FRepProxy& ControlProxyRep,
+                         FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep,
                          int32 RewindBufferSize, const bool bTakesInput);
 
         virtual ~FModelAuthDriver() override = default;
@@ -42,7 +42,6 @@ namespace ClientPrediction {
 
     private:
         FRepProxy& AutoProxyRep;
-        FRepProxy& SimProxyRep;
         FRepProxy& ControlProxyRep;
         bool bTakesInput = false;
 
@@ -57,9 +56,8 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     FModelAuthDriver<InputType, StateType>::FModelAuthDriver(UPrimitiveComponent* UpdatedComponent,
                                                              IModelDriverDelegate<InputType, StateType>* Delegate,
-                                                             FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep,
-                                                             FRepProxy& ControlProxyRep, int32 RewindBufferSize, const bool bTakesInput)
-        : FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), AutoProxyRep(AutoProxyRep), SimProxyRep(SimProxyRep), ControlProxyRep(ControlProxyRep),
+                                                             FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep, int32 RewindBufferSize, const bool bTakesInput)
+        : FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), AutoProxyRep(AutoProxyRep), ControlProxyRep(ControlProxyRep),
           bTakesInput(bTakesInput), InputBuf(Settings, bTakesInput) {}
 
     template <typename InputType, typename StateType>
@@ -134,10 +132,8 @@ namespace ClientPrediction {
         if (State.TickNumber != INDEX_NONE && State.TickNumber != LastEmittedState) {
             if (State.Events == 0) {
                 AutoProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { State.NetSerialize(Ar, true); };
-                SimProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { State.NetSerialize(Ar, false); };
 
                 AutoProxyRep.Dispatch();
-                SimProxyRep.Dispatch();
             }
             else { Delegate->EmitReliableAuthorityState(State); }
 

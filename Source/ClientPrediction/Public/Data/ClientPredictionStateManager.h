@@ -10,6 +10,7 @@ namespace ClientPrediction {
 
 	struct CLIENTPREDICTION_API FSerializedStateData {
 		// TODO replace with ERelevancy
+		// TODO add reliable in here
 		TArray<uint8> ShortData{};
 		TArray<uint8> FullData{};
 	};
@@ -27,8 +28,10 @@ namespace ClientPrediction {
 		void UnregisterConsumerForModel(const FClientPredictionModelId& ModelId);
 
 		void ProduceData(int32 TickNumber);
-		void GetProducedDataForTick(int32 TickNumber, FTickSnapshot& OutSnapshot) const;
+		void GetProducedDataForTick(int32 TickNumber, FTickSnapshot& OutSnapshot);
 		void ReleasedProducedData(int32 TickNumber);
+
+		void PushStateToConsumer(int32 TickNumber, const FClientPredictionModelId& ModelId, const TArray<uint8>& Data);
 
 	private:
 		FCriticalSection ProducerMutex;
@@ -42,6 +45,7 @@ namespace ClientPrediction {
 			FSerializedStateData Data{};
 		};
 
+		FCriticalSection ProducedStatesMutex;
 		TMap<FClientPredictionModelId, TArray<FSerializedState>> ProducedStates;
 	};
 
@@ -105,7 +109,7 @@ namespace ClientPrediction {
 		FMemoryReader Ar(SerializedState);
 
 		StateType DeserializedState{};
-		DeserializedState.NetSerialize(Ar);
+		DeserializedState.NetSerialize(Ar, false);
 
 		ConsumeUnserializedStateForTick(Tick, DeserializedState);
 	}

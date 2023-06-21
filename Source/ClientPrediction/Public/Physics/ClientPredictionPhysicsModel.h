@@ -32,7 +32,7 @@ namespace ClientPrediction {
 		virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) = 0;
 		virtual void Cleanup() = 0;
 
-		virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep, FRepProxy& ControlProxyRep) = 0;
+		virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep) = 0;
 		virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) const = 0;
 		virtual void ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) const = 0;
 	};
@@ -100,7 +100,7 @@ namespace ClientPrediction {
 		virtual ~FPhysicsModel() override = default;
 		virtual void Cleanup() override final;
 
-		virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep, FRepProxy& ControlProxyRep) override final;
+		virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep) override final;
 		virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) const override final;
 		virtual void ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) const override final;
 
@@ -192,8 +192,7 @@ namespace ClientPrediction {
 	}
 
 	template <typename InputType, typename StateType, typename EventType>
-	void FPhysicsModel<InputType, StateType, EventType>::SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep,
-	                                                                FRepProxy& ControlProxyRep) {
+	void FPhysicsModel<InputType, StateType, EventType>::SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep) {
 		check(CachedWorldManager)
 		check(CachedComponent)
 		check(Delegate)
@@ -205,7 +204,7 @@ namespace ClientPrediction {
 		int32 RewindBufferSize = CachedWorldManager->GetRewindBufferSize();
 		switch (Role) {
 		case ROLE_Authority:
-			ModelDriver = MakeUnique<FModelAuthDriver<InputType, StateType>>(CachedComponent, this, AutoProxyRep, SimProxyRep, ControlProxyRep, RewindBufferSize,
+			ModelDriver = MakeUnique<FModelAuthDriver<InputType, StateType>>(CachedComponent, this, AutoProxyRep, ControlProxyRep, RewindBufferSize,
 			                                                                 bShouldTakeInput);
 			break;
 		case ROLE_AutonomousProxy: {
@@ -213,7 +212,7 @@ namespace ClientPrediction {
 		}
 		break;
 		case ROLE_SimulatedProxy:
-			ModelDriver = MakeUnique<FModelSimProxyDriver<InputType, StateType>>(CachedComponent, this, SimProxyRep);
+			ModelDriver = MakeUnique<FModelSimProxyDriver<InputType, StateType>>(CachedComponent, this);
 			break;
 		default:
 			break;
