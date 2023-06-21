@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 
 #include "ClientPredictionModelId.h"
-#include "ClientPredictionRelevancy.h"
 
 namespace ClientPrediction {
 	class IStateProducer;
@@ -32,7 +31,7 @@ namespace ClientPrediction {
 		void GetProducedDataForTick(int32 TickNumber, FTickSnapshot& OutSnapshot);
 		void ReleasedProducedData(int32 TickNumber);
 
-		void PushStateToConsumer(int32 TickNumber, const FClientPredictionModelId& ModelId, const TArray<uint8>& Data, const ERelevancy Relevancy);
+		void PushStateToConsumer(int32 TickNumber, const FClientPredictionModelId& ModelId, const TArray<uint8>& Data);
 
 	private:
 		FCriticalSection ProducerMutex;
@@ -94,23 +93,23 @@ namespace ClientPrediction {
 	class IStateConsumer {
 	public:
 		virtual ~IStateConsumer() = default;
-		virtual void ConsumeStateForTick(const int32 Tick, const TArray<uint8>& SerializedState, const ERelevancy Relevancy) = 0;
+		virtual void ConsumeStateForTick(const int32 Tick, const TArray<uint8>& SerializedState) = 0;
 	};
 
 	/** Convenience class that enables consuming unserialized states instead */
 	template <typename StateType>
 	class StateConsumerBase : public IStateConsumer {
 	public:
-		virtual void ConsumeStateForTick(const int32 Tick, const TArray<uint8>& SerializedState, const ERelevancy Relevancy) override final;
+		virtual void ConsumeStateForTick(const int32 Tick, const TArray<uint8>& SerializedState) override final;
 		virtual void ConsumeUnserializedStateForTick(const int32 Tick, const StateType& State) = 0;
 	};
 
 	template <typename StateType>
-	void StateConsumerBase<StateType>::ConsumeStateForTick(const int32 Tick, const TArray<uint8>& SerializedState, const ERelevancy Relevancy) {
+	void StateConsumerBase<StateType>::ConsumeStateForTick(const int32 Tick, const TArray<uint8>& SerializedState) {
 		FMemoryReader Ar(SerializedState);
 
 		StateType DeserializedState{};
-		DeserializedState.NetSerialize(Ar, Relevancy == ERelevancy::kAutoProxy);
+		DeserializedState.NetSerialize(Ar, false);
 
 		ConsumeUnserializedStateForTick(Tick, DeserializedState);
 	}
