@@ -236,6 +236,10 @@ namespace ClientPrediction {
 			Pair.Value->PostTickAuthority(CachedLastTickNumber);
 		}
 
+		if (LocalReplicationManager != nullptr) {
+			LocalReplicationManager->PostTickRemote();
+		}
+
 		StateManager.ReleasedProducedData(CachedLastTickNumber);
 	}
 
@@ -244,6 +248,11 @@ namespace ClientPrediction {
 
 		const Chaos::FReal Dt = LastResultsTime == -1.0 ? 0.0 : ResultsTime - LastResultsTime;
 		check(Dt >= 0.0)
+
+		// Update the simulated proxy time
+		if (LocalReplicationManager != nullptr) {
+			LocalReplicationManager->PostSceneTickGameThreadRemote();
+		}
 
 		{
 			FScopeLock Lock(&CallbacksMutex);
@@ -257,10 +266,6 @@ namespace ClientPrediction {
 
 		for (const auto& Pair : ReplicationManagers) {
 			Pair.Value->PostSceneTickGameThreadAuthority();
-		}
-
-		if (LocalReplicationManager != nullptr) {
-			LocalReplicationManager->PostTickRemote();
 		}
 	}
 

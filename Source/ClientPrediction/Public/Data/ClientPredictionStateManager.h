@@ -25,7 +25,7 @@ namespace ClientPrediction {
 		void RegisterProducerForModel(const FClientPredictionModelId& ModelId, IStateProducer* Producer);
 		void UnregisterProducerForModel(const FClientPredictionModelId& ModelId);
 
-		void RegisterConsumerForModel(const FClientPredictionModelId& ModelId, IStateConsumer* Producer);
+		void RegisterConsumerForModel(const FClientPredictionModelId& ModelId, IStateConsumer* Consumer);
 		void UnregisterConsumerForModel(const FClientPredictionModelId& ModelId);
 
 		void ProduceData(int32 TickNumber);

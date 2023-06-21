@@ -34,8 +34,6 @@ namespace ClientPrediction {
 		void Finalize(Chaos::FReal Dt);
 		void ApplyPhysicsState();
 
-		void UpdateTimescale();
-		Chaos::FReal GetTimeLeftInBuffer() const;
 		void TrimStateBuffer();
 
 	private:
@@ -144,7 +142,6 @@ namespace ClientPrediction {
 		GetInterpolatedStateAssumingStatesNotEmpty(CurrentState);
 		Finalize(WorldDt);
 
-		UpdateTimescale();
 		TrimStateBuffer();
 	}
 
@@ -212,37 +209,6 @@ namespace ClientPrediction {
 		UpdatedComponent->SetSimulatePhysics(false);
 		UpdatedComponent->SetWorldLocation(CurrentState.PhysicsState.X);
 		UpdatedComponent->SetWorldRotation(CurrentState.PhysicsState.R);
-	}
-
-	template <typename InputType, typename StateType>
-	void FModelSimProxyDriver<InputType, StateType>::UpdateTimescale() {
-		const Chaos::FReal TimeLeftInBuffer = GetTimeLeftInBuffer();
-		const Chaos::FReal PercentageDifference = (TimeLeftInBuffer - Settings->SimProxyDelay) / Settings->SimProxyDelay;
-
-		Chaos::FReal TargetTimescale = 1.0;
-		if (PercentageDifference >= Settings->SimProxyTimeDilationMargin) {
-			TargetTimescale = 1.0 + (PercentageDifference >= Settings->SimProxyAggressiveTimeDilationMargin
-				                         ? Settings->SimProxyAggressiveTimeDilationMargin
-				                         : Settings->SimProxyTimeDilation);
-		}
-
-		if (PercentageDifference <= Settings->SimProxyTimeDilationMargin) {
-			TargetTimescale = 1.0 - (PercentageDifference <= Settings->SimProxyAggressiveTimeDilationMargin
-				                         ? Settings->SimProxyAggressiveTimeDilation
-				                         : Settings->SimProxyTimeDilation);
-		}
-
-		Timescale = FMath::Lerp(Timescale, TargetTimescale, Settings->SimProxyTimeDilationAlpha);
-	}
-
-	template <typename InputType, typename StateType>
-	Chaos::FReal FModelSimProxyDriver<InputType, StateType>::GetTimeLeftInBuffer() const {
-		if (States.IsEmpty()) { return 0.0; }
-
-		const FStateWrapper<StateType>& LastBufferState = States.Last();
-		if (LastBufferState.EndTime <= CurrentTime) { return 0.0; }
-
-		return LastBufferState.EndTime - CurrentTime;
 	}
 
 	template <typename InputType, typename StateType>

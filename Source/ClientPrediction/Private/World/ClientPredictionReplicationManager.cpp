@@ -3,7 +3,7 @@
 #include "Net/UnrealNetwork.h"
 #include "World/ClientPredictionWorldManager.h"
 
-AClientPredictionReplicationManager::AClientPredictionReplicationManager() {
+AClientPredictionReplicationManager::AClientPredictionReplicationManager() : Settings(GetDefault<UClientPredictionSettings>()) {
 	PrimaryActorTick.bCanEverTick = false;
 	bAlwaysRelevant = true;
 	bReplicates = true;
@@ -24,11 +24,11 @@ bool AClientPredictionReplicationManager::IsNetRelevantFor(const AActor* RealVie
 void AClientPredictionReplicationManager::PostNetInit() {
 	Super::PostNetInit();
 
-	APlayerController* OwningController = Cast<APlayerController>(GetOwner());
-	if (OwningController == nullptr) { return; }
-
 	ClientPrediction::FWorldManager* Manager = ClientPrediction::FWorldManager::ManagerForWorld(GetWorld());
 	if (Manager == nullptr) { return; }
+
+	APlayerController* OwningController = Cast<APlayerController>(GetOwner());
+	if (OwningController == nullptr) { return; }
 
 	Manager->RegisterLocalReplicationManager(OwningController, this);
 }
@@ -48,13 +48,7 @@ void AClientPredictionReplicationManager::PostTickAuthority(int32 TickNumber) {
 
 	for (auto& Pair : TickSnapshot.StateData) {
 		const UPlayer* ModelOwner = Pair.Key.MapToOwningPlayer();
-
-		if (ModelOwner == OwningPlayer) {
-			QueuedSnapshot.AutoProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.FullData)});
-		}
-		else {
-			QueuedSnapshot.SimProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.ShortData)});
-		}
+		QueuedSnapshot.AutoProxyModels.Add({Pair.Key, MoveTemp(ModelOwner == OwningPlayer ? Pair.Value.FullData : Pair.Value.ShortData)});
 	}
 }
 
@@ -71,6 +65,30 @@ void AClientPredictionReplicationManager::PostSceneTickGameThreadAuthority() {
 		RemoteSnapshot = QueuedSnapshot;
 		QueuedSnapshot = {};
 	}
+}
+
+void AClientPredictionReplicationManager::PostSceneTickGameThreadRemote() {
+	const double Latency = GetNetConnection()->AvgLag;
+	const double WorldTime = GetWorld()->GetRealTimeSeconds();
+	const double WorldDt = WorldTime - LastWorldTime;
+
+	const double EstimatedServerTime = WorldTime - (Latency / 2.0);
+	const double TargetInterpolationTime = EstimatedServerTime - Settings->SimProxyDelay;
+
+	if (InterpolationTime == -1) {
+		InterpolationTime = TargetInterpolationTime;
+		LastWorldTime = WorldTime;
+		return;
+	}
+
+	const double PreliminaryNewInterpolationTime = InterpolationTime + WorldDt;
+	const double TargetTimescale = FMath::Sign(TargetInterpolationTime - PreliminaryNewInterpolationTime) * Settings->SimProxyTimeDilation + 1.0;
+	InterpolationTimescale = FMath::Lerp(InterpolationTimescale, TargetTimescale, Settings->SimProxyTimeDilationAlpha);
+
+	InterpolationTime += WorldDt * InterpolationTimescale;
+	LastWorldTime = WorldTime;
+
+	UE_LOG(LogTemp, Warning, TEXT("%f %f"), InterpolationTimescale, InterpolationTime);
 }
 
 void AClientPredictionReplicationManager::SnapshotReceivedRemote() {

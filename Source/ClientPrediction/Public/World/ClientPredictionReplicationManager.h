@@ -53,17 +53,24 @@ public:
 public:
 	void PostTickAuthority(int32 TickNumber);
 	void PostTickRemote();
+
 	void PostSceneTickGameThreadAuthority();
+	void PostSceneTickGameThreadRemote();
 
 private:
 	UFUNCTION()
 	void SnapshotReceivedRemote();
 
 	struct ClientPrediction::FStateManager* StateManager = nullptr;
+	const UClientPredictionSettings* Settings = nullptr;
 
 	UPROPERTY(Replicated, Transient, ReplicatedUsing=SnapshotReceivedRemote)
 	FTickSnapshot RemoteSnapshot{};
 
 	FCriticalSection QueuedSnapshotMutex;
 	FTickSnapshot QueuedSnapshot{};
+
+	double LastWorldTime = -1.0;
+	double InterpolationTime = -1.0;
+	double InterpolationTimescale = 1.0;
 };
