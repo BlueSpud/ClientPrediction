@@ -184,7 +184,7 @@ namespace ClientPrediction {
 	template <typename InputType, typename StateType, typename EventType>
 	void FPhysicsModel<InputType, StateType, EventType>::Cleanup() {
 		if (CachedWorldManager != nullptr && ModelDriver != nullptr) {
-			ModelDriver->Unregister(CachedWorldManager);
+			ModelDriver->Unregister(CachedWorldManager, ModelId);
 		}
 
 		CachedWorldManager = nullptr;
@@ -199,7 +199,7 @@ namespace ClientPrediction {
 		check(Delegate)
 
 		if (ModelDriver != nullptr) {
-			ModelDriver->Unregister(CachedWorldManager);
+			ModelDriver->Unregister(CachedWorldManager, ModelId);
 		}
 
 		int32 RewindBufferSize = CachedWorldManager->GetRewindBufferSize();
@@ -219,7 +219,7 @@ namespace ClientPrediction {
 			break;
 		}
 
-		ModelDriver->Register(CachedWorldManager);
+		ModelDriver->Register(CachedWorldManager, ModelId);
 	}
 
 	template <typename InputType, typename StateType, typename EventType>

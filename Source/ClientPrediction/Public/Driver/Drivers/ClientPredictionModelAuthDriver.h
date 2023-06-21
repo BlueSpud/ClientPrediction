@@ -9,13 +9,16 @@
 
 namespace ClientPrediction {
     template <typename InputType, typename StateType>
-    class FModelAuthDriver final : public FSimulatedModelDriver<InputType, StateType> {
+    class FModelAuthDriver final : public FSimulatedModelDriver<InputType, StateType>, public StateProducerBase<FStateWrapper<StateType>> {
     public:
         FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate,
                          FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep, FRepProxy& ControlProxyRep,
                          int32 RewindBufferSize, const bool bTakesInput);
 
         virtual ~FModelAuthDriver() override = default;
+
+        virtual void Register(struct FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) override;
+        virtual void Unregister(struct FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) override;
 
     public:
         // Ticking
@@ -24,6 +27,9 @@ namespace ClientPrediction {
         virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) override;
 
         virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
+
+        // StateProducerBase
+        virtual bool ProduceUnserializedStateForTick(const int32 Tick, FStateWrapper<StateType>& State) override;
 
     private:
         void SendCurrentStateToRemotes();
@@ -55,6 +61,18 @@ namespace ClientPrediction {
                                                              FRepProxy& ControlProxyRep, int32 RewindBufferSize, const bool bTakesInput)
         : FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), AutoProxyRep(AutoProxyRep), SimProxyRep(SimProxyRep), ControlProxyRep(ControlProxyRep),
           bTakesInput(bTakesInput), InputBuf(Settings, bTakesInput) {}
+
+    template <typename InputType, typename StateType>
+    void FModelAuthDriver<InputType, StateType>::Register(FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) {
+        FSimulatedModelDriver<InputType, StateType>::Register(WorldManager, ModelId);
+        WorldManager->GetStateManager().RegisterProducerForModel(ModelId, this);
+    }
+
+    template <typename InputType, typename StateType>
+    void FModelAuthDriver<InputType, StateType>::Unregister(FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) {
+        FSimulatedModelDriver<InputType, StateType>::Unregister(WorldManager, ModelId);
+        WorldManager->GetStateManager().UnregisterProducerForModel(ModelId);
+    }
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) {
@@ -90,6 +108,12 @@ namespace ClientPrediction {
         InterpolateStateGameThread(SimTime, Dt);
         SendCurrentStateToRemotes();
         SuggestTimeDilation();
+    }
+
+    template <typename InputType, typename StateType>
+    bool FModelAuthDriver<InputType, StateType>::ProduceUnserializedStateForTick(const int32 Tick, FStateWrapper<StateType>& State) {
+        State = CurrentState;
+        return true;
     }
 
     template <typename InputType, typename StateType>

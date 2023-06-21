@@ -4,6 +4,7 @@
 #include "RewindData.h"
 
 #include "ClientPredictionSettings.h"
+#include "Data/ClientPredictionStateManager.h"
 
 class AClientPredictionReplicationManager;
 
@@ -41,6 +42,8 @@ namespace ClientPrediction {
 		void SetTimeDilation(const Chaos::FReal TimeDilation) const;
 
 		void ForceSimulate(const uint32 NumTicks);
+
+		FStateManager& GetStateManager() { return StateManager; }
 
 	private:
 		void DoForceSimulateIfNeeded();
@@ -88,6 +91,8 @@ namespace ClientPrediction {
 		Chaos::FPhysicsSolver* Solver = nullptr;
 		FChaosRewindCallback* ChaosRewindCallback = nullptr;
 		int32 RewindBufferSize = 0;
+
+		FStateManager StateManager{};
 
 		FDelegateHandle PostAdvanceDelegate;
 		FDelegateHandle PostPhysSceneTickDelegate;

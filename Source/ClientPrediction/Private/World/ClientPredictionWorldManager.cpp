@@ -226,6 +226,14 @@ namespace ClientPrediction {
 		for (ITickCallback* Callback : TickCallbacks) {
 			Callback->PostTickPhysicsThread(CachedLastTickNumber, Dt, CachedSolverStartTime, TickEndTime);
 		}
+
+		StateManager.ProduceData(CachedLastTickNumber);
+
+		for (const auto& Pair : ReplicationManagers) {
+			Pair.Value->PostTickAuthority(CachedLastTickNumber, StateManager);
+		}
+
+		StateManager.ReleasedProducedData(CachedLastTickNumber);
 	}
 
 	void FWorldManager::OnPhysScenePostTick(FChaosScene* /*TickedPhysScene*/) {
@@ -244,10 +252,8 @@ namespace ClientPrediction {
 		if (!bIsForceSimulating) { DoForceSimulateIfNeeded(); }
 		LastResultsTime = ResultsTime;
 
-		// The order that these are done in doesn't matter since a world manager should never have entries in both the replication managers
-		// and have a local replication manager.
 		for (const auto& Pair : ReplicationManagers) {
-			Pair.Value->PostTickAuthority();
+			Pair.Value->PostSceneTickGameThreadAuthority();
 		}
 
 		if (LocalReplicationManager != nullptr) {

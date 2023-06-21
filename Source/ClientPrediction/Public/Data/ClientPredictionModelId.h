@@ -2,12 +2,17 @@
 
 #include "CoreMinimal.h"
 
-struct CLIENTPREDICTION_API FClientPredictionModelId {
-	FClientPredictionModelId() : OwningActor(nullptr) {}
-	explicit FClientPredictionModelId(AActor* OwningActor) : OwningActor(OwningActor) { }
-	explicit FClientPredictionModelId(const FClientPredictionModelId& ModelId) : OwningActor(ModelId.OwningActor) { }
+#include "ClientPredictionModelId.generated.h"
 
-	void Serialize(FArchive& Ar, class UPackageMap* Map) {
+USTRUCT()
+struct CLIENTPREDICTION_API FClientPredictionModelId {
+	GENERATED_BODY()
+
+	FClientPredictionModelId() : OwningActor(nullptr) {}
+	FClientPredictionModelId(const FClientPredictionModelId& ModelId) : OwningActor(ModelId.OwningActor) { }
+	explicit FClientPredictionModelId(AActor* OwningActor) : OwningActor(OwningActor) { }
+
+	void NetSerialize(FArchive& Ar, class UPackageMap* Map) {
 		Map->SerializeObject(Ar, AActor::StaticClass(), OwningActor);
 	}
 
@@ -30,6 +35,7 @@ struct CLIENTPREDICTION_API FClientPredictionModelId {
 	}
 
 private:
+	UPROPERTY(Transient)
 	UObject* OwningActor = nullptr;
 };
 

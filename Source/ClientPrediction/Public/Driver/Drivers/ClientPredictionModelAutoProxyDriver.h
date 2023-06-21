@@ -17,8 +17,8 @@ namespace ClientPrediction {
 
         virtual ~FModelAutoProxyDriver() override = default;
 
-        virtual void Register(struct FWorldManager* WorldManager) override;
-        virtual void Unregister(struct FWorldManager* WorldManager) override;
+        virtual void Register(struct FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) override;
+        virtual void Unregister(struct FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) override;
 
     private:
         void BindToRepProxy(FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep);
@@ -75,14 +75,14 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType>
-    void FModelAutoProxyDriver<InputType, StateType>::Register(FWorldManager* WorldManager) {
-        FSimulatedModelDriver<InputType, StateType>::Register(WorldManager);
+    void FModelAutoProxyDriver<InputType, StateType>::Register(FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) {
+        FSimulatedModelDriver<InputType, StateType>::Register(WorldManager, ModelId);
         WorldManager->AddRewindCallback(this);
     }
 
     template <typename InputType, typename StateType>
-    void FModelAutoProxyDriver<InputType, StateType>::Unregister(FWorldManager* WorldManager) {
-        FSimulatedModelDriver<InputType, StateType>::Unregister(WorldManager);
+    void FModelAutoProxyDriver<InputType, StateType>::Unregister(FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) {
+        FSimulatedModelDriver<InputType, StateType>::Unregister(WorldManager, ModelId);
         WorldManager->RemoveRewindCallback(this);
     }
 

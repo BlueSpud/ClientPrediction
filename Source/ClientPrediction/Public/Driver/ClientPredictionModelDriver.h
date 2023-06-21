@@ -39,8 +39,8 @@ namespace ClientPrediction {
     class IModelDriver : public ITickCallback {
     public:
         virtual ~IModelDriver() override = default;
-        virtual void Register(struct FWorldManager* WorldManager);
-        virtual void Unregister(struct FWorldManager* WorldManager);
+        virtual void Register(struct FWorldManager* WorldManager, const FClientPredictionModelId& ModelId);
+        virtual void Unregister(struct FWorldManager* WorldManager, const FClientPredictionModelId& ModelId);
 
         // Input packet / state receiving
         virtual void ReceiveInputPackets(const TArray<FInputPacketWrapper<InputType>>& Packets) {}
@@ -48,12 +48,12 @@ namespace ClientPrediction {
     };
 
     template <typename InputType, typename StateType>
-    void IModelDriver<InputType, StateType>::Register(FWorldManager* WorldManager) {
+    void IModelDriver<InputType, StateType>::Register(FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) {
         WorldManager->AddTickCallback(this);
     }
 
     template <typename InputType, typename StateType>
-    void IModelDriver<InputType, StateType>::Unregister(FWorldManager* WorldManager) {
+    void IModelDriver<InputType, StateType>::Unregister(FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) {
         WorldManager->RemoveTickCallback(this);
     }
 }

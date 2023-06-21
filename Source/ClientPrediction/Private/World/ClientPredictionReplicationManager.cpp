@@ -1,4 +1,6 @@
 ﻿#include "World/ClientPredictionReplicationManager.h"
+
+#include "Net/UnrealNetwork.h"
 #include "World/ClientPredictionWorldManager.h"
 
 AClientPredictionReplicationManager::AClientPredictionReplicationManager() {
@@ -7,6 +9,12 @@ AClientPredictionReplicationManager::AClientPredictionReplicationManager() {
 	bReplicates = true;
 
 	SetReplicateMovement(false);
+}
+
+void AClientPredictionReplicationManager::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const {
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(AClientPredictionReplicationManager, RemoteSnapshot);
 }
 
 bool AClientPredictionReplicationManager::IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const {
@@ -25,18 +33,53 @@ void AClientPredictionReplicationManager::PostNetInit() {
 	Manager->RegisterLocalReplicationManager(OwningController, this);
 }
 
-void AClientPredictionReplicationManager::PostTickAuthority() {
+void AClientPredictionReplicationManager::PostTickAuthority(int32 TickNumber, const ClientPrediction::FStateManager& StateManager) {
 	const UPlayer* OwningPlayer = GetOwner()->GetNetOwningPlayer();
 	check(OwningPlayer);
 
-	// Go to state store, get all simulation outputs
-	// Determine which outputs belong to this player using FClientPredictionModelId::MapToOwningPlayer
-	// Serialize based on the relevance (auto proxies have always relevance and get all of the data)
-	// Send data to client
+	ClientPrediction::FTickSnapshot TickSnapshot{};
+	StateManager.GetProducedDataForTick(TickNumber, TickSnapshot);
 
-	// Ask the input store for the recommended client time dilation and send that as well
+	FScopeLock QueuedSnapshotLock(&QueuedSnapshotMutex);
+	QueuedSnapshot = {};
+	QueuedSnapshot.TickNumber = TickNumber;
+
+	for (auto& Pair : TickSnapshot.StateData) {
+		const UPlayer* ModelOwner = Pair.Key.MapToOwningPlayer();
+
+		if (ModelOwner == OwningPlayer) {
+			QueuedSnapshot.AutoProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.FullData)});
+		}
+		else {
+			QueuedSnapshot.SimProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.ShortData)});
+		}
+	}
 }
 
 void AClientPredictionReplicationManager::PostTickRemote() {
+	// Ask the input store for all of the pending inputs
+	// All of the models in the input store should be for the current client, since only models that are auto proxies will be input producers
+	// Build them into frames
+	// Send them to the authority
+}
 
+void AClientPredictionReplicationManager::PostSceneTickGameThreadAuthority() {
+	FScopeLock QueuedSnapshotLock(&QueuedSnapshotMutex);
+	if (QueuedSnapshot.TickNumber != -1) {
+		RemoteSnapshot = QueuedSnapshot;
+		QueuedSnapshot = {};
+	}
+}
+
+void AClientPredictionReplicationManager::SnapshotReceivedRemote() {
+
+	UE_LOG(LogTemp, Error, TEXT("FRAME %d"), RemoteSnapshot.TickNumber);
+
+	for (const auto& AutoProxy : RemoteSnapshot.AutoProxyModels) {
+		UE_LOG(LogTemp, Warning, TEXT("AUTO PROXY %d"), AutoProxy.Data.Num());
+	}
+
+	for (const auto& SimProxy : RemoteSnapshot.SimProxyModels) {
+		UE_LOG(LogTemp, Warning, TEXT("SIM PROXY %d"), SimProxy.Data.Num());
+	}
 }
