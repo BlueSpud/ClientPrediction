@@ -76,7 +76,11 @@ void AClientPredictionReplicationManager::PostSceneTickGameThreadAuthority() {
 void AClientPredictionReplicationManager::SnapshotReceivedRemote() {
 	if (StateManager == nullptr) { return; }
 
+	for (const auto& AutoProxy : RemoteSnapshot.AutoProxyModels) {
+		StateManager->PushStateToConsumer(RemoteSnapshot.TickNumber, AutoProxy.ModelId, AutoProxy.Data, ClientPrediction::ERelevancy::kAutoProxy);
+	}
+
 	for (const auto& SimProxy : RemoteSnapshot.SimProxyModels) {
-		StateManager->PushStateToConsumer(RemoteSnapshot.TickNumber, SimProxy.ModelId, SimProxy.Data);
+		StateManager->PushStateToConsumer(RemoteSnapshot.TickNumber, SimProxy.ModelId, SimProxy.Data, ClientPrediction::ERelevancy::kRelevant);
 	}
 }

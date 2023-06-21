@@ -41,9 +41,6 @@ private:
 
 private:
 	UPROPERTY(Replicated)
-	FRepProxy AutoProxyRep;
-
-	UPROPERTY(Replicated)
 	FRepProxy ControlProxyRep;
 
 	UPROPERTY()

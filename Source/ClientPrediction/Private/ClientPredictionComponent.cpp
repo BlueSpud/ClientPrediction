@@ -12,7 +12,6 @@ UClientPredictionComponent::UClientPredictionComponent() {
 void UClientPredictionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	DOREPLIFETIME_CONDITION(UClientPredictionComponent, AutoProxyRep, COND_AutonomousOnly);
 	DOREPLIFETIME_CONDITION(UClientPredictionComponent, ControlProxyRep, COND_AutonomousOnly);
 }
 
@@ -50,7 +49,7 @@ void UClientPredictionComponent::CheckOwnerRoleChanged() {
 	CachedRole = CurrentRole;
 	bCachedAuthorityTakesInput = bAuthorityTakesInput;
 
-	PhysicsModel->SetNetRole(CurrentRole, bAuthorityTakesInput, AutoProxyRep, ControlProxyRep);
+	PhysicsModel->SetNetRole(CurrentRole, bAuthorityTakesInput, ControlProxyRep);
 }
 
 void UClientPredictionComponent::BeginPlay() {
