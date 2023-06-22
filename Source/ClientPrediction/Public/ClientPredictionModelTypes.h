@@ -55,33 +55,74 @@ namespace ClientPrediction {
         void Interpolate(const FStateWrapper Other, const Chaos::FReal Alpha);
     };
 
+    inline void SerializeHalfPrecision(Chaos::FVec3& Vec, FArchive& Ar) {
+        Chaos::FVec3f HalfVec;
+        if (Ar.IsSaving()) {
+            HalfVec = Vec;
+        }
+
+        Ar << HalfVec.X;
+        Ar << HalfVec.Y;
+        Ar << HalfVec.Z;
+
+        if (Ar.IsLoading()) {
+            Vec = HalfVec;
+        }
+    }
+
+    inline void SerializeHalfPrecision(Chaos::FRotation3& Rot, FArchive& Ar) {
+        Chaos::FRotation3f HalfRot;
+
+        if (Ar.IsSaving()) {
+            HalfRot = Rot;
+        }
+
+        Ar << HalfRot.X;
+        Ar << HalfRot.Y;
+        Ar << HalfRot.Z;
+        Ar << HalfRot.W;
+
+        if (Ar.IsLoading()) {
+            Rot = HalfRot;
+        }
+    }
+
     template <typename StateType>
     void FStateWrapper<StateType>::NetSerialize(FArchive& Ar, bool bSerializeFullState) {
         Ar << TickNumber;
-        if (bSerializeFullState) { Ar << InputPacketTickNumber; }
+
+        if (bSerializeFullState) {
+            Ar << InputPacketTickNumber;
+        }
 
         Ar << PhysicsState.ObjectState;
 
-        // Serialize manually to make sure that they are serialized as doubles
-        Ar << PhysicsState.X.X;
-        Ar << PhysicsState.X.Y;
-        Ar << PhysicsState.X.Z;
-
-        Ar << PhysicsState.V.X;
-        Ar << PhysicsState.V.Y;
-        Ar << PhysicsState.V.Z;
-
-        Ar << PhysicsState.R.X;
-        Ar << PhysicsState.R.Y;
-        Ar << PhysicsState.R.Z;
-        Ar << PhysicsState.R.W;
-
-        Ar << PhysicsState.W.X;
-        Ar << PhysicsState.W.Y;
-        Ar << PhysicsState.W.Z;
-
         if (bSerializeFullState) {
+            // Serialize manually to make sure that they are serialized as doubles
+            Ar << PhysicsState.X.X;
+            Ar << PhysicsState.X.Y;
+            Ar << PhysicsState.X.Z;
+
+            Ar << PhysicsState.V.X;
+            Ar << PhysicsState.V.Y;
+            Ar << PhysicsState.V.Z;
+
+            Ar << PhysicsState.R.X;
+            Ar << PhysicsState.R.Y;
+            Ar << PhysicsState.R.Z;
+            Ar << PhysicsState.R.W;
+
+            Ar << PhysicsState.W.X;
+            Ar << PhysicsState.W.Y;
+            Ar << PhysicsState.W.Z;
+
             Ar << Events;
+        }
+        else {
+            SerializeHalfPrecision(PhysicsState.X, Ar);
+            SerializeHalfPrecision(PhysicsState.V, Ar);
+            SerializeHalfPrecision(PhysicsState.R, Ar);
+            SerializeHalfPrecision(PhysicsState.W, Ar);
         }
 
         Body.NetSerialize(Ar, bSerializeFullState);
