@@ -12,7 +12,8 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     class FModelAutoProxyDriver final : public FSimulatedModelDriver<InputType, StateType>, public IRewindCallback, public StateConsumerBase<FStateWrapper<StateType>> {
     public:
-        FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FRepProxy& ControlProxyRep, int32 RewindBufferSize);
+        FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FRepProxy& ControlProxyRep,
+                              int32 RewindBufferSize);
 
         virtual ~FModelAutoProxyDriver() override = default;
 

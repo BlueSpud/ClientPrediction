@@ -127,7 +127,7 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::SendState(FStateWrapper<StateType> State) {
         if (State.TickNumber != INDEX_NONE && State.TickNumber != LastEmittedState) {
-            if (State.Events != 0) { Delegate->EmitReliableAuthorityState(State);}
+            if (State.Events != 0) { Delegate->EmitReliableAuthorityState(State); }
             LastEmittedState = State.TickNumber;
         }
     }
