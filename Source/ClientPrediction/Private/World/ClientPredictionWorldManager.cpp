@@ -85,6 +85,8 @@ namespace ClientPrediction {
 		AClientPredictionReplicationManager* Manger = World->SpawnActor<AClientPredictionReplicationManager>(SpawnParameters);
 		check(Manger)
 
+		FScopeLock ManagerLock(&ManagersMutex);
+
 		check(LocalReplicationManager == nullptr);
 		ReplicationManagers.Add(PlayerController, Manger);
 
@@ -102,6 +104,8 @@ namespace ClientPrediction {
 	}
 
 	void FWorldManager::RegisterLocalReplicationManager(APlayerController* PlayerController, AClientPredictionReplicationManager* Manager) {
+		FScopeLock ManagerLock(&ManagersMutex);
+
 		check(LocalReplicationManager == nullptr);
 		check(ReplicationManagers.IsEmpty());
 
@@ -232,6 +236,7 @@ namespace ClientPrediction {
 
 		StateManager.ProduceData(CachedLastTickNumber);
 
+		FScopeLock ManagerLock(&ManagersMutex);
 		for (const auto& Pair : ReplicationManagers) {
 			Pair.Value->PostTickAuthority(CachedLastTickNumber);
 		}
@@ -249,11 +254,6 @@ namespace ClientPrediction {
 		const Chaos::FReal Dt = LastResultsTime == -1.0 ? 0.0 : ResultsTime - LastResultsTime;
 		check(Dt >= 0.0)
 
-		// Update the simulated proxy time
-		if (LocalReplicationManager != nullptr) {
-			LocalReplicationManager->PostSceneTickGameThreadRemote();
-		}
-
 		{
 			FScopeLock Lock(&CallbacksMutex);
 			for (ITickCallback* Callback : TickCallbacks) {
@@ -263,6 +263,12 @@ namespace ClientPrediction {
 
 		if (!bIsForceSimulating) { DoForceSimulateIfNeeded(); }
 		LastResultsTime = ResultsTime;
+
+		// Update the simulated proxy time
+		FScopeLock ManagerLock(&ManagersMutex);
+		if (LocalReplicationManager != nullptr) {
+			LocalReplicationManager->PostSceneTickGameThreadRemote();
+		}
 
 		for (const auto& Pair : ReplicationManagers) {
 			Pair.Value->PostSceneTickGameThreadAuthority();

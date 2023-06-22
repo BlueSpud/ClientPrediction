@@ -10,10 +10,9 @@
 
 namespace ClientPrediction {
     template <typename InputType, typename StateType>
-    class FModelAutoProxyDriver final : public FSimulatedModelDriver<InputType, StateType>, public IRewindCallback {
+    class FModelAutoProxyDriver final : public FSimulatedModelDriver<InputType, StateType>, public IRewindCallback, public StateConsumerBase<FStateWrapper<StateType>> {
     public:
-        FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FRepProxy& AutoProxyRep,
-                              FRepProxy& ControlProxyRep, int32 RewindBufferSize);
+        FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FRepProxy& ControlProxyRep, int32 RewindBufferSize);
 
         virtual ~FModelAutoProxyDriver() override = default;
 
@@ -21,9 +20,10 @@ namespace ClientPrediction {
         virtual void Unregister(struct FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) override;
 
     private:
-        void BindToRepProxy(FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep);
+        void BindToRepProxy(FRepProxy& ControlProxyRep);
 
     public:
+        virtual void ConsumeUnserializedStateForTick(const int32 Tick, const FStateWrapper<StateType>& State) override;
         virtual void ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) override;
 
     private:
@@ -64,40 +64,36 @@ namespace ClientPrediction {
     };
 
     template <typename InputType, typename StateType>
-    FModelAutoProxyDriver<InputType, StateType>::FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent,
-                                                                       IModelDriverDelegate<InputType, StateType>*
-                                                                       Delegate,
-                                                                       FRepProxy& AutoProxyRep,
-                                                                       FRepProxy& ControlProxyRep,
-                                                                       int32 RewindBufferSize) :
+    FModelAutoProxyDriver<InputType, StateType>::FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate,
+                                                                       FRepProxy& ControlProxyRep, int32 RewindBufferSize) :
         FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), RewindBufferSize(RewindBufferSize) {
-        BindToRepProxy(AutoProxyRep, ControlProxyRep);
+        BindToRepProxy(ControlProxyRep);
     }
 
     template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::Register(FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) {
         FSimulatedModelDriver<InputType, StateType>::Register(WorldManager, ModelId);
+        WorldManager->GetStateManager().RegisterConsumerForModel(ModelId, this);
         WorldManager->AddRewindCallback(this);
     }
 
     template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::Unregister(FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) {
         FSimulatedModelDriver<InputType, StateType>::Unregister(WorldManager, ModelId);
+        WorldManager->GetStateManager().UnregisterConsumerForModel(ModelId);
         WorldManager->RemoveRewindCallback(this);
     }
 
     template <typename InputType, typename StateType>
-    void FModelAutoProxyDriver<InputType, StateType>::BindToRepProxy(FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep) {
-        AutoProxyRep.SerializeFunc = [&](FArchive& Ar) {
-            FStateWrapper<StateType> State{};
-            State.NetSerialize(Ar, true);
-
-            QueueAuthorityState(State);
-        };
-
+    void FModelAutoProxyDriver<InputType, StateType>::BindToRepProxy(FRepProxy& ControlProxyRep) {
         ControlProxyRep.SerializeFunc = [&](FArchive& Ar) {
             LastControlPacket.NetSerialize(Ar);
         };
+    }
+
+    template <typename InputType, typename StateType>
+    void FModelAutoProxyDriver<InputType, StateType>::ConsumeUnserializedStateForTick(const int32 Tick, const FStateWrapper<StateType>& State) {
+        QueueAuthorityState(State);
     }
 
     template <typename InputType, typename StateType>

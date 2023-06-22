@@ -61,8 +61,10 @@ private:
 	UFUNCTION()
 	void SnapshotReceivedRemote();
 
-	struct ClientPrediction::FStateManager* StateManager = nullptr;
+	UPROPERTY()
 	const UClientPredictionSettings* Settings = nullptr;
+
+	struct ClientPrediction::FStateManager* StateManager = nullptr;
 
 	UPROPERTY(Replicated, Transient, ReplicatedUsing=SnapshotReceivedRemote)
 	FTickSnapshot RemoteSnapshot{};

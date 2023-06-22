@@ -48,7 +48,13 @@ void AClientPredictionReplicationManager::PostTickAuthority(int32 TickNumber) {
 
 	for (auto& Pair : TickSnapshot.StateData) {
 		const UPlayer* ModelOwner = Pair.Key.MapToOwningPlayer();
-		QueuedSnapshot.AutoProxyModels.Add({Pair.Key, MoveTemp(ModelOwner == OwningPlayer ? Pair.Value.FullData : Pair.Value.ShortData)});
+
+		if (ModelOwner == OwningPlayer) {
+			QueuedSnapshot.AutoProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.FullData)});
+		}
+		else {
+			QueuedSnapshot.SimProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.ShortData)});
+		}
 	}
 }
 
@@ -88,13 +94,17 @@ void AClientPredictionReplicationManager::PostSceneTickGameThreadRemote() {
 	InterpolationTime += WorldDt * InterpolationTimescale;
 	LastWorldTime = WorldTime;
 
-	UE_LOG(LogTemp, Warning, TEXT("%f %f"), InterpolationTimescale, InterpolationTime);
+	// UE_LOG(LogTemp, Warning, TEXT("%f %f"), InterpolationTimescale, InterpolationTime);
 }
 
 void AClientPredictionReplicationManager::SnapshotReceivedRemote() {
 	if (StateManager == nullptr) { return; }
 
+	for (const auto& AutoProxy : RemoteSnapshot.AutoProxyModels) {
+		StateManager->PushStateToConsumer(RemoteSnapshot.TickNumber, AutoProxy.ModelId, AutoProxy.Data, ClientPrediction::kAutoProxy);
+	}
+
 	for (const auto& SimProxy : RemoteSnapshot.SimProxyModels) {
-		StateManager->PushStateToConsumer(RemoteSnapshot.TickNumber, SimProxy.ModelId, SimProxy.Data);
+		StateManager->PushStateToConsumer(RemoteSnapshot.TickNumber, SimProxy.ModelId, SimProxy.Data, ClientPrediction::kRelevant);
 	}
 }

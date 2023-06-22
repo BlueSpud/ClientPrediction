@@ -84,6 +84,8 @@ namespace ClientPrediction {
 		const UClientPredictionSettings* Settings = nullptr;
 
 		class UWorld* World = nullptr;
+
+		FCriticalSection ManagersMutex;
 		TMap<class APlayerController*, AClientPredictionReplicationManager*> ReplicationManagers;
 		AClientPredictionReplicationManager* LocalReplicationManager = nullptr;
 

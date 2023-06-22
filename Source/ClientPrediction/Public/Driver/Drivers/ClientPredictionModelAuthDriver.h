@@ -11,8 +11,7 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     class FModelAuthDriver final : public FSimulatedModelDriver<InputType, StateType>, public StateProducerBase<FStateWrapper<StateType>> {
     public:
-        FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate,
-                         FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep,
+        FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FRepProxy& ControlProxyRep,
                          int32 RewindBufferSize, const bool bTakesInput);
 
         virtual ~FModelAuthDriver() override = default;
@@ -41,7 +40,6 @@ namespace ClientPrediction {
         virtual void ReceiveInputPackets(const TArray<FInputPacketWrapper<InputType>>& Packets) override;
 
     private:
-        FRepProxy& AutoProxyRep;
         FRepProxy& ControlProxyRep;
         bool bTakesInput = false;
 
@@ -54,10 +52,9 @@ namespace ClientPrediction {
     };
 
     template <typename InputType, typename StateType>
-    FModelAuthDriver<InputType, StateType>::FModelAuthDriver(UPrimitiveComponent* UpdatedComponent,
-                                                             IModelDriverDelegate<InputType, StateType>* Delegate,
-                                                             FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep, int32 RewindBufferSize, const bool bTakesInput)
-        : FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), AutoProxyRep(AutoProxyRep), ControlProxyRep(ControlProxyRep),
+    FModelAuthDriver<InputType, StateType>::FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate,
+                                                             FRepProxy& ControlProxyRep, int32 RewindBufferSize, const bool bTakesInput)
+        : FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), ControlProxyRep(ControlProxyRep),
           bTakesInput(bTakesInput), InputBuf(Settings, bTakesInput) {}
 
     template <typename InputType, typename StateType>
@@ -130,13 +127,7 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::SendState(FStateWrapper<StateType> State) {
         if (State.TickNumber != INDEX_NONE && State.TickNumber != LastEmittedState) {
-            if (State.Events == 0) {
-                AutoProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { State.NetSerialize(Ar, true); };
-
-                AutoProxyRep.Dispatch();
-            }
-            else { Delegate->EmitReliableAuthorityState(State); }
-
+            if (State.Events != 0) { Delegate->EmitReliableAuthorityState(State);}
             LastEmittedState = State.TickNumber;
         }
     }
