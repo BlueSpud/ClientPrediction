@@ -3,6 +3,59 @@
 #include "Net/UnrealNetwork.h"
 #include "World/ClientPredictionWorldManager.h"
 
+// Serialization
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void NetSerializeSnapshot(FArchive& Ar, UPackageMap* Map, FModelSnapshot& Snapshot) {
+    Snapshot.ModelId.NetSerialize(Ar, Map);
+
+    uint16 DataLength;
+    if (Ar.IsSaving()) {
+        DataLength = static_cast<uint16>(Snapshot.Data.Num());
+    }
+
+    Ar << DataLength;
+
+    if (Ar.IsLoading()) {
+        Snapshot.Data.SetNumUninitialized(DataLength);
+    }
+
+    Ar.Serialize(Snapshot.Data.GetData(), DataLength);
+}
+
+void NetSerializeSnapshotArray(FArchive& Ar, UPackageMap* Map, TArray<FModelSnapshot>& Snapshots) {
+    uint16 NumSnapshots;
+    if (Ar.IsSaving()) {
+        NumSnapshots = static_cast<uint16>(Snapshots.Num());
+    }
+
+    Ar << NumSnapshots;
+
+    if (Ar.IsLoading()) {
+        Snapshots.SetNum(NumSnapshots);
+    }
+
+    for (uint16 i = 0; i < NumSnapshots; ++i) {
+        NetSerializeSnapshot(Ar, Map, Snapshots[i]);
+    }
+}
+
+bool FTickSnapshot::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess) {
+    Ar << TickNumber;
+    NetSerializeSnapshotArray(Ar, Map, SimProxyModels);
+    NetSerializeSnapshotArray(Ar, Map, AutoProxyModels);
+
+    bOutSuccess = true;
+    return true;
+}
+
+bool FTickSnapshot::Identical(const FTickSnapshot* Other, uint32 PortFlags) const {
+    return TickNumber == Other->TickNumber;
+}
+
+// Replication manager
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 AClientPredictionReplicationManager::AClientPredictionReplicationManager() : Settings(GetDefault<UClientPredictionSettings>()) {
     PrimaryActorTick.bCanEverTick = false;
     bAlwaysRelevant = true;
