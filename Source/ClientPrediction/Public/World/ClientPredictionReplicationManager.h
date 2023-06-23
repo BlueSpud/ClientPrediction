@@ -61,7 +61,6 @@ public:
 
 public:
     void PostTickAuthority(int32 TickNumber);
-    void PostTickRemote();
 
     void PostSceneTickGameThreadAuthority();
     void PostSceneTickGameThreadRemote();
@@ -69,6 +68,13 @@ public:
 private:
     UFUNCTION()
     void SnapshotReceivedRemote();
+
+    int32 ServerStartTick = INDEX_NONE;
+    Chaos::FReal ServerStartTime = -1.0;
+    Chaos::FReal ServerTimescale = 1.0;
+    Chaos::FReal ServerTime = -1.0;
+
+    Chaos::FReal LastWorldTime = -1.0;
 
     UPROPERTY()
     const UClientPredictionSettings* Settings = nullptr;
@@ -81,7 +87,4 @@ private:
     FCriticalSection QueuedSnapshotMutex;
     FTickSnapshot QueuedSnapshot{};
 
-    double LastWorldTime = -1.0;
-    double InterpolationTime = -1.0;
-    double InterpolationTimescale = 1.0;
 };

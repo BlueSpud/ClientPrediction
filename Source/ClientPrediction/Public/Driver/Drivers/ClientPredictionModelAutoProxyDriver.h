@@ -24,7 +24,7 @@ namespace ClientPrediction {
         void BindToRepProxy(FRepProxy& ControlProxyRep);
 
     public:
-        virtual void ConsumeUnserializedStateForTick(const int32 Tick, const FStateWrapper<StateType>& State) override;
+        virtual void ConsumeUnserializedStateForTick(const int32 Tick, const FStateWrapper<StateType>& State, const Chaos::FReal ServerTime) override;
         virtual void ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) override;
 
     private:
@@ -93,7 +93,8 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType>
-    void FModelAutoProxyDriver<InputType, StateType>::ConsumeUnserializedStateForTick(const int32 Tick, const FStateWrapper<StateType>& State) {
+    void FModelAutoProxyDriver<InputType, StateType>::ConsumeUnserializedStateForTick(const int32 Tick, const FStateWrapper<StateType>& State,
+                                                                                      const Chaos::FReal ServerTime) {
         QueueAuthorityState(State);
     }
 

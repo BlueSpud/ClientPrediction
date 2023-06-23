@@ -32,7 +32,11 @@ namespace ClientPrediction {
         void GetProducedDataForTick(int32 TickNumber, FTickSnapshot& OutSnapshot);
         void ReleasedProducedData(int32 TickNumber);
 
-        void PushStateToConsumer(int32 TickNumber, const FClientPredictionModelId& ModelId, const TArray<uint8>& Data, const ERelevancy Relevancy);
+        Chaos::FReal GetInterpolationTime() const { return InterpolationTime; }
+        void SetInterpolationTime(const Chaos::FReal NewInterpolationTime) { InterpolationTime = NewInterpolationTime; }
+
+        void PushStateToConsumer(int32 TickNumber, const FClientPredictionModelId& ModelId, const TArray<uint8>& Data, const Chaos::FReal ServerTime,
+                                 const ERelevancy Relevancy);
 
     private:
         FCriticalSection ProducerMutex;
@@ -48,6 +52,8 @@ namespace ClientPrediction {
 
         FCriticalSection ProducedStatesMutex;
         TMap<FClientPredictionModelId, TArray<FSerializedState>> ProducedStates;
+
+        Chaos::FReal InterpolationTime = 0.0;
     };
 
     // State producers
@@ -94,24 +100,27 @@ namespace ClientPrediction {
     class IStateConsumer {
     public:
         virtual ~IStateConsumer() = default;
-        virtual void ConsumeStateForTick(const int32 Tick, const TArray<uint8>& SerializedState, const ERelevancy Relevancy) = 0;
+        virtual void ConsumeStateForTick(const int32 Tick, const TArray<uint8>& SerializedState, const Chaos::FReal ServerTime, const ERelevancy Relevancy) = 0;
     };
 
     /** Convenience class that enables consuming unserialized states instead */
     template <typename StateType>
     class StateConsumerBase : public IStateConsumer {
     public:
-        virtual void ConsumeStateForTick(const int32 Tick, const TArray<uint8>& SerializedState, const ERelevancy Relevancy) override final;
-        virtual void ConsumeUnserializedStateForTick(const int32 Tick, const StateType& State) = 0;
+        virtual void ConsumeStateForTick(const int32 Tick, const TArray<uint8>& SerializedState, const Chaos::FReal ServerTime,
+                                         const ERelevancy Relevancy) override final;
+
+        virtual void ConsumeUnserializedStateForTick(const int32 Tick, const StateType& State, const Chaos::FReal ServerTime) = 0;
     };
 
     template <typename StateType>
-    void StateConsumerBase<StateType>::ConsumeStateForTick(const int32 Tick, const TArray<uint8>& SerializedState, const ERelevancy Relevancy) {
+    void StateConsumerBase<StateType>::ConsumeStateForTick(const int32 Tick, const TArray<uint8>& SerializedState, const Chaos::FReal ServerTime,
+                                                           const ERelevancy Relevancy) {
         FMemoryReader Ar(SerializedState);
 
         StateType DeserializedState{};
         DeserializedState.NetSerialize(Ar, Relevancy == ERelevancy::kAutoProxy);
 
-        ConsumeUnserializedStateForTick(Tick, DeserializedState);
+        ConsumeUnserializedStateForTick(Tick, DeserializedState, ServerTime);
     }
 }

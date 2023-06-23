@@ -84,6 +84,7 @@ void AClientPredictionReplicationManager::PostNetInit() {
     if (OwningController == nullptr) { return; }
 
     Manager->RegisterLocalReplicationManager(OwningController, this);
+    LastWorldTime = GetWorld()->GetRealTimeSeconds();
 }
 
 void AClientPredictionReplicationManager::PostTickAuthority(int32 TickNumber) {
@@ -111,13 +112,6 @@ void AClientPredictionReplicationManager::PostTickAuthority(int32 TickNumber) {
     }
 }
 
-void AClientPredictionReplicationManager::PostTickRemote() {
-    // Ask the input store for all of the pending inputs
-    // All of the models in the input store should be for the current client, since only models that are auto proxies will be input producers
-    // Build them into frames
-    // Send them to the authority
-}
-
 void AClientPredictionReplicationManager::PostSceneTickGameThreadAuthority() {
     FScopeLock QueuedSnapshotLock(&QueuedSnapshotMutex);
     if (QueuedSnapshot.TickNumber != -1) {
@@ -127,37 +121,40 @@ void AClientPredictionReplicationManager::PostSceneTickGameThreadAuthority() {
 }
 
 void AClientPredictionReplicationManager::PostSceneTickGameThreadRemote() {
-    const double Latency = GetNetConnection()->AvgLag;
-    const double WorldTime = GetWorld()->GetRealTimeSeconds();
-    const double WorldDt = WorldTime - LastWorldTime;
+    const Chaos::FReal WorldTime = GetWorld()->GetRealTimeSeconds();
+    const Chaos::FReal WorldDt = WorldTime - LastWorldTime;
 
-    const double EstimatedServerTime = WorldTime - (Latency / 2.0);
-    const double TargetInterpolationTime = EstimatedServerTime - Settings->SimProxyDelay;
-
-    if (InterpolationTime == -1) {
-        InterpolationTime = TargetInterpolationTime;
-        LastWorldTime = WorldTime;
-        return;
-    }
-
-    const double PreliminaryNewInterpolationTime = InterpolationTime + WorldDt;
-    const double TargetTimescale = FMath::Sign(TargetInterpolationTime - PreliminaryNewInterpolationTime) * Settings->SimProxyTimeDilation + 1.0;
-    InterpolationTimescale = FMath::Lerp(InterpolationTimescale, TargetTimescale, Settings->SimProxyTimeDilationAlpha);
-
-    InterpolationTime += WorldDt * InterpolationTimescale;
+    ServerTime += WorldDt * ServerTimescale;
     LastWorldTime = WorldTime;
 
-    // UE_LOG(LogTemp, Warning, TEXT("%f %f"), InterpolationTimescale, InterpolationTime);
+    StateManager->SetInterpolationTime(ServerTime - Settings->SimProxyDelay);
 }
 
 void AClientPredictionReplicationManager::SnapshotReceivedRemote() {
     if (StateManager == nullptr) { return; }
 
+    if (ServerStartTick == INDEX_NONE) {
+        const Chaos::FReal WorldTime = GetWorld()->GetRealTimeSeconds();
+
+        ServerStartTick = RemoteSnapshot.TickNumber;
+        ServerStartTime = WorldTime;
+
+        ServerTime = WorldTime;
+    }
+
+    // Slow down the server time if it is too far ahead and speed it up if it is too far behind
+    const Chaos::FReal SnapshotServerTime = static_cast<double>(RemoteSnapshot.TickNumber - ServerStartTick) * Settings->FixedDt + ServerStartTime;
+    const Chaos::FReal TargetTimescale = FMath::Sign(SnapshotServerTime - ServerTime) * Settings->SimProxyTimeDilation + 1.0;
+
+    ServerTimescale = FMath::Lerp(ServerTimescale, TargetTimescale, Settings->SimProxyTimeDilationAlpha);
+
+    UE_LOG(LogTemp, Warning, TEXT("%s"), *GetOwner()->GetNetConnection()->GetName());
+
     for (const auto& AutoProxy : RemoteSnapshot.AutoProxyModels) {
-        StateManager->PushStateToConsumer(RemoteSnapshot.TickNumber, AutoProxy.ModelId, AutoProxy.Data, ClientPrediction::kAutoProxy);
+        StateManager->PushStateToConsumer(RemoteSnapshot.TickNumber, AutoProxy.ModelId, AutoProxy.Data, SnapshotServerTime, ClientPrediction::kAutoProxy);
     }
 
     for (const auto& SimProxy : RemoteSnapshot.SimProxyModels) {
-        StateManager->PushStateToConsumer(RemoteSnapshot.TickNumber, SimProxy.ModelId, SimProxy.Data, ClientPrediction::kRelevant);
+        StateManager->PushStateToConsumer(RemoteSnapshot.TickNumber, SimProxy.ModelId, SimProxy.Data, SnapshotServerTime, ClientPrediction::kRelevant);
     }
 }

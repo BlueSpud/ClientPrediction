@@ -236,13 +236,11 @@ namespace ClientPrediction {
 
         StateManager.ProduceData(CachedLastTickNumber);
 
-        FScopeLock ManagerLock(&ManagersMutex);
-        for (const auto& Pair : ReplicationManagers) {
-            Pair.Value->PostTickAuthority(CachedLastTickNumber);
-        }
-
-        if (LocalReplicationManager != nullptr) {
-            LocalReplicationManager->PostTickRemote();
+        {
+            FScopeLock ManagerLock(&ManagersMutex);
+            for (const auto& Pair : ReplicationManagers) {
+                Pair.Value->PostTickAuthority(CachedLastTickNumber);
+            }
         }
 
         StateManager.ReleasedProducedData(CachedLastTickNumber);
@@ -255,6 +253,14 @@ namespace ClientPrediction {
         check(Dt >= 0.0)
 
         {
+            // Update the simulated proxy time
+            FScopeLock ManagerLock(&ManagersMutex);
+            if (LocalReplicationManager != nullptr) {
+                LocalReplicationManager->PostSceneTickGameThreadRemote();
+            }
+        }
+
+        {
             FScopeLock Lock(&CallbacksMutex);
             for (ITickCallback* Callback : TickCallbacks) {
                 Callback->PostPhysicsGameThread(ResultsTime, Dt);
@@ -264,12 +270,7 @@ namespace ClientPrediction {
         if (!bIsForceSimulating) { DoForceSimulateIfNeeded(); }
         LastResultsTime = ResultsTime;
 
-        // Update the simulated proxy time
         FScopeLock ManagerLock(&ManagersMutex);
-        if (LocalReplicationManager != nullptr) {
-            LocalReplicationManager->PostSceneTickGameThreadRemote();
-        }
-
         for (const auto& Pair : ReplicationManagers) {
             Pair.Value->PostSceneTickGameThreadAuthority();
         }

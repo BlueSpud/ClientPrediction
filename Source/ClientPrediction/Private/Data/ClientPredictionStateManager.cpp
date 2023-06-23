@@ -80,13 +80,14 @@ namespace ClientPrediction {
         }
     }
 
-    void FStateManager::PushStateToConsumer(int32 TickNumber, const FClientPredictionModelId& ModelId, const TArray<uint8>& Data, const ERelevancy Relevancy) {
+    void FStateManager::PushStateToConsumer(int32 TickNumber, const FClientPredictionModelId& ModelId, const TArray<uint8>& Data, const Chaos::FReal ServerTime,
+                                            const ERelevancy Relevancy) {
         FScopeLock ConsumerLock(&ConsumerMutex);
 
         if (!Consumers.Contains(ModelId)) {
             return;
         }
 
-        Consumers[ModelId]->ConsumeStateForTick(TickNumber, Data, Relevancy);
+        Consumers[ModelId]->ConsumeStateForTick(TickNumber, Data, ServerTime, Relevancy);
     }
 };

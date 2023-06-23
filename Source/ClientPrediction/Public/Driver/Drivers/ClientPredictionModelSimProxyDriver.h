@@ -16,18 +16,16 @@ namespace ClientPrediction {
         virtual void Register(struct FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) override;
         virtual void Unregister(struct FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) override;
 
-        virtual void ConsumeUnserializedStateForTick(const int32 Tick, const FStateWrapper<StateType>& State) override;
+        virtual void ConsumeUnserializedStateForTick(const int32 Tick, const FStateWrapper<StateType>& State, const Chaos::FReal ServerTime) override;
         virtual void ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) override;
 
     private:
         void QueueState(const FStateWrapper<StateType>& State);
-        void BuildStateTimes(FStateWrapper<StateType>& State);
 
     public:
         virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
 
     private:
-        Chaos::FReal GetWorldDt();
         void GetInterpolatedStateAssumingStatesNotEmpty(FStateWrapper<StateType>& OutState);
 
         void DispatchEvents(Chaos::FReal StartTime, Chaos::FReal EndTime);
@@ -43,15 +41,11 @@ namespace ClientPrediction {
 
         const UClientPredictionSettings* Settings = nullptr;
 
-        /** This is the tick that was first received from the authority. */
-        int32 StartingTick = INDEX_NONE;
-
         /** If the buffer is empty this is the state that will be used. */
         FStateWrapper<StateType> CurrentState = {};
-        Chaos::FReal LastAbsoluteWorldTime = -1.0;
 
-        Chaos::FReal CurrentTime = -Settings->SimProxyDelay;
-        Chaos::FReal Timescale = 1.0;
+        FStateManager* StateManager = nullptr;
+        Chaos::FReal InterpolationTime = 0.0;
     };
 
     template <typename InputType, typename StateType>
@@ -77,31 +71,40 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     void FModelSimProxyDriver<InputType, StateType>::Register(FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) {
         IModelDriver<InputType, StateType>::Register(WorldManager, ModelId);
-        WorldManager->GetStateManager().RegisterConsumerForModel(ModelId, this);
+
+        StateManager = &WorldManager->GetStateManager();
+        StateManager->RegisterConsumerForModel(ModelId, this);
     }
 
     template <typename InputType, typename StateType>
     void FModelSimProxyDriver<InputType, StateType>::Unregister(FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) {
         IModelDriver<InputType, StateType>::Unregister(WorldManager, ModelId);
-        WorldManager->GetStateManager().UnregisterConsumerForModel(ModelId);
+
+        StateManager->UnregisterConsumerForModel(ModelId);
+        StateManager = nullptr;
     }
 
     template <typename InputType, typename StateType>
-    void FModelSimProxyDriver<InputType, StateType>::ConsumeUnserializedStateForTick(const int32 Tick, const FStateWrapper<StateType>& State) {
-        QueueState(State);
+    void FModelSimProxyDriver<InputType, StateType>::ConsumeUnserializedStateForTick(const int32 Tick, const FStateWrapper<StateType>& State,
+                                                                                     const Chaos::FReal ServerTime) {
+        FStateWrapper<StateType> StateWithTimes = State;
+        StateWithTimes.StartTime = ServerTime;
+        StateWithTimes.EndTime = ServerTime + Settings->FixedDt;
+
+        QueueState(StateWithTimes);
     }
 
     template <typename InputType, typename StateType>
-    void FModelSimProxyDriver<InputType, StateType>::ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) { QueueState(State); }
+    void FModelSimProxyDriver<InputType, StateType>::ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) {
+        // TODO this needs to get the server time correctly
+        // QueueState(State);
+    }
 
     template <typename InputType, typename StateType>
     void FModelSimProxyDriver<InputType, StateType>::QueueState(const FStateWrapper<StateType>& State) {
-        FStateWrapper<StateType> StateWithTimes = State;
-        BuildStateTimes(StateWithTimes);
-
         // If the state is in the past, any events that were included need to be dispatched
-        if (StateWithTimes.StartTime <= CurrentTime) {
-            Delegate->DispatchEvents(StateWithTimes, StateWithTimes.Events, 0.0, 0.0);
+        if (State.StartTime <= InterpolationTime) {
+            Delegate->DispatchEvents(State, State.Events, 0.0, 0.0);
         }
 
         const bool bAlreadyHasState = States.ContainsByPredicate([&](const auto& Candidate) {
@@ -109,59 +112,35 @@ namespace ClientPrediction {
         });
 
         if (!bAlreadyHasState) {
-            States.Add(StateWithTimes);
+            States.Add(State);
             States.Sort([](const auto& A, const auto& B) { return A.TickNumber < B.TickNumber; });
         }
     }
 
     template <typename InputType, typename StateType>
-    void FModelSimProxyDriver<InputType, StateType>::BuildStateTimes(FStateWrapper<StateType>& State) {
-        if (StartingTick == INDEX_NONE) {
-            StartingTick = State.TickNumber;
-        }
-
-        State.StartTime = static_cast<Chaos::FReal>(State.TickNumber - StartingTick) * Settings->FixedDt;
-        State.EndTime = State.StartTime + Settings->FixedDt;
-    }
-
-    template <typename InputType, typename StateType>
     void FModelSimProxyDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
-        if (StartingTick == INDEX_NONE) { return; }
+        if (StateManager == nullptr) { return; }
 
-        const Chaos::FReal WorldDt = GetWorldDt();
-        const Chaos::FReal LastTime = CurrentTime;
-        CurrentTime += WorldDt * Timescale;
+        const Chaos::FReal LastInterpolationTime = InterpolationTime;
+        InterpolationTime = StateManager->GetInterpolationTime();
 
-        DispatchEvents(LastTime, CurrentTime);
+        DispatchEvents(LastInterpolationTime, InterpolationTime);
 
         if (States.IsEmpty()) {
-            Finalize(WorldDt);
+            Finalize(Dt);
             return;
         }
 
         GetInterpolatedStateAssumingStatesNotEmpty(CurrentState);
-        Finalize(WorldDt);
+        Finalize(Dt);
 
         TrimStateBuffer();
     }
 
     template <typename InputType, typename StateType>
-    Chaos::FReal FModelSimProxyDriver<InputType, StateType>::GetWorldDt() {
-        const Chaos::FReal AbsoluteWorldTime = Delegate->GetWorldTimeNoDilation();
-        if (LastAbsoluteWorldTime == -1.0) {
-            LastAbsoluteWorldTime = AbsoluteWorldTime;
-        }
-
-        const Chaos::FReal WorldDt = AbsoluteWorldTime - LastAbsoluteWorldTime;
-        LastAbsoluteWorldTime = AbsoluteWorldTime;
-
-        return WorldDt;
-    }
-
-    template <typename InputType, typename StateType>
     void FModelSimProxyDriver<InputType, StateType>::GetInterpolatedStateAssumingStatesNotEmpty(FStateWrapper<StateType>& OutState) {
         for (int32 i = 0; i < States.Num(); i++) {
-            if (CurrentTime < States[i].EndTime) {
+            if (InterpolationTime < States[i].EndTime) {
                 if (i == 0) {
                     OutState = States[0];
                     return;
@@ -172,7 +151,7 @@ namespace ClientPrediction {
                 OutState = Start;
 
                 const Chaos::FReal PrevEndTime = Start.EndTime;
-                const Chaos::FReal TimeFromPrevEnd = CurrentTime - PrevEndTime;
+                const Chaos::FReal TimeFromPrevEnd = InterpolationTime - PrevEndTime;
                 const Chaos::FReal TotalTime = End.EndTime - Start.EndTime;
 
                 if (TotalTime > 0.0) {
@@ -215,7 +194,7 @@ namespace ClientPrediction {
     void FModelSimProxyDriver<InputType, StateType>::TrimStateBuffer() {
         while (States.Num() > 1) {
             // If time has progressed past the end time of the next state, then the first state in the buffer is no longer needed for interpolation
-            if (States[1].EndTime < CurrentTime) {
+            if (States[1].EndTime < InterpolationTime) {
                 States.RemoveAt(0);
             }
             else { break; }
