@@ -43,10 +43,10 @@ public:
     float SimProxyDelay = 0.050;
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
-    float SimProxyTimeDilationMargin = 0.1;
+    float SimProxyAggressiveTimeDifference = 0.200;
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
-    float SimProxyAggressiveTimeDilationMargin = 0.8;
+    float SimProxySnapTimeDifference = 0.400;
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
     double SimProxyTimeDilation = 0.02;

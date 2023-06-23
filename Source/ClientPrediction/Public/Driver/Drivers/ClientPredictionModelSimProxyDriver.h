@@ -142,6 +142,7 @@ namespace ClientPrediction {
         for (int32 i = 0; i < States.Num(); i++) {
             if (InterpolationTime < States[i].EndTime) {
                 if (i == 0) {
+                    UE_LOG(LogTemp, Warning, TEXT("Starvation 0"));
                     OutState = States[0];
                     return;
                 }
@@ -163,6 +164,7 @@ namespace ClientPrediction {
             }
         }
 
+        UE_LOG(LogTemp, Warning, TEXT("Starvation other"));
         OutState = States.Last();
     }
 
@@ -192,7 +194,7 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelSimProxyDriver<InputType, StateType>::TrimStateBuffer() {
-        while (States.Num() > 1) {
+        while (States.IsEmpty()) {
             // If time has progressed past the end time of the next state, then the first state in the buffer is no longer needed for interpolation
             if (States[1].EndTime < InterpolationTime) {
                 States.RemoveAt(0);

@@ -58,6 +58,7 @@ bool FTickSnapshot::Identical(const FTickSnapshot* Other, uint32 PortFlags) cons
 
 AClientPredictionReplicationManager::AClientPredictionReplicationManager() : Settings(GetDefault<UClientPredictionSettings>()) {
     PrimaryActorTick.bCanEverTick = false;
+    bOnlyRelevantToOwner = true;
     bAlwaysRelevant = true;
     bReplicates = true;
 
@@ -68,10 +69,6 @@ void AClientPredictionReplicationManager::GetLifetimeReplicatedProps(TArray<FLif
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
     DOREPLIFETIME(AClientPredictionReplicationManager, RemoteSnapshot);
-}
-
-bool AClientPredictionReplicationManager::IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const {
-    return RealViewer == GetOwner();
 }
 
 void AClientPredictionReplicationManager::PostNetInit() {
@@ -144,11 +141,21 @@ void AClientPredictionReplicationManager::SnapshotReceivedRemote() {
 
     // Slow down the server time if it is too far ahead and speed it up if it is too far behind
     const Chaos::FReal SnapshotServerTime = static_cast<double>(RemoteSnapshot.TickNumber - ServerStartTick) * Settings->FixedDt + ServerStartTime;
-    const Chaos::FReal TargetTimescale = FMath::Sign(SnapshotServerTime - ServerTime) * Settings->SimProxyTimeDilation + 1.0;
+    const Chaos::FReal ServerTimeDelta = SnapshotServerTime - ServerTime;
+    const Chaos::FReal DeltaAbs = FMath::Abs(ServerTimeDelta);
 
-    ServerTimescale = FMath::Lerp(ServerTimescale, TargetTimescale, Settings->SimProxyTimeDilationAlpha);
+    if (DeltaAbs >= Settings->SimProxySnapTimeDifference) {
+        ServerTime = SnapshotServerTime;
+        ServerTimescale = 1.0;
+    }
+    else {
+        const Chaos::FReal TimeDilationLimit = FMath::Abs(ServerTimeDelta) > Settings->SimProxyAggressiveTimeDifference
+                                                   ? Settings->SimProxyAggressiveTimeDilation
+                                                   : Settings->SimProxyTimeDilation;
 
-    UE_LOG(LogTemp, Warning, TEXT("%s"), *GetOwner()->GetNetConnection()->GetName());
+        const Chaos::FReal TargetTimescale = FMath::Sign(ServerTimeDelta) * TimeDilationLimit + 1.0;
+        ServerTimescale = FMath::Lerp(ServerTimescale, TargetTimescale, Settings->SimProxyTimeDilationAlpha);
+    }
 
     for (const auto& AutoProxy : RemoteSnapshot.AutoProxyModels) {
         StateManager->PushStateToConsumer(RemoteSnapshot.TickNumber, AutoProxy.ModelId, AutoProxy.Data, SnapshotServerTime, ClientPrediction::kAutoProxy);
