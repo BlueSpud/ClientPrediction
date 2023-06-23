@@ -103,7 +103,7 @@ namespace ClientPrediction {
         }
     }
 
-    void FWorldManager::RegisterLocalReplicationManager(APlayerController* PlayerController, AClientPredictionReplicationManager* Manager) {
+    void FWorldManager::RegisterLocalReplicationManager(AClientPredictionReplicationManager* Manager) {
         FScopeLock ManagerLock(&ManagersMutex);
 
         check(LocalReplicationManager == nullptr);

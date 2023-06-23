@@ -142,7 +142,6 @@ namespace ClientPrediction {
         for (int32 i = 0; i < States.Num(); i++) {
             if (InterpolationTime < States[i].EndTime) {
                 if (i == 0) {
-                    UE_LOG(LogTemp, Warning, TEXT("Starvation 0"));
                     OutState = States[0];
                     return;
                 }
@@ -164,7 +163,6 @@ namespace ClientPrediction {
             }
         }
 
-        UE_LOG(LogTemp, Warning, TEXT("Starvation other"));
         OutState = States.Last();
     }
 

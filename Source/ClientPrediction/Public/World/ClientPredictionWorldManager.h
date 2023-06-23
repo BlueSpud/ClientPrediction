@@ -28,7 +28,7 @@ namespace ClientPrediction {
     public:
         void CreateReplicationManagerForPlayer(class APlayerController* PlayerController);
         void DestroyReplicationManagerForPlayer(class AController* Controller);
-        void RegisterLocalReplicationManager(class APlayerController* PlayerController, AClientPredictionReplicationManager* Manager);
+        void RegisterLocalReplicationManager(AClientPredictionReplicationManager* Manager);
 
         void AddTickCallback(class ITickCallback* Callback);
         void RemoveTickCallback(class ITickCallback* Callback);

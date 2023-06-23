@@ -77,10 +77,7 @@ void AClientPredictionReplicationManager::PostNetInit() {
     ClientPrediction::FWorldManager* Manager = ClientPrediction::FWorldManager::ManagerForWorld(GetWorld());
     if (Manager == nullptr) { return; }
 
-    APlayerController* OwningController = Cast<APlayerController>(GetOwner());
-    if (OwningController == nullptr) { return; }
-
-    Manager->RegisterLocalReplicationManager(OwningController, this);
+    Manager->RegisterLocalReplicationManager(this);
     LastWorldTime = GetWorld()->GetRealTimeSeconds();
 }
 
@@ -148,14 +145,13 @@ void AClientPredictionReplicationManager::SnapshotReceivedRemote() {
         ServerTime = SnapshotServerTime;
         ServerTimescale = 1.0;
     }
-    else {
-        const Chaos::FReal TimeDilationLimit = FMath::Abs(ServerTimeDelta) > Settings->SimProxyAggressiveTimeDifference
-                                                   ? Settings->SimProxyAggressiveTimeDilation
-                                                   : Settings->SimProxyTimeDilation;
 
-        const Chaos::FReal TargetTimescale = FMath::Sign(ServerTimeDelta) * TimeDilationLimit + 1.0;
-        ServerTimescale = FMath::Lerp(ServerTimescale, TargetTimescale, Settings->SimProxyTimeDilationAlpha);
+    if (DeltaAbs >= Settings->SimProxyAggressiveTimeDifference) {
+        ServerTime = (SnapshotServerTime + ServerTime) / 2.0;
     }
+
+    const Chaos::FReal TargetTimescale = FMath::Sign(ServerTimeDelta) * Settings->SimProxyTimeDilation + 1.0;
+    ServerTimescale = FMath::Lerp(ServerTimescale, TargetTimescale, Settings->SimProxyTimeDilationAlpha);
 
     for (const auto& AutoProxy : RemoteSnapshot.AutoProxyModels) {
         StateManager->PushStateToConsumer(RemoteSnapshot.TickNumber, AutoProxy.ModelId, AutoProxy.Data, SnapshotServerTime, ClientPrediction::kAutoProxy);
