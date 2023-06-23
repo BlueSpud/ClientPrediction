@@ -67,6 +67,11 @@ private:
     UFUNCTION()
     void SnapshotReceivedRemote();
 
+    UFUNCTION(Client, Reliable)
+    void SnapshotReceivedReliable(const FTickSnapshot& Snapshot);
+
+    void ProcessSnapshot(const FTickSnapshot& Snapshot, bool bIsReliable);
+
     int32 ServerStartTick = INDEX_NONE;
     Chaos::FReal ServerStartTime = -1.0;
     Chaos::FReal ServerTimescale = 1.0;
@@ -84,5 +89,5 @@ private:
 
     FCriticalSection QueuedSnapshotMutex;
     FTickSnapshot QueuedSnapshot{};
-
+    TQueue<FTickSnapshot> ReliableSnapshotQueue;
 };

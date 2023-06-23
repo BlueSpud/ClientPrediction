@@ -17,7 +17,6 @@ namespace ClientPrediction {
         virtual void Unregister(struct FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) override;
 
         virtual void ConsumeUnserializedStateForTick(const int32 Tick, const FStateWrapper<StateType>& State, const Chaos::FReal ServerTime) override;
-        virtual void ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) override;
 
     private:
         void QueueState(const FStateWrapper<StateType>& State);
@@ -92,12 +91,6 @@ namespace ClientPrediction {
         StateWithTimes.EndTime = ServerTime + Settings->FixedDt;
 
         QueueState(StateWithTimes);
-    }
-
-    template <typename InputType, typename StateType>
-    void FModelSimProxyDriver<InputType, StateType>::ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) {
-        // TODO this needs to get the server time correctly
-        // QueueState(State);
     }
 
     template <typename InputType, typename StateType>

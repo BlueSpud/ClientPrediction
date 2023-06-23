@@ -30,14 +30,10 @@ public:
 
 private:
     virtual void EmitInputPackets(FNetSerializationProxy& Proxy) override;
-    virtual void EmitReliableAuthorityState(FNetSerializationProxy& Proxy) override;
     virtual void GetNetworkConditions(ClientPrediction::FNetworkConditions& NetworkConditions) const override;
 
     UFUNCTION(Server, Unreliable)
     void RecvInputPacket(FNetSerializationProxy Proxy);
-
-    UFUNCTION(NetMulticast, Reliable)
-    void RecvReliableAuthorityState(FNetSerializationProxy Proxy);
 
 private:
     UPROPERTY(Replicated)

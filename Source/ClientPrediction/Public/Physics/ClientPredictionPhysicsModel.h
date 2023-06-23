@@ -19,7 +19,6 @@ namespace ClientPrediction {
         virtual ~IPhysicsModelDelegate() = default;
 
         virtual void EmitInputPackets(FNetSerializationProxy& Proxy) = 0;
-        virtual void EmitReliableAuthorityState(FNetSerializationProxy& Proxy) = 0;
         virtual void GetNetworkConditions(FNetworkConditions& NetworkConditions) const = 0;
     };
 
@@ -34,7 +33,6 @@ namespace ClientPrediction {
 
         virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& ControlProxyRep) = 0;
         virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) const = 0;
-        virtual void ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) const = 0;
     };
 
     // Sim output
@@ -102,7 +100,6 @@ namespace ClientPrediction {
 
         virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& ControlProxyRep) override final;
         virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) const override final;
-        virtual void ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) const override final;
 
         virtual void SetTimeDilation(const Chaos::FReal TimeDilation) override final;
         virtual void ForceSimulate(const uint32 NumTicks) override final;
@@ -114,7 +111,6 @@ namespace ClientPrediction {
         virtual void Finalize(const StateType& State, Chaos::FReal Dt) override final;
 
         virtual void EmitInputPackets(TArray<FInputPacketWrapper<InputType>>& Packets) override final;
-        virtual void EmitReliableAuthorityState(FStateWrapper<StateType> State) override final;
         virtual void ProduceInput(InputType& Packet) override final;
         virtual void ModifyInputPhysicsThread(InputType& Packet, const FStateWrapper<StateType>& State, Chaos::FReal Dt) override final;
 
@@ -232,17 +228,6 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType, typename EventType>
-    void FPhysicsModel<InputType, StateType, EventType>::ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) const {
-        if (ModelDriver == nullptr) { return; }
-
-        FStateWrapper<StateType> State;
-        Proxy.NetSerializeFunc = [&](FArchive& Ar) { State.NetSerialize(Ar, true); };
-
-        Proxy.Deserialize();
-        ModelDriver->ReceiveReliableAuthorityState(State);
-    }
-
-    template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::GenerateInitialState(FStateWrapper<StateType>& State) {
         State = {};
 
@@ -278,15 +263,6 @@ namespace ClientPrediction {
         FNetSerializationProxy Proxy;
         Proxy.NetSerializeFunc = [=](FArchive& Ar) mutable { Ar << Packets; };
         Delegate->EmitInputPackets(Proxy);
-    }
-
-    template <typename InputType, typename StateType, typename EventType>
-    void FPhysicsModel<InputType, StateType, EventType>::EmitReliableAuthorityState(FStateWrapper<StateType> State) {
-        check(Delegate);
-
-        FNetSerializationProxy Proxy;
-        Proxy.NetSerializeFunc = [=](FArchive& Ar) mutable { State.NetSerialize(Ar, true); };
-        Delegate->EmitReliableAuthorityState(Proxy);
     }
 
     template <typename InputType, typename StateType, typename EventType>

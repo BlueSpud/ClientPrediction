@@ -64,10 +64,6 @@ void UClientPredictionComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
     }
 }
 
-void UClientPredictionComponent::EmitReliableAuthorityState(FNetSerializationProxy& Proxy) {
-    RecvReliableAuthorityState(Proxy);
-}
-
 void UClientPredictionComponent::GetNetworkConditions(ClientPrediction::FNetworkConditions& NetworkConditions) const {
     NetworkConditions = {};
 
@@ -90,11 +86,5 @@ void UClientPredictionComponent::RecvInputPacket_Implementation(FNetSerializatio
 void UClientPredictionComponent::EmitInputPackets(FNetSerializationProxy& Proxy) {
     if (PhysicsModel != nullptr) {
         RecvInputPacket(Proxy);
-    }
-}
-
-void UClientPredictionComponent::RecvReliableAuthorityState_Implementation(FNetSerializationProxy Proxy) {
-    if (PhysicsModel != nullptr) {
-        PhysicsModel->ReceiveReliableAuthorityState(Proxy);
     }
 }

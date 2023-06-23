@@ -81,7 +81,7 @@ namespace ClientPrediction {
     }
 
     void FStateManager::PushStateToConsumer(int32 TickNumber, const FClientPredictionModelId& ModelId, const TArray<uint8>& Data, const Chaos::FReal ServerTime,
-                                            const ERelevancy Relevancy) {
+                                            const EDataCompleteness Relevancy) {
         FScopeLock ConsumerLock(&ConsumerMutex);
 
         if (!Consumers.Contains(ModelId)) {

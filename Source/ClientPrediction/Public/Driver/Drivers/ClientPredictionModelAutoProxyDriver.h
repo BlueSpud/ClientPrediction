@@ -25,7 +25,6 @@ namespace ClientPrediction {
 
     public:
         virtual void ConsumeUnserializedStateForTick(const int32 Tick, const FStateWrapper<StateType>& State, const Chaos::FReal ServerTime) override;
-        virtual void ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) override;
 
     private:
         void QueueAuthorityState(const FStateWrapper<StateType>& State);
@@ -95,11 +94,6 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::ConsumeUnserializedStateForTick(const int32 Tick, const FStateWrapper<StateType>& State,
                                                                                       const Chaos::FReal ServerTime) {
-        QueueAuthorityState(State);
-    }
-
-    template <typename InputType, typename StateType>
-    void FModelAutoProxyDriver<InputType, StateType>::ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) {
         QueueAuthorityState(State);
     }
 

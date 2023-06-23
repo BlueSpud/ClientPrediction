@@ -94,15 +94,35 @@ void AClientPredictionReplicationManager::PostTickAuthority(int32 TickNumber) {
     QueuedSnapshot = {};
     QueuedSnapshot.TickNumber = TickNumber;
 
+    FTickSnapshot ReliableSnapshot{};
+    ReliableSnapshot.TickNumber = TickNumber;
+
     for (auto& Pair : TickSnapshot.StateData) {
         const UPlayer* ModelOwner = Pair.Key.MapToOwningPlayer();
+        const bool bIsOwnedByCurrentPlayer = ModelOwner == OwningPlayer;
 
-        if (ModelOwner == OwningPlayer) {
-            QueuedSnapshot.AutoProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.FullData)});
+        if (Pair.Value.bShouldBeReliable) {
+            // Reliable messages should always include the full state because the main reason is to have the events
+            if (bIsOwnedByCurrentPlayer) {
+                ReliableSnapshot.AutoProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.FullData)});
+            }
+            else {
+                ReliableSnapshot.SimProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.FullData)});
+            }
         }
         else {
-            QueuedSnapshot.SimProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.ShortData)});
+            if (bIsOwnedByCurrentPlayer) {
+                QueuedSnapshot.AutoProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.FullData)});
+            }
+            else {
+                QueuedSnapshot.SimProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.ShortData)});
+            }
         }
+    }
+
+    // If there is data that needs to be reliably sent, it is done so over a reliable RPC
+    if (!ReliableSnapshot.AutoProxyModels.IsEmpty() || !ReliableSnapshot.SimProxyModels.IsEmpty()) {
+        ReliableSnapshotQueue.Enqueue(MoveTemp(ReliableSnapshot));
     }
 }
 
@@ -111,6 +131,11 @@ void AClientPredictionReplicationManager::PostSceneTickGameThreadAuthority() {
     if (QueuedSnapshot.TickNumber != -1) {
         RemoteSnapshot = QueuedSnapshot;
         QueuedSnapshot = {};
+    }
+
+    while (!ReliableSnapshotQueue.IsEmpty()) {
+        SnapshotReceivedReliable(*ReliableSnapshotQueue.Peek());
+        ReliableSnapshotQueue.Pop();
     }
 }
 
@@ -125,39 +150,51 @@ void AClientPredictionReplicationManager::PostSceneTickGameThreadRemote() {
 }
 
 void AClientPredictionReplicationManager::SnapshotReceivedRemote() {
+    ProcessSnapshot(RemoteSnapshot, false);
+}
+
+void AClientPredictionReplicationManager::SnapshotReceivedReliable_Implementation(const FTickSnapshot& Snapshot) {
+    ProcessSnapshot(Snapshot, true);
+}
+
+void AClientPredictionReplicationManager::ProcessSnapshot(const FTickSnapshot& Snapshot, bool bIsReliable) {
     if (StateManager == nullptr) { return; }
 
     if (ServerStartTick == INDEX_NONE) {
         const Chaos::FReal WorldTime = GetWorld()->GetRealTimeSeconds();
 
-        ServerStartTick = RemoteSnapshot.TickNumber;
+        ServerStartTick = Snapshot.TickNumber;
         ServerStartTime = WorldTime;
 
         ServerTime = WorldTime;
     }
 
     // Slow down the server time if it is too far ahead and speed it up if it is too far behind
-    const Chaos::FReal SnapshotServerTime = static_cast<double>(RemoteSnapshot.TickNumber - ServerStartTick) * Settings->FixedDt + ServerStartTime;
-    const Chaos::FReal ServerTimeDelta = SnapshotServerTime - ServerTime;
-    const Chaos::FReal DeltaAbs = FMath::Abs(ServerTimeDelta);
+    const Chaos::FReal SnapshotServerTime = static_cast<double>(Snapshot.TickNumber - ServerStartTick) * Settings->FixedDt + ServerStartTime;
 
-    if (DeltaAbs >= Settings->SimProxySnapTimeDifference) {
-        ServerTime = SnapshotServerTime;
-        ServerTimescale = 1.0;
+    if (!bIsReliable) {
+        const Chaos::FReal ServerTimeDelta = SnapshotServerTime - ServerTime;
+        const Chaos::FReal DeltaAbs = FMath::Abs(ServerTimeDelta);
+
+        if (DeltaAbs >= Settings->SimProxySnapTimeDifference) {
+            ServerTime = SnapshotServerTime;
+            ServerTimescale = 1.0;
+        }
+
+        if (DeltaAbs >= Settings->SimProxyAggressiveTimeDifference) {
+            ServerTime = (SnapshotServerTime + ServerTime) / 2.0;
+        }
+
+        const Chaos::FReal TargetTimescale = FMath::Sign(ServerTimeDelta) * Settings->SimProxyTimeDilation + 1.0;
+        ServerTimescale = FMath::Lerp(ServerTimescale, TargetTimescale, Settings->SimProxyTimeDilationAlpha);
     }
 
-    if (DeltaAbs >= Settings->SimProxyAggressiveTimeDifference) {
-        ServerTime = (SnapshotServerTime + ServerTime) / 2.0;
+    for (const auto& AutoProxy : Snapshot.AutoProxyModels) {
+        StateManager->PushStateToConsumer(Snapshot.TickNumber, AutoProxy.ModelId, AutoProxy.Data, SnapshotServerTime, ClientPrediction::kFull);
     }
 
-    const Chaos::FReal TargetTimescale = FMath::Sign(ServerTimeDelta) * Settings->SimProxyTimeDilation + 1.0;
-    ServerTimescale = FMath::Lerp(ServerTimescale, TargetTimescale, Settings->SimProxyTimeDilationAlpha);
-
-    for (const auto& AutoProxy : RemoteSnapshot.AutoProxyModels) {
-        StateManager->PushStateToConsumer(RemoteSnapshot.TickNumber, AutoProxy.ModelId, AutoProxy.Data, SnapshotServerTime, ClientPrediction::kAutoProxy);
-    }
-
-    for (const auto& SimProxy : RemoteSnapshot.SimProxyModels) {
-        StateManager->PushStateToConsumer(RemoteSnapshot.TickNumber, SimProxy.ModelId, SimProxy.Data, SnapshotServerTime, ClientPrediction::kRelevant);
+    const ClientPrediction::EDataCompleteness AutoProxyCompleteness = bIsReliable ? ClientPrediction::kFull : ClientPrediction::kStandard;
+    for (const auto& SimProxy : Snapshot.SimProxyModels) {
+        StateManager->PushStateToConsumer(Snapshot.TickNumber, SimProxy.ModelId, SimProxy.Data, SnapshotServerTime, AutoProxyCompleteness);
     }
 }

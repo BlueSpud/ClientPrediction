@@ -28,11 +28,9 @@ namespace ClientPrediction {
         virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
 
         // StateProducerBase
-        virtual bool ProduceUnserializedStateForTick(const int32 Tick, FStateWrapper<StateType>& State) override;
+        virtual bool ProduceUnserializedStateForTick(const int32 Tick, FStateWrapper<StateType>& State, bool& bShouldBeReliable) override;
 
     private:
-        void SendCurrentStateToRemotes();
-        void SendState(FStateWrapper<StateType> State);
         void SuggestTimeDilation();
 
     public:
@@ -45,10 +43,6 @@ namespace ClientPrediction {
 
         FAuthInputBuf<InputType> InputBuf; // Written to on game thread, read from physics thread
         Chaos::FReal LastSuggestedTimeDilation = 1.0; // Only used on game thread
-
-        FCriticalSection PendingStatesMutex;
-        TQueue<FStateWrapper<StateType>> PendingStates; // Written from physics thread, read on game thread
-        int32 LastEmittedState = INDEX_NONE; // Only used on game thread
     };
 
     template <typename InputType, typename StateType>
@@ -93,43 +87,19 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
         PostTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
-
-        FScopeLock Lock(&PendingStatesMutex);
-        PendingStates.Enqueue(CurrentState);
     }
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
         InterpolateStateGameThread(SimTime, Dt);
-        SendCurrentStateToRemotes();
         SuggestTimeDilation();
     }
 
     template <typename InputType, typename StateType>
-    bool FModelAuthDriver<InputType, StateType>::ProduceUnserializedStateForTick(const int32 Tick, FStateWrapper<StateType>& State) {
+    bool FModelAuthDriver<InputType, StateType>::ProduceUnserializedStateForTick(const int32 Tick, FStateWrapper<StateType>& State, bool& bShouldBeReliable) {
         State = CurrentState;
+        bShouldBeReliable = State.Events != 0;
         return true;
-    }
-
-    template <typename InputType, typename StateType>
-    void FModelAuthDriver<InputType, StateType>::SendCurrentStateToRemotes() {
-        FScopeLock Lock(&PendingStatesMutex);
-
-        while (!PendingStates.IsEmpty()) {
-            FStateWrapper<StateType> Front;
-            PendingStates.Peek(Front);
-            SendState(Front);
-
-            PendingStates.Pop();
-        }
-    }
-
-    template <typename InputType, typename StateType>
-    void FModelAuthDriver<InputType, StateType>::SendState(FStateWrapper<StateType> State) {
-        if (State.TickNumber != INDEX_NONE && State.TickNumber != LastEmittedState) {
-            if (State.Events != 0) { Delegate->EmitReliableAuthorityState(State); }
-            LastEmittedState = State.TickNumber;
-        }
     }
 
     template <typename InputType, typename StateType>

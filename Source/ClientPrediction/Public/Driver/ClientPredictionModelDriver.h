@@ -17,7 +17,6 @@ namespace ClientPrediction {
         virtual void Finalize(const StateType& State, Chaos::FReal Dt) = 0;
 
         virtual void EmitInputPackets(TArray<FInputPacketWrapper<InputType>>& Packets) = 0;
-        virtual void EmitReliableAuthorityState(FStateWrapper<StateType> State) = 0;
         virtual void ProduceInput(InputType& Packet) = 0;
         virtual void ModifyInputPhysicsThread(InputType& Packet, const FStateWrapper<StateType>& State, Chaos::FReal Dt) = 0;
 
@@ -44,7 +43,6 @@ namespace ClientPrediction {
 
         // Input packet / state receiving
         virtual void ReceiveInputPackets(const TArray<FInputPacketWrapper<InputType>>& Packets) {}
-        virtual void ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) {}
     };
 
     template <typename InputType, typename StateType>
