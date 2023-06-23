@@ -40,7 +40,7 @@ public:
     float AuthorityCatchupTimescale = 0.1;
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
-    float SimProxyDelay = 0.050;
+    float SimProxyDelay = 0.100;
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
     float SimProxyAggressiveTimeDifference = 0.200;

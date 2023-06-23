@@ -132,23 +132,22 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelSimProxyDriver<InputType, StateType>::GetInterpolatedStateAssumingStatesNotEmpty(FStateWrapper<StateType>& OutState) {
-        for (int32 i = 0; i < States.Num(); i++) {
-            if (InterpolationTime < States[i].EndTime) {
-                if (i == 0) {
-                    OutState = States[0];
-                    return;
-                }
+        if (States.Num() == 1) {
+            OutState = States[0];
+            return;
+        }
 
-                const FStateWrapper<StateType>& Start = States[i - 1];
-                const FStateWrapper<StateType>& End = States[i];
+        for (int32 i = 0; i < States.Num() - 1; i++) {
+            if (InterpolationTime >= States[i].StartTime && InterpolationTime <= States[i + 1].StartTime) {
+                const FStateWrapper<StateType>& Start = States[i];
+                const FStateWrapper<StateType>& End = States[i + 1];
                 OutState = Start;
 
-                const Chaos::FReal PrevEndTime = Start.EndTime;
-                const Chaos::FReal TimeFromPrevEnd = InterpolationTime - PrevEndTime;
-                const Chaos::FReal TotalTime = End.EndTime - Start.EndTime;
+                const Chaos::FReal TimeFromStart = InterpolationTime - Start.StartTime;
+                const Chaos::FReal TotalTime = End.StartTime - Start.StartTime;
 
                 if (TotalTime > 0.0) {
-                    const Chaos::FReal Alpha = FMath::Clamp(TimeFromPrevEnd / TotalTime, 0.0, 1.0);
+                    const Chaos::FReal Alpha = FMath::Clamp(TimeFromStart / TotalTime, 0.0, 1.0);
                     OutState.Interpolate(End, Alpha);
                 }
 
@@ -185,7 +184,7 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelSimProxyDriver<InputType, StateType>::TrimStateBuffer() {
-        while (States.IsEmpty()) {
+        while (States.Num() >= 2) {
             // If time has progressed past the end time of the next state, then the first state in the buffer is no longer needed for interpolation
             if (States[1].EndTime < InterpolationTime) {
                 States.RemoveAt(0);
