@@ -65,12 +65,6 @@ AClientPredictionReplicationManager::AClientPredictionReplicationManager() : Set
     SetReplicateMovement(false);
 }
 
-void AClientPredictionReplicationManager::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const {
-    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-
-    DOREPLIFETIME(AClientPredictionReplicationManager, RemoteSnapshot);
-}
-
 void AClientPredictionReplicationManager::PostNetInit() {
     Super::PostNetInit();
 
@@ -82,7 +76,7 @@ void AClientPredictionReplicationManager::PostNetInit() {
 }
 
 void AClientPredictionReplicationManager::PostTickAuthority(int32 TickNumber) {
-    if (StateManager == nullptr) { return; }
+    if (StateManager == nullptr && TickNumber % Settings->SnapshotSendCadence != 0) { return; }
 
     const UPlayer* OwningPlayer = GetOwner()->GetNetOwningPlayer();
     check(OwningPlayer);
@@ -90,9 +84,8 @@ void AClientPredictionReplicationManager::PostTickAuthority(int32 TickNumber) {
     ClientPrediction::FTickSnapshot TickSnapshot{};
     StateManager->GetProducedDataForTick(TickNumber, TickSnapshot);
 
-    FScopeLock QueuedSnapshotLock(&QueuedSnapshotMutex);
-    QueuedSnapshot = {};
-    QueuedSnapshot.TickNumber = TickNumber;
+    FTickSnapshot NewSnapshot = {};
+    NewSnapshot.TickNumber = TickNumber;
 
     FTickSnapshot ReliableSnapshot{};
     ReliableSnapshot.TickNumber = TickNumber;
@@ -112,13 +105,16 @@ void AClientPredictionReplicationManager::PostTickAuthority(int32 TickNumber) {
         }
         else {
             if (bIsOwnedByCurrentPlayer) {
-                QueuedSnapshot.AutoProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.FullData)});
+                NewSnapshot.AutoProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.FullData)});
             }
             else {
-                QueuedSnapshot.SimProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.ShortData)});
+                NewSnapshot.SimProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.ShortData)});
             }
         }
     }
+
+    FScopeLock QueuedSnapshotLock(&QueuedSnapshotMutex);
+    QueuedSnapshots.Enqueue(MoveTemp(NewSnapshot));
 
     // If there is data that needs to be reliably sent, it is done so over a reliable RPC
     if (!ReliableSnapshot.AutoProxyModels.IsEmpty() || !ReliableSnapshot.SimProxyModels.IsEmpty()) {
@@ -128,9 +124,9 @@ void AClientPredictionReplicationManager::PostTickAuthority(int32 TickNumber) {
 
 void AClientPredictionReplicationManager::PostSceneTickGameThreadAuthority() {
     FScopeLock QueuedSnapshotLock(&QueuedSnapshotMutex);
-    if (QueuedSnapshot.TickNumber != -1) {
-        RemoteSnapshot = QueuedSnapshot;
-        QueuedSnapshot = {};
+    while (!QueuedSnapshots.IsEmpty()) {
+        SnapshotReceivedRemote(*QueuedSnapshots.Peek());
+        QueuedSnapshots.Pop();
     }
 
     while (!ReliableSnapshotQueue.IsEmpty()) {
@@ -149,8 +145,8 @@ void AClientPredictionReplicationManager::PostSceneTickGameThreadRemote() {
     StateManager->SetInterpolationTime(ServerTime - Settings->SimProxyDelay);
 }
 
-void AClientPredictionReplicationManager::SnapshotReceivedRemote() {
-    ProcessSnapshot(RemoteSnapshot, false);
+void AClientPredictionReplicationManager::SnapshotReceivedRemote_Implementation(const FTickSnapshot& Snapshot) {
+    ProcessSnapshot(Snapshot, false);
 }
 
 void AClientPredictionReplicationManager::SnapshotReceivedReliable_Implementation(const FTickSnapshot& Snapshot) {
@@ -180,8 +176,7 @@ void AClientPredictionReplicationManager::ProcessSnapshot(const FTickSnapshot& S
             ServerTime = SnapshotServerTime;
             ServerTimescale = 1.0;
         }
-
-        if (DeltaAbs >= Settings->SimProxyAggressiveTimeDifference) {
+        else if (DeltaAbs >= Settings->SimProxyAggressiveTimeDifference) {
             ServerTime = (SnapshotServerTime + ServerTime) / 2.0;
         }
 

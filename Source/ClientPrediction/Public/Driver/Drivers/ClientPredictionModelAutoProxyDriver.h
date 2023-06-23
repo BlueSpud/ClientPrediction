@@ -172,7 +172,7 @@ namespace ClientPrediction {
 
         InterpolateStateGameThread(SimTime, Dt);
 
-        Chaos::FReal NewTimeDilation = 1.0 + LastControlPacket.GetTimeDilation() * Settings->MaxTimeDilation;
+        Chaos::FReal NewTimeDilation = 1.0 + LastControlPacket.GetTimeDilation() * Settings->MaxAutoProxyTimeDilation;
         int32 NumForceSimulatedTicks = 0;
 
         {
@@ -194,7 +194,7 @@ namespace ClientPrediction {
                 // If the auto proxy is far ahead of the authority, slow down time significantly so the authority can catch up
                 if (PendingAuthorityStates.Last().InputPacketTickNumber <= CurrentTickNumber - RewindBufferSize) {
                     UE_LOG(LogTemp, Warning, TEXT("Auto proxy is too far ahead of the authority"));
-                    NewTimeDilation = Settings->AuthorityCatchupTimescale;
+                    NewTimeDilation = Settings->AutoProxyAuthorityCatchupTimescale;
                 }
             }
         }

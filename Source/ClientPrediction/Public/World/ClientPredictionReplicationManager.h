@@ -52,10 +52,9 @@ class CLIENTPREDICTION_API AClientPredictionReplicationManager : public AActor {
 
 public:
     AClientPredictionReplicationManager();
-    void SetStateManager(struct ClientPrediction::FStateManager* NewStateManager) { StateManager = NewStateManager; }
-
-    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
     virtual void PostNetInit() override;
+
+    void SetStateManager(struct ClientPrediction::FStateManager* NewStateManager) { StateManager = NewStateManager; }
 
 public:
     void PostTickAuthority(int32 TickNumber);
@@ -64,8 +63,8 @@ public:
     void PostSceneTickGameThreadRemote();
 
 private:
-    UFUNCTION()
-    void SnapshotReceivedRemote();
+    UFUNCTION(Client, Unreliable)
+    void SnapshotReceivedRemote(const FTickSnapshot& Snapshot);
 
     UFUNCTION(Client, Reliable)
     void SnapshotReceivedReliable(const FTickSnapshot& Snapshot);
@@ -84,10 +83,7 @@ private:
 
     struct ClientPrediction::FStateManager* StateManager = nullptr;
 
-    UPROPERTY(Replicated, Transient, ReplicatedUsing=SnapshotReceivedRemote)
-    FTickSnapshot RemoteSnapshot{};
-
     FCriticalSection QueuedSnapshotMutex;
-    FTickSnapshot QueuedSnapshot{};
+    TQueue<FTickSnapshot> QueuedSnapshots;
     TQueue<FTickSnapshot> ReliableSnapshotQueue;
 };
