@@ -2,6 +2,8 @@
 
 #include "PhysicsProxy/SingleParticlePhysicsProxy.h"
 
+#include "Data/ClientPredictionDataCompleteness.h"
+
 namespace ClientPrediction {
     extern CLIENTPREDICTION_API float ClientPredictionPositionTolerance;
     extern CLIENTPREDICTION_API float ClientPredictionVelocityTolerance;
@@ -46,7 +48,7 @@ namespace ClientPrediction {
          */
         Chaos::FReal EstimatedClientSimProxyDelay = 0.0;
 
-        void NetSerialize(FArchive& Ar, bool bSerializeFullState);
+        void NetSerialize(FArchive& Ar, const EDataCompleteness Completeness);
         bool ShouldReconcile(const FStateWrapper& State) const;
 
         void FillState(const class Chaos::FRigidBodyHandle_Internal* Handle);
@@ -88,16 +90,16 @@ namespace ClientPrediction {
     }
 
     template <typename StateType>
-    void FStateWrapper<StateType>::NetSerialize(FArchive& Ar, bool bSerializeFullState) {
+    void FStateWrapper<StateType>::NetSerialize(FArchive& Ar, const EDataCompleteness Completeness) {
         Ar << TickNumber;
 
-        if (bSerializeFullState) {
+        if (Completeness == EDataCompleteness::kFull) {
             Ar << InputPacketTickNumber;
         }
 
         Ar << PhysicsState.ObjectState;
 
-        if (bSerializeFullState) {
+        if (Completeness == EDataCompleteness::kFull) {
             // Serialize manually to make sure that they are serialized as doubles
             Ar << PhysicsState.X.X;
             Ar << PhysicsState.X.Y;
@@ -125,7 +127,7 @@ namespace ClientPrediction {
             SerializeHalfPrecision(PhysicsState.W, Ar);
         }
 
-        Body.NetSerialize(Ar, bSerializeFullState);
+        Body.NetSerialize(Ar, Completeness);
     }
 
     template <typename StateType>

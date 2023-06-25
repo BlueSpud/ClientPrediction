@@ -40,7 +40,7 @@ void NetSerializeSnapshotArray(FArchive& Ar, UPackageMap* Map, TArray<FModelSnap
     }
 }
 
-bool FTickSnapshot::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess) {
+bool FReplicatedTickSnapshot::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess) {
     Ar << TickNumber;
     NetSerializeSnapshotArray(Ar, Map, SimProxyModels);
     NetSerializeSnapshotArray(Ar, Map, AutoProxyModels);
@@ -49,7 +49,7 @@ bool FTickSnapshot::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSucce
     return true;
 }
 
-bool FTickSnapshot::Identical(const FTickSnapshot* Other, uint32 PortFlags) const {
+bool FReplicatedTickSnapshot::Identical(const FReplicatedTickSnapshot* Other, uint32 PortFlags) const {
     return TickNumber == Other->TickNumber;
 }
 
@@ -84,31 +84,37 @@ void AClientPredictionReplicationManager::PostTickAuthority(int32 TickNumber) {
     ClientPrediction::FTickSnapshot TickSnapshot{};
     StateManager->GetProducedDataForTick(TickNumber, TickSnapshot);
 
-    FTickSnapshot NewSnapshot = {};
+    FReplicatedTickSnapshot NewSnapshot = {};
     NewSnapshot.TickNumber = TickNumber;
 
-    FTickSnapshot ReliableSnapshot{};
+    FReplicatedTickSnapshot ReliableSnapshot{};
     ReliableSnapshot.TickNumber = TickNumber;
 
     for (auto& Pair : TickSnapshot.StateData) {
         const UPlayer* ModelOwner = Pair.Key.MapToOwningPlayer();
         const bool bIsOwnedByCurrentPlayer = ModelOwner == OwningPlayer;
 
+        check(Pair.Value.Data.Contains(ClientPrediction::EDataCompleteness::kStandard))
+        check(Pair.Value.Data.Contains(ClientPrediction::EDataCompleteness::kFull))
+
+        TArray<uint8>& StandardData = Pair.Value.Data[ClientPrediction::EDataCompleteness::kStandard];
+        TArray<uint8>& FullData = Pair.Value.Data[ClientPrediction::EDataCompleteness::kFull];
+
         if (Pair.Value.bShouldBeReliable) {
             // Reliable messages should always include the full state because the main reason is to have the events
             if (bIsOwnedByCurrentPlayer) {
-                ReliableSnapshot.AutoProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.FullData)});
+                ReliableSnapshot.AutoProxyModels.Add({Pair.Key, MoveTemp(FullData)});
             }
             else {
-                ReliableSnapshot.SimProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.FullData)});
+                ReliableSnapshot.SimProxyModels.Add({Pair.Key, MoveTemp(FullData)});
             }
         }
         else {
             if (bIsOwnedByCurrentPlayer) {
-                NewSnapshot.AutoProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.FullData)});
+                NewSnapshot.AutoProxyModels.Add({Pair.Key, MoveTemp(FullData)});
             }
             else {
-                NewSnapshot.SimProxyModels.Add({Pair.Key, MoveTemp(Pair.Value.ShortData)});
+                NewSnapshot.SimProxyModels.Add({Pair.Key, MoveTemp(StandardData)});
             }
         }
     }
@@ -145,15 +151,15 @@ void AClientPredictionReplicationManager::PostSceneTickGameThreadRemote() {
     StateManager->SetInterpolationTime(ServerTime - Settings->SimProxyDelay);
 }
 
-void AClientPredictionReplicationManager::SnapshotReceivedRemote_Implementation(const FTickSnapshot& Snapshot) {
+void AClientPredictionReplicationManager::SnapshotReceivedRemote_Implementation(const FReplicatedTickSnapshot& Snapshot) {
     ProcessSnapshot(Snapshot, false);
 }
 
-void AClientPredictionReplicationManager::SnapshotReceivedReliable_Implementation(const FTickSnapshot& Snapshot) {
+void AClientPredictionReplicationManager::SnapshotReceivedReliable_Implementation(const FReplicatedTickSnapshot& Snapshot) {
     ProcessSnapshot(Snapshot, true);
 }
 
-void AClientPredictionReplicationManager::ProcessSnapshot(const FTickSnapshot& Snapshot, bool bIsReliable) {
+void AClientPredictionReplicationManager::ProcessSnapshot(const FReplicatedTickSnapshot& Snapshot, bool bIsReliable) {
     if (StateManager == nullptr) { return; }
 
     if (ServerStartTick == INDEX_NONE) {

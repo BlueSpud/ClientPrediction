@@ -3,17 +3,15 @@
 #include "CoreMinimal.h"
 
 #include "ClientPredictionModelId.h"
-#include "ClientPredictionRelevancy.h"
+#include "ClientPredictionDataCompleteness.h"
 
 namespace ClientPrediction {
     class IStateProducer;
     class IStateConsumer;
 
     struct CLIENTPREDICTION_API FSerializedStateData {
-        // TODO replace with ERelevancy
         bool bShouldBeReliable = false;
-        TArray<uint8> ShortData{};
-        TArray<uint8> FullData{};
+        TMap<EDataCompleteness, TArray<uint8>> Data;
     };
 
     struct CLIENTPREDICTION_API FTickSnapshot {
@@ -36,7 +34,7 @@ namespace ClientPrediction {
         void SetInterpolationTime(const Chaos::FReal NewInterpolationTime) { InterpolationTime = NewInterpolationTime; }
 
         void PushStateToConsumer(int32 TickNumber, const FClientPredictionModelId& ModelId, const TArray<uint8>& Data, const Chaos::FReal ServerTime,
-                                 const EDataCompleteness Relevancy);
+                                 const EDataCompleteness Completeness);
 
     private:
         FCriticalSection ProducerMutex;
@@ -84,12 +82,14 @@ namespace ClientPrediction {
             return false;
         }
 
-        // TODO replace with ERelevancy
-        FMemoryWriter ShortAr = FMemoryWriter(Data.ShortData);
-        DeserializedState.NetSerialize(ShortAr, false);
+        Data.Data.Add(EDataCompleteness::kFull, {});
+        Data.Data.Add(EDataCompleteness::kStandard, {});
 
-        FMemoryWriter FullAr = FMemoryWriter(Data.FullData);
-        DeserializedState.NetSerialize(FullAr, true);
+        FMemoryWriter ShortAr = FMemoryWriter(Data.Data[EDataCompleteness::kStandard]);
+        DeserializedState.NetSerialize(ShortAr, EDataCompleteness::kStandard);
+
+        FMemoryWriter FullAr = FMemoryWriter(Data.Data[EDataCompleteness::kFull]);
+        DeserializedState.NetSerialize(FullAr, EDataCompleteness::kFull);
 
         return true;
     }
@@ -100,7 +100,7 @@ namespace ClientPrediction {
     class IStateConsumer {
     public:
         virtual ~IStateConsumer() = default;
-        virtual void ConsumeStateForTick(const int32 Tick, const TArray<uint8>& SerializedState, const Chaos::FReal ServerTime, const EDataCompleteness Relevancy) = 0;
+        virtual void ConsumeStateForTick(const int32 Tick, const TArray<uint8>& SerializedState, const Chaos::FReal ServerTime, const EDataCompleteness Completeness) = 0;
     };
 
     /** Convenience class that enables consuming unserialized states instead */
@@ -108,18 +108,18 @@ namespace ClientPrediction {
     class StateConsumerBase : public IStateConsumer {
     public:
         virtual void ConsumeStateForTick(const int32 Tick, const TArray<uint8>& SerializedState, const Chaos::FReal ServerTime,
-                                         const EDataCompleteness Relevancy) override final;
+                                         const EDataCompleteness Completeness) override final;
 
         virtual void ConsumeUnserializedStateForTick(const int32 Tick, const StateType& State, const Chaos::FReal ServerTime) = 0;
     };
 
     template <typename StateType>
     void StateConsumerBase<StateType>::ConsumeStateForTick(const int32 Tick, const TArray<uint8>& SerializedState, const Chaos::FReal ServerTime,
-                                                           const EDataCompleteness Relevancy) {
+                                                           const EDataCompleteness Completeness) {
         FMemoryReader Ar(SerializedState);
 
         StateType DeserializedState{};
-        DeserializedState.NetSerialize(Ar, Relevancy == EDataCompleteness::kFull);
+        DeserializedState.NetSerialize(Ar, Completeness);
 
         ConsumeUnserializedStateForTick(Tick, DeserializedState, ServerTime);
     }

@@ -24,7 +24,7 @@ struct FModelSnapshot {
 };
 
 USTRUCT()
-struct FTickSnapshot {
+struct FReplicatedTickSnapshot {
     GENERATED_BODY()
 
     int32 TickNumber = -1;
@@ -32,11 +32,11 @@ struct FTickSnapshot {
     TArray<FModelSnapshot> AutoProxyModels;
 
     bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess);
-    bool Identical(const FTickSnapshot* Other, uint32 PortFlags) const;
+    bool Identical(const FReplicatedTickSnapshot* Other, uint32 PortFlags) const;
 };
 
 template <>
-struct TStructOpsTypeTraits<FTickSnapshot> : public TStructOpsTypeTraitsBase2<FTickSnapshot> {
+struct TStructOpsTypeTraits<FReplicatedTickSnapshot> : public TStructOpsTypeTraitsBase2<FReplicatedTickSnapshot> {
     enum {
         WithNetSerializer = true,
         WithIdentical = true
@@ -64,12 +64,12 @@ public:
 
 private:
     UFUNCTION(Client, Unreliable)
-    void SnapshotReceivedRemote(const FTickSnapshot& Snapshot);
+    void SnapshotReceivedRemote(const FReplicatedTickSnapshot& Snapshot);
 
     UFUNCTION(Client, Reliable)
-    void SnapshotReceivedReliable(const FTickSnapshot& Snapshot);
+    void SnapshotReceivedReliable(const FReplicatedTickSnapshot& Snapshot);
 
-    void ProcessSnapshot(const FTickSnapshot& Snapshot, bool bIsReliable);
+    void ProcessSnapshot(const FReplicatedTickSnapshot& Snapshot, bool bIsReliable);
 
     int32 ServerStartTick = INDEX_NONE;
     Chaos::FReal ServerStartTime = -1.0;
@@ -84,6 +84,6 @@ private:
     struct ClientPrediction::FStateManager* StateManager = nullptr;
 
     FCriticalSection QueuedSnapshotMutex;
-    TQueue<FTickSnapshot> QueuedSnapshots;
-    TQueue<FTickSnapshot> ReliableSnapshotQueue;
+    TQueue<FReplicatedTickSnapshot> QueuedSnapshots;
+    TQueue<FReplicatedTickSnapshot> ReliableSnapshotQueue;
 };
