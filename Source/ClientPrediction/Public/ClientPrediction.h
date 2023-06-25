@@ -16,4 +16,10 @@ private:
 
     static void OnPostWorldInitialize(UWorld* InWorld, const UWorld::InitializationValues);
     static void OnWorldCleanup(UWorld* InWorld, bool bSessionEnded, bool bCleanupResources);
+
+    static FDelegateHandle OnPlayerLoginDelegate;
+    static FDelegateHandle OnPlayerLogoutDelegate;
+
+    static void OnPlayerLogin(AGameModeBase* GameMode, APlayerController* PlayerController);
+    static void OnPlayerLogout(class AGameModeBase* GameMode, class AController* PlayerController);
 };

@@ -17,7 +17,6 @@ namespace ClientPrediction {
         virtual void Finalize(const StateType& State, Chaos::FReal Dt) = 0;
 
         virtual void EmitInputPackets(TArray<FInputPacketWrapper<InputType>>& Packets) = 0;
-        virtual void EmitReliableAuthorityState(FStateWrapper<StateType> State) = 0;
         virtual void ProduceInput(InputType& Packet) = 0;
         virtual void ModifyInputPhysicsThread(InputType& Packet, const FStateWrapper<StateType>& State, Chaos::FReal Dt) = 0;
 
@@ -39,21 +38,20 @@ namespace ClientPrediction {
     class IModelDriver : public ITickCallback {
     public:
         virtual ~IModelDriver() override = default;
-        virtual void Register(struct FWorldManager* WorldManager);
-        virtual void Unregister(struct FWorldManager* WorldManager);
+        virtual void Register(struct FWorldManager* WorldManager, const FClientPredictionModelId& ModelId);
+        virtual void Unregister(struct FWorldManager* WorldManager, const FClientPredictionModelId& ModelId);
 
         // Input packet / state receiving
         virtual void ReceiveInputPackets(const TArray<FInputPacketWrapper<InputType>>& Packets) {}
-        virtual void ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) {}
     };
 
     template <typename InputType, typename StateType>
-    void IModelDriver<InputType, StateType>::Register(FWorldManager* WorldManager) {
+    void IModelDriver<InputType, StateType>::Register(FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) {
         WorldManager->AddTickCallback(this);
     }
 
     template <typename InputType, typename StateType>
-    void IModelDriver<InputType, StateType>::Unregister(FWorldManager* WorldManager) {
+    void IModelDriver<InputType, StateType>::Unregister(FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) {
         WorldManager->RemoveTickCallback(this);
     }
 }

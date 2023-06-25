@@ -2,6 +2,7 @@
 
 #include "ClientPredictionNetSerialization.h"
 #include "Driver/ClientPredictionRepProxy.h"
+#include "Data/ClientPredictionModelId.h"
 
 #include "Physics/ClientPredictionPhysicsModel.h"
 
@@ -29,22 +30,12 @@ public:
 
 private:
     virtual void EmitInputPackets(FNetSerializationProxy& Proxy) override;
-    virtual void EmitReliableAuthorityState(FNetSerializationProxy& Proxy) override;
     virtual void GetNetworkConditions(ClientPrediction::FNetworkConditions& NetworkConditions) const override;
 
     UFUNCTION(Server, Unreliable)
     void RecvInputPacket(FNetSerializationProxy Proxy);
 
-    UFUNCTION(NetMulticast, Reliable)
-    void RecvReliableAuthorityState(FNetSerializationProxy Proxy);
-
 private:
-    UPROPERTY(Replicated)
-    FRepProxy AutoProxyRep;
-
-    UPROPERTY(Replicated)
-    FRepProxy SimProxyRep;
-
     UPROPERTY(Replicated)
     FRepProxy ControlProxyRep;
 
@@ -60,6 +51,8 @@ private:
 template <typename ModelType>
 ModelType* UClientPredictionComponent::CreateModel() {
     ModelType* Model = new ModelType();
+    Model->SetModelId(FClientPredictionModelId(GetOwner()));
+
     PhysicsModel = TUniquePtr<ModelType>(Model);
 
     return Model;

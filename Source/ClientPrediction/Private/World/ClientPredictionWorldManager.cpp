@@ -2,6 +2,7 @@
 
 #include "World/ClientPredictionWorldManager.h"
 #include "World/ClientPredictionTickCallback.h"
+#include "World/ClientPredictionReplicationManager.h"
 
 #include "PBDRigidsSolver.h"
 #include "Physics/PhysicsInterfaceScene.h"
@@ -35,7 +36,7 @@ namespace ClientPrediction {
         delete WorldManager;
     }
 
-    FWorldManager::FWorldManager(const UWorld* World) : Settings(GetDefault<UClientPredictionSettings>()) {
+    FWorldManager::FWorldManager(UWorld* World) : Settings(GetDefault<UClientPredictionSettings>()), World(World) {
         PhysScene = World->GetPhysicsScene();
         if (PhysScene == nullptr) { return; }
 
@@ -68,6 +69,48 @@ namespace ClientPrediction {
 
         PostAdvanceDelegate = Solver->AddPostAdvanceCallback(FSolverPostAdvance::FDelegate::CreateRaw(this, &FWorldManager::PostAdvance_Internal));
         PostPhysSceneTickDelegate = PhysScene->OnPhysScenePostTick.AddRaw(this, &FWorldManager::OnPhysScenePostTick);
+    }
+
+    void FWorldManager::CreateReplicationManagerForPlayer(APlayerController* PlayerController) {
+        if (PlayerController->GetNetConnection() == nullptr) {
+            return;
+        }
+
+        // TODO investigate if swapping player controllers will cause issues here
+        FActorSpawnParameters SpawnParameters{};
+        SpawnParameters.Owner = PlayerController;
+        SpawnParameters.Name = FName(PlayerController->GetName().Append("_ClientPredictionReplicationManager"));
+        SpawnParameters.ObjectFlags |= EObjectFlags::RF_Transient;
+
+        AClientPredictionReplicationManager* Manger = World->SpawnActor<AClientPredictionReplicationManager>(SpawnParameters);
+        check(Manger)
+
+        FScopeLock ManagerLock(&ManagersMutex);
+
+        check(LocalReplicationManager == nullptr);
+        ReplicationManagers.Add(PlayerController, Manger);
+
+        Manger->SetStateManager(&StateManager);
+    }
+
+    void FWorldManager::DestroyReplicationManagerForPlayer(AController* Controller) {
+        const APlayerController* PlayerController = Cast<APlayerController>(Controller);
+        if (PlayerController || PlayerController->GetNetConnection() == nullptr) { return; }
+
+        if (ReplicationManagers.Contains(PlayerController)) {
+            ReplicationManagers[PlayerController]->Destroy();
+            ReplicationManagers.Remove(PlayerController);
+        }
+    }
+
+    void FWorldManager::RegisterLocalReplicationManager(AClientPredictionReplicationManager* Manager) {
+        FScopeLock ManagerLock(&ManagersMutex);
+
+        check(LocalReplicationManager == nullptr);
+        check(ReplicationManagers.IsEmpty());
+
+        LocalReplicationManager = Manager;
+        LocalReplicationManager->SetStateManager(&StateManager);
     }
 
     void FWorldManager::AddTickCallback(ITickCallback* Callback) {
@@ -190,6 +233,17 @@ namespace ClientPrediction {
         for (ITickCallback* Callback : TickCallbacks) {
             Callback->PostTickPhysicsThread(CachedLastTickNumber, Dt, CachedSolverStartTime, TickEndTime);
         }
+
+        StateManager.ProduceData(CachedLastTickNumber);
+
+        {
+            FScopeLock ManagerLock(&ManagersMutex);
+            for (const auto& Pair : ReplicationManagers) {
+                Pair.Value->PostTickAuthority(CachedLastTickNumber);
+            }
+        }
+
+        StateManager.ReleasedProducedData(CachedLastTickNumber);
     }
 
     void FWorldManager::OnPhysScenePostTick(FChaosScene* /*TickedPhysScene*/) {
@@ -197,6 +251,14 @@ namespace ClientPrediction {
 
         const Chaos::FReal Dt = LastResultsTime == -1.0 ? 0.0 : ResultsTime - LastResultsTime;
         check(Dt >= 0.0)
+
+        {
+            // Update the simulated proxy time
+            FScopeLock ManagerLock(&ManagersMutex);
+            if (LocalReplicationManager != nullptr) {
+                LocalReplicationManager->PostSceneTickGameThreadRemote();
+            }
+        }
 
         {
             FScopeLock Lock(&CallbacksMutex);
@@ -207,6 +269,11 @@ namespace ClientPrediction {
 
         if (!bIsForceSimulating) { DoForceSimulateIfNeeded(); }
         LastResultsTime = ResultsTime;
+
+        FScopeLock ManagerLock(&ManagersMutex);
+        for (const auto& Pair : ReplicationManagers) {
+            Pair.Value->PostSceneTickGameThreadAuthority();
+        }
     }
 
     int32 FWorldManager::TriggerRewindIfNeeded_Internal(int32 CurrentTickNumber) {

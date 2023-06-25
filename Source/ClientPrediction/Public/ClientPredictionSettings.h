@@ -28,32 +28,32 @@ public:
     int32 DroppedPacketMemoryTickLength = 25;
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
-    float TimeDilationAlpha = 0.1;
-
-    UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
     int32 InputSlidingWindowSize = 3;
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
-    float MaxTimeDilation = 0.01;
+    float TimeDilationAlpha = 0.1;
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
-    float AuthorityCatchupTimescale = 0.1;
+    float MaxAutoProxyTimeDilation = 0.01;
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
-    float SimProxyDelay = 0.050;
+    float AutoProxyAuthorityCatchupTimescale = 0.1;
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
-    float SimProxyTimeDilationMargin = 0.1;
+    float SimProxyDelay = 0.100;
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
-    float SimProxyAggressiveTimeDilationMargin = 0.8;
+    float SimProxyAggressiveTimeDifference = 0.200;
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
-    float SimProxyTimeDilation = 0.02;
+    float SimProxySnapTimeDifference = 0.400;
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
-    float SimProxyTimeDilationAlpha = 0.02;
+    double SimProxyTimeDilation = 0.01;
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
-    float SimProxyAggressiveTimeDilation = 0.2;
+    double SimProxyTimeDilationAlpha = 0.1;
+
+    UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
+    int32 SnapshotSendCadence = 3;
 };

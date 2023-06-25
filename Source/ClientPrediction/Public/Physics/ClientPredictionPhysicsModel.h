@@ -9,6 +9,7 @@
 #include "Driver/Drivers/ClientPredictionModelAutoProxyDriver.h"
 #include "Driver/Drivers/ClientPredictionModelSimProxyDriver.h"
 #include "World/ClientPredictionWorldManager.h"
+#include "Data/ClientPredictionModelId.h"
 
 namespace ClientPrediction {
     // Delegate
@@ -18,7 +19,6 @@ namespace ClientPrediction {
         virtual ~IPhysicsModelDelegate() = default;
 
         virtual void EmitInputPackets(FNetSerializationProxy& Proxy) = 0;
-        virtual void EmitReliableAuthorityState(FNetSerializationProxy& Proxy) = 0;
         virtual void GetNetworkConditions(FNetworkConditions& NetworkConditions) const = 0;
     };
 
@@ -31,9 +31,8 @@ namespace ClientPrediction {
         virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) = 0;
         virtual void Cleanup() = 0;
 
-        virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep, FRepProxy& ControlProxyRep) = 0;
+        virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& ControlProxyRep) = 0;
         virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) const = 0;
-        virtual void ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) const = 0;
     };
 
     // Sim output
@@ -91,15 +90,16 @@ namespace ClientPrediction {
         /** Performs any additional setup for the initial simulation state. */
         virtual void GenerateInitialState(StateType& State) const {};
 
+        void SetModelId(const FClientPredictionModelId& NewModelId);
+
         // FPhysicsModelBase
         virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) override final;
 
         virtual ~FPhysicsModel() override = default;
         virtual void Cleanup() override final;
 
-        virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep, FRepProxy& ControlProxyRep) override final;
+        virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& ControlProxyRep) override final;
         virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) const override final;
-        virtual void ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) const override final;
 
         virtual void SetTimeDilation(const Chaos::FReal TimeDilation) override final;
         virtual void ForceSimulate(const uint32 NumTicks) override final;
@@ -111,7 +111,6 @@ namespace ClientPrediction {
         virtual void Finalize(const StateType& State, Chaos::FReal Dt) override final;
 
         virtual void EmitInputPackets(TArray<FInputPacketWrapper<InputType>>& Packets) override final;
-        virtual void EmitReliableAuthorityState(FStateWrapper<StateType> State) override final;
         virtual void ProduceInput(InputType& Packet) override final;
         virtual void ModifyInputPhysicsThread(InputType& Packet, const FStateWrapper<StateType>& State, Chaos::FReal Dt) override final;
 
@@ -146,10 +145,17 @@ namespace ClientPrediction {
         struct FWorldManager* CachedWorldManager = nullptr;
         TUniquePtr<IModelDriver<InputType, StateType>> ModelDriver = nullptr;
         IPhysicsModelDelegate* Delegate = nullptr;
+
+        FClientPredictionModelId ModelId{};
     };
 
     // Implementation
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::SetModelId(const FClientPredictionModelId& NewModelId) {
+        ModelId = NewModelId;
+    }
 
     template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::Initialize(UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) {
@@ -174,7 +180,7 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::Cleanup() {
         if (CachedWorldManager != nullptr && ModelDriver != nullptr) {
-            ModelDriver->Unregister(CachedWorldManager);
+            ModelDriver->Unregister(CachedWorldManager, ModelId);
         }
 
         CachedWorldManager = nullptr;
@@ -182,34 +188,32 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType, typename EventType>
-    void FPhysicsModel<InputType, StateType, EventType>::SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep,
-                                                                    FRepProxy& ControlProxyRep) {
+    void FPhysicsModel<InputType, StateType, EventType>::SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& ControlProxyRep) {
         check(CachedWorldManager)
         check(CachedComponent)
         check(Delegate)
 
         if (ModelDriver != nullptr) {
-            ModelDriver->Unregister(CachedWorldManager);
+            ModelDriver->Unregister(CachedWorldManager, ModelId);
         }
 
         int32 RewindBufferSize = CachedWorldManager->GetRewindBufferSize();
         switch (Role) {
         case ROLE_Authority:
-            ModelDriver = MakeUnique<FModelAuthDriver<InputType, StateType>>(CachedComponent, this, AutoProxyRep, SimProxyRep, ControlProxyRep, RewindBufferSize,
-                                                                             bShouldTakeInput);
+            ModelDriver = MakeUnique<FModelAuthDriver<InputType, StateType>>(CachedComponent, this, ControlProxyRep, RewindBufferSize, bShouldTakeInput);
             break;
         case ROLE_AutonomousProxy: {
-            ModelDriver = MakeUnique<FModelAutoProxyDriver<InputType, StateType>>(CachedComponent, this, AutoProxyRep, ControlProxyRep, RewindBufferSize);
+            ModelDriver = MakeUnique<FModelAutoProxyDriver<InputType, StateType>>(CachedComponent, this, ControlProxyRep, RewindBufferSize);
         }
         break;
         case ROLE_SimulatedProxy:
-            ModelDriver = MakeUnique<FModelSimProxyDriver<InputType, StateType>>(CachedComponent, this, SimProxyRep);
+            ModelDriver = MakeUnique<FModelSimProxyDriver<InputType, StateType>>(CachedComponent, this);
             break;
         default:
             break;
         }
 
-        ModelDriver->Register(CachedWorldManager);
+        ModelDriver->Register(CachedWorldManager, ModelId);
     }
 
     template <typename InputType, typename StateType, typename EventType>
@@ -221,17 +225,6 @@ namespace ClientPrediction {
 
         Proxy.Deserialize();
         ModelDriver->ReceiveInputPackets(Packets);
-    }
-
-    template <typename InputType, typename StateType, typename EventType>
-    void FPhysicsModel<InputType, StateType, EventType>::ReceiveReliableAuthorityState(FNetSerializationProxy& Proxy) const {
-        if (ModelDriver == nullptr) { return; }
-
-        FStateWrapper<StateType> State;
-        Proxy.NetSerializeFunc = [&](FArchive& Ar) { State.NetSerialize(Ar, true); };
-
-        Proxy.Deserialize();
-        ModelDriver->ReceiveReliableAuthorityState(State);
     }
 
     template <typename InputType, typename StateType, typename EventType>
@@ -270,15 +263,6 @@ namespace ClientPrediction {
         FNetSerializationProxy Proxy;
         Proxy.NetSerializeFunc = [=](FArchive& Ar) mutable { Ar << Packets; };
         Delegate->EmitInputPackets(Proxy);
-    }
-
-    template <typename InputType, typename StateType, typename EventType>
-    void FPhysicsModel<InputType, StateType, EventType>::EmitReliableAuthorityState(FStateWrapper<StateType> State) {
-        check(Delegate);
-
-        FNetSerializationProxy Proxy;
-        Proxy.NetSerializeFunc = [=](FArchive& Ar) mutable { State.NetSerialize(Ar, true); };
-        Delegate->EmitReliableAuthorityState(Proxy);
     }
 
     template <typename InputType, typename StateType, typename EventType>

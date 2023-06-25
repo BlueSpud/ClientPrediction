@@ -10,21 +10,21 @@
 
 namespace ClientPrediction {
     template <typename InputType, typename StateType>
-    class FModelAutoProxyDriver final : public FSimulatedModelDriver<InputType, StateType>, public IRewindCallback {
+    class FModelAutoProxyDriver final : public FSimulatedModelDriver<InputType, StateType>, public IRewindCallback, public StateConsumerBase<FStateWrapper<StateType>> {
     public:
-        FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FRepProxy& AutoProxyRep,
-                              FRepProxy& ControlProxyRep, int32 RewindBufferSize);
+        FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FRepProxy& ControlProxyRep,
+                              int32 RewindBufferSize);
 
         virtual ~FModelAutoProxyDriver() override = default;
 
-        virtual void Register(struct FWorldManager* WorldManager) override;
-        virtual void Unregister(struct FWorldManager* WorldManager) override;
+        virtual void Register(struct FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) override;
+        virtual void Unregister(struct FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) override;
 
     private:
-        void BindToRepProxy(FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep);
+        void BindToRepProxy(FRepProxy& ControlProxyRep);
 
     public:
-        virtual void ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) override;
+        virtual void ConsumeUnserializedStateForTick(const int32 Tick, const FStateWrapper<StateType>& State, const Chaos::FReal ServerTime) override;
 
     private:
         void QueueAuthorityState(const FStateWrapper<StateType>& State);
@@ -64,44 +64,36 @@ namespace ClientPrediction {
     };
 
     template <typename InputType, typename StateType>
-    FModelAutoProxyDriver<InputType, StateType>::FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent,
-                                                                       IModelDriverDelegate<InputType, StateType>*
-                                                                       Delegate,
-                                                                       FRepProxy& AutoProxyRep,
-                                                                       FRepProxy& ControlProxyRep,
-                                                                       int32 RewindBufferSize) :
+    FModelAutoProxyDriver<InputType, StateType>::FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate,
+                                                                       FRepProxy& ControlProxyRep, int32 RewindBufferSize) :
         FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), RewindBufferSize(RewindBufferSize) {
-        BindToRepProxy(AutoProxyRep, ControlProxyRep);
+        BindToRepProxy(ControlProxyRep);
     }
 
     template <typename InputType, typename StateType>
-    void FModelAutoProxyDriver<InputType, StateType>::Register(FWorldManager* WorldManager) {
-        FSimulatedModelDriver<InputType, StateType>::Register(WorldManager);
+    void FModelAutoProxyDriver<InputType, StateType>::Register(FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) {
+        FSimulatedModelDriver<InputType, StateType>::Register(WorldManager, ModelId);
+        WorldManager->GetStateManager().RegisterConsumerForModel(ModelId, this);
         WorldManager->AddRewindCallback(this);
     }
 
     template <typename InputType, typename StateType>
-    void FModelAutoProxyDriver<InputType, StateType>::Unregister(FWorldManager* WorldManager) {
-        FSimulatedModelDriver<InputType, StateType>::Unregister(WorldManager);
+    void FModelAutoProxyDriver<InputType, StateType>::Unregister(FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) {
+        FSimulatedModelDriver<InputType, StateType>::Unregister(WorldManager, ModelId);
+        WorldManager->GetStateManager().UnregisterConsumerForModel(ModelId);
         WorldManager->RemoveRewindCallback(this);
     }
 
     template <typename InputType, typename StateType>
-    void FModelAutoProxyDriver<InputType, StateType>::BindToRepProxy(FRepProxy& AutoProxyRep, FRepProxy& ControlProxyRep) {
-        AutoProxyRep.SerializeFunc = [&](FArchive& Ar) {
-            FStateWrapper<StateType> State{};
-            State.NetSerialize(Ar, true);
-
-            QueueAuthorityState(State);
-        };
-
+    void FModelAutoProxyDriver<InputType, StateType>::BindToRepProxy(FRepProxy& ControlProxyRep) {
         ControlProxyRep.SerializeFunc = [&](FArchive& Ar) {
             LastControlPacket.NetSerialize(Ar);
         };
     }
 
     template <typename InputType, typename StateType>
-    void FModelAutoProxyDriver<InputType, StateType>::ReceiveReliableAuthorityState(const FStateWrapper<StateType>& State) {
+    void FModelAutoProxyDriver<InputType, StateType>::ConsumeUnserializedStateForTick(const int32 Tick, const FStateWrapper<StateType>& State,
+                                                                                      const Chaos::FReal ServerTime) {
         QueueAuthorityState(State);
     }
 
@@ -180,7 +172,7 @@ namespace ClientPrediction {
 
         InterpolateStateGameThread(SimTime, Dt);
 
-        Chaos::FReal NewTimeDilation = 1.0 + LastControlPacket.GetTimeDilation() * Settings->MaxTimeDilation;
+        Chaos::FReal NewTimeDilation = 1.0 + LastControlPacket.GetTimeDilation() * Settings->MaxAutoProxyTimeDilation;
         int32 NumForceSimulatedTicks = 0;
 
         {
@@ -202,7 +194,7 @@ namespace ClientPrediction {
                 // If the auto proxy is far ahead of the authority, slow down time significantly so the authority can catch up
                 if (PendingAuthorityStates.Last().InputPacketTickNumber <= CurrentTickNumber - RewindBufferSize) {
                     UE_LOG(LogTemp, Warning, TEXT("Auto proxy is too far ahead of the authority"));
-                    NewTimeDilation = Settings->AuthorityCatchupTimescale;
+                    NewTimeDilation = Settings->AutoProxyAuthorityCatchupTimescale;
                 }
             }
         }

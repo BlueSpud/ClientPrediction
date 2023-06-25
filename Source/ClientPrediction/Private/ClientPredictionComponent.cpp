@@ -12,8 +12,6 @@ UClientPredictionComponent::UClientPredictionComponent() {
 void UClientPredictionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-    DOREPLIFETIME_CONDITION(UClientPredictionComponent, AutoProxyRep, COND_AutonomousOnly);
-    DOREPLIFETIME_CONDITION(UClientPredictionComponent, SimProxyRep, COND_SimulatedOnly);
     DOREPLIFETIME_CONDITION(UClientPredictionComponent, ControlProxyRep, COND_AutonomousOnly);
 }
 
@@ -51,7 +49,7 @@ void UClientPredictionComponent::CheckOwnerRoleChanged() {
     CachedRole = CurrentRole;
     bCachedAuthorityTakesInput = bAuthorityTakesInput;
 
-    PhysicsModel->SetNetRole(CurrentRole, bAuthorityTakesInput, AutoProxyRep, SimProxyRep, ControlProxyRep);
+    PhysicsModel->SetNetRole(CurrentRole, bAuthorityTakesInput, ControlProxyRep);
 }
 
 void UClientPredictionComponent::BeginPlay() {
@@ -64,10 +62,6 @@ void UClientPredictionComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
     if (PhysicsModel != nullptr) {
         PhysicsModel->Cleanup();
     }
-}
-
-void UClientPredictionComponent::EmitReliableAuthorityState(FNetSerializationProxy& Proxy) {
-    RecvReliableAuthorityState(Proxy);
 }
 
 void UClientPredictionComponent::GetNetworkConditions(ClientPrediction::FNetworkConditions& NetworkConditions) const {
@@ -94,10 +88,3 @@ void UClientPredictionComponent::EmitInputPackets(FNetSerializationProxy& Proxy)
         RecvInputPacket(Proxy);
     }
 }
-
-void UClientPredictionComponent::RecvReliableAuthorityState_Implementation(FNetSerializationProxy Proxy) {
-    if (PhysicsModel != nullptr) {
-        PhysicsModel->ReceiveReliableAuthorityState(Proxy);
-    }
-}
-

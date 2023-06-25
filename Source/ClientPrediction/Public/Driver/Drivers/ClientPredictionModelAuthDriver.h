@@ -9,13 +9,15 @@
 
 namespace ClientPrediction {
     template <typename InputType, typename StateType>
-    class FModelAuthDriver final : public FSimulatedModelDriver<InputType, StateType> {
+    class FModelAuthDriver final : public FSimulatedModelDriver<InputType, StateType>, public StateProducerBase<FStateWrapper<StateType>> {
     public:
-        FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate,
-                         FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep, FRepProxy& ControlProxyRep,
+        FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FRepProxy& ControlProxyRep,
                          int32 RewindBufferSize, const bool bTakesInput);
 
         virtual ~FModelAuthDriver() override = default;
+
+        virtual void Register(struct FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) override;
+        virtual void Unregister(struct FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) override;
 
     public:
         // Ticking
@@ -25,9 +27,10 @@ namespace ClientPrediction {
 
         virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
 
+        // StateProducerBase
+        virtual bool ProduceUnserializedStateForTick(const int32 Tick, FStateWrapper<StateType>& State, bool& bShouldBeReliable) override;
+
     private:
-        void SendCurrentStateToRemotes();
-        void SendState(FStateWrapper<StateType> State);
         void SuggestTimeDilation();
 
     public:
@@ -35,26 +38,30 @@ namespace ClientPrediction {
         virtual void ReceiveInputPackets(const TArray<FInputPacketWrapper<InputType>>& Packets) override;
 
     private:
-        FRepProxy& AutoProxyRep;
-        FRepProxy& SimProxyRep;
         FRepProxy& ControlProxyRep;
         bool bTakesInput = false;
 
         FAuthInputBuf<InputType> InputBuf; // Written to on game thread, read from physics thread
         Chaos::FReal LastSuggestedTimeDilation = 1.0; // Only used on game thread
-
-        FCriticalSection PendingStatesMutex;
-        TQueue<FStateWrapper<StateType>> PendingStates; // Written from physics thread, read on game thread
-        int32 LastEmittedState = INDEX_NONE; // Only used on game thread
     };
 
     template <typename InputType, typename StateType>
-    FModelAuthDriver<InputType, StateType>::FModelAuthDriver(UPrimitiveComponent* UpdatedComponent,
-                                                             IModelDriverDelegate<InputType, StateType>* Delegate,
-                                                             FRepProxy& AutoProxyRep, FRepProxy& SimProxyRep,
+    FModelAuthDriver<InputType, StateType>::FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate,
                                                              FRepProxy& ControlProxyRep, int32 RewindBufferSize, const bool bTakesInput)
-        : FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), AutoProxyRep(AutoProxyRep), SimProxyRep(SimProxyRep), ControlProxyRep(ControlProxyRep),
+        : FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), ControlProxyRep(ControlProxyRep),
           bTakesInput(bTakesInput), InputBuf(Settings, bTakesInput) {}
+
+    template <typename InputType, typename StateType>
+    void FModelAuthDriver<InputType, StateType>::Register(FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) {
+        FSimulatedModelDriver<InputType, StateType>::Register(WorldManager, ModelId);
+        WorldManager->GetStateManager().RegisterProducerForModel(ModelId, this);
+    }
+
+    template <typename InputType, typename StateType>
+    void FModelAuthDriver<InputType, StateType>::Unregister(FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) {
+        FSimulatedModelDriver<InputType, StateType>::Unregister(WorldManager, ModelId);
+        WorldManager->GetStateManager().UnregisterProducerForModel(ModelId);
+    }
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) {
@@ -80,45 +87,19 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
         PostTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
-
-        FScopeLock Lock(&PendingStatesMutex);
-        PendingStates.Enqueue(CurrentState);
     }
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
         InterpolateStateGameThread(SimTime, Dt);
-        SendCurrentStateToRemotes();
         SuggestTimeDilation();
     }
 
     template <typename InputType, typename StateType>
-    void FModelAuthDriver<InputType, StateType>::SendCurrentStateToRemotes() {
-        FScopeLock Lock(&PendingStatesMutex);
-
-        while (!PendingStates.IsEmpty()) {
-            FStateWrapper<StateType> Front;
-            PendingStates.Peek(Front);
-            SendState(Front);
-
-            PendingStates.Pop();
-        }
-    }
-
-    template <typename InputType, typename StateType>
-    void FModelAuthDriver<InputType, StateType>::SendState(FStateWrapper<StateType> State) {
-        if (State.TickNumber != INDEX_NONE && State.TickNumber != LastEmittedState) {
-            if (State.Events == 0) {
-                AutoProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { State.NetSerialize(Ar, true); };
-                SimProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { State.NetSerialize(Ar, false); };
-
-                AutoProxyRep.Dispatch();
-                SimProxyRep.Dispatch();
-            }
-            else { Delegate->EmitReliableAuthorityState(State); }
-
-            LastEmittedState = State.TickNumber;
-        }
+    bool FModelAuthDriver<InputType, StateType>::ProduceUnserializedStateForTick(const int32 Tick, FStateWrapper<StateType>& State, bool& bShouldBeReliable) {
+        State = CurrentState;
+        bShouldBeReliable = State.Events != 0;
+        return true;
     }
 
     template <typename InputType, typename StateType>

@@ -2,6 +2,8 @@
 
 #include "PhysicsProxy/SingleParticlePhysicsProxy.h"
 
+#include "Data/ClientPredictionDataCompleteness.h"
+
 namespace ClientPrediction {
     extern CLIENTPREDICTION_API float ClientPredictionPositionTolerance;
     extern CLIENTPREDICTION_API float ClientPredictionVelocityTolerance;
@@ -46,7 +48,7 @@ namespace ClientPrediction {
          */
         Chaos::FReal EstimatedClientSimProxyDelay = 0.0;
 
-        void NetSerialize(FArchive& Ar, bool bSerializeFullState);
+        void NetSerialize(FArchive& Ar, const EDataCompleteness Completeness);
         bool ShouldReconcile(const FStateWrapper& State) const;
 
         void FillState(const class Chaos::FRigidBodyHandle_Internal* Handle);
@@ -55,36 +57,77 @@ namespace ClientPrediction {
         void Interpolate(const FStateWrapper Other, const Chaos::FReal Alpha);
     };
 
+    inline void SerializeHalfPrecision(Chaos::FVec3& Vec, FArchive& Ar) {
+        Chaos::FVec3f HalfVec;
+        if (Ar.IsSaving()) {
+            HalfVec = Vec;
+        }
+
+        Ar << HalfVec.X;
+        Ar << HalfVec.Y;
+        Ar << HalfVec.Z;
+
+        if (Ar.IsLoading()) {
+            Vec = HalfVec;
+        }
+    }
+
+    inline void SerializeHalfPrecision(Chaos::FRotation3& Rot, FArchive& Ar) {
+        Chaos::FRotation3f HalfRot;
+
+        if (Ar.IsSaving()) {
+            HalfRot = Rot;
+        }
+
+        Ar << HalfRot.X;
+        Ar << HalfRot.Y;
+        Ar << HalfRot.Z;
+        Ar << HalfRot.W;
+
+        if (Ar.IsLoading()) {
+            Rot = HalfRot;
+        }
+    }
+
     template <typename StateType>
-    void FStateWrapper<StateType>::NetSerialize(FArchive& Ar, bool bSerializeFullState) {
+    void FStateWrapper<StateType>::NetSerialize(FArchive& Ar, const EDataCompleteness Completeness) {
         Ar << TickNumber;
-        if (bSerializeFullState) { Ar << InputPacketTickNumber; }
+
+        if (Completeness == EDataCompleteness::kFull) {
+            Ar << InputPacketTickNumber;
+        }
 
         Ar << PhysicsState.ObjectState;
 
-        // Serialize manually to make sure that they are serialized as doubles
-        Ar << PhysicsState.X.X;
-        Ar << PhysicsState.X.Y;
-        Ar << PhysicsState.X.Z;
+        if (Completeness == EDataCompleteness::kFull) {
+            // Serialize manually to make sure that they are serialized as doubles
+            Ar << PhysicsState.X.X;
+            Ar << PhysicsState.X.Y;
+            Ar << PhysicsState.X.Z;
 
-        Ar << PhysicsState.V.X;
-        Ar << PhysicsState.V.Y;
-        Ar << PhysicsState.V.Z;
+            Ar << PhysicsState.V.X;
+            Ar << PhysicsState.V.Y;
+            Ar << PhysicsState.V.Z;
 
-        Ar << PhysicsState.R.X;
-        Ar << PhysicsState.R.Y;
-        Ar << PhysicsState.R.Z;
-        Ar << PhysicsState.R.W;
+            Ar << PhysicsState.R.X;
+            Ar << PhysicsState.R.Y;
+            Ar << PhysicsState.R.Z;
+            Ar << PhysicsState.R.W;
 
-        Ar << PhysicsState.W.X;
-        Ar << PhysicsState.W.Y;
-        Ar << PhysicsState.W.Z;
+            Ar << PhysicsState.W.X;
+            Ar << PhysicsState.W.Y;
+            Ar << PhysicsState.W.Z;
 
-        if (bSerializeFullState) {
             Ar << Events;
         }
+        else {
+            SerializeHalfPrecision(PhysicsState.X, Ar);
+            SerializeHalfPrecision(PhysicsState.V, Ar);
+            SerializeHalfPrecision(PhysicsState.R, Ar);
+            SerializeHalfPrecision(PhysicsState.W, Ar);
+        }
 
-        Body.NetSerialize(Ar, bSerializeFullState);
+        Body.NetSerialize(Ar, Completeness);
     }
 
     template <typename StateType>

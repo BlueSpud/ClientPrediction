@@ -4,6 +4,9 @@
 #include "RewindData.h"
 
 #include "ClientPredictionSettings.h"
+#include "Data/ClientPredictionStateManager.h"
+
+class AClientPredictionReplicationManager;
 
 namespace ClientPrediction {
     struct CLIENTPREDICTION_API FWorldManager {
@@ -18,11 +21,15 @@ namespace ClientPrediction {
         virtual ~FWorldManager();
 
     private:
-        explicit FWorldManager(const class UWorld* World);
+        explicit FWorldManager(class UWorld* World);
         void SetupPhysicsScene();
         void CreateCallbacks();
 
     public:
+        void CreateReplicationManagerForPlayer(class APlayerController* PlayerController);
+        void DestroyReplicationManagerForPlayer(class AController* Controller);
+        void RegisterLocalReplicationManager(AClientPredictionReplicationManager* Manager);
+
         void AddTickCallback(class ITickCallback* Callback);
         void RemoveTickCallback(class ITickCallback* Callback);
 
@@ -35,6 +42,9 @@ namespace ClientPrediction {
         void SetTimeDilation(const Chaos::FReal TimeDilation) const;
 
         void ForceSimulate(const uint32 NumTicks);
+
+        FStateManager& GetStateManager() { return StateManager; }
+
     private:
         void DoForceSimulateIfNeeded();
 
@@ -73,10 +83,18 @@ namespace ClientPrediction {
 
         const UClientPredictionSettings* Settings = nullptr;
 
+        class UWorld* World = nullptr;
+
+        FCriticalSection ManagersMutex;
+        TMap<class APlayerController*, AClientPredictionReplicationManager*> ReplicationManagers;
+        AClientPredictionReplicationManager* LocalReplicationManager = nullptr;
+
         FPhysScene* PhysScene = nullptr;
         Chaos::FPhysicsSolver* Solver = nullptr;
         FChaosRewindCallback* ChaosRewindCallback = nullptr;
         int32 RewindBufferSize = 0;
+
+        FStateManager StateManager{};
 
         FDelegateHandle PostAdvanceDelegate;
         FDelegateHandle PostPhysSceneTickDelegate;
