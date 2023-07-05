@@ -119,32 +119,47 @@ void AClientPredictionReplicationManager::PostTickAuthority(int32 TickNumber) {
         }
     }
 
-    FScopeLock QueuedSnapshotLock(&QueuedSnapshotMutex);
-    QueuedSnapshots.Enqueue(MoveTemp(NewSnapshot));
+    FScopeLock QueuedSnapshotLock(&SendQueueMutex);
+    SnapshotSendQueue.Enqueue(MoveTemp(NewSnapshot));
 
     // If there is data that needs to be reliably sent, it is done so over a reliable RPC
     if (!ReliableSnapshot.AutoProxyModels.IsEmpty() || !ReliableSnapshot.SimProxyModels.IsEmpty()) {
-        ReliableSnapshotQueue.Enqueue(MoveTemp(ReliableSnapshot));
+        ReliableSnapshotSendQueue.Enqueue(MoveTemp(ReliableSnapshot));
     }
 }
 
 void AClientPredictionReplicationManager::PostSceneTickGameThreadAuthority() {
-    FScopeLock QueuedSnapshotLock(&QueuedSnapshotMutex);
-    while (!QueuedSnapshots.IsEmpty()) {
-        SnapshotReceivedRemote(*QueuedSnapshots.Peek());
-        QueuedSnapshots.Pop();
+    FScopeLock QueuedSnapshotLock(&SendQueueMutex);
+    while (!SnapshotSendQueue.IsEmpty()) {
+        SnapshotReceivedRemote(*SnapshotSendQueue.Peek());
+        SnapshotSendQueue.Pop();
     }
 
-    while (!ReliableSnapshotQueue.IsEmpty()) {
-        SnapshotReceivedReliable(*ReliableSnapshotQueue.Peek());
-        ReliableSnapshotQueue.Pop();
+    while (!ReliableSnapshotSendQueue.IsEmpty()) {
+        SnapshotReceivedReliable(*ReliableSnapshotSendQueue.Peek());
+        ReliableSnapshotSendQueue.Pop();
     }
 }
 
 void AClientPredictionReplicationManager::PostSceneTickGameThreadRemote() {
+    if (StateManager == nullptr) { return; }
+
+    const int32 PreviousLatestReceivedTick = LatestReceivedTick;
+    while (!SnapshotReceiveQueue.IsEmpty()) {
+        ProcessSnapshot(*SnapshotReceiveQueue.Peek());
+        SnapshotReceiveQueue.Pop();
+    }
+
+    // Here we request a dilation of time (if the current estimated time is close enough) or adjust it directly if the delta is too large to ensure that we are
+    // still in sync with the server. This only actually needs to be done when we've gotten a new tick from the server.
+    if (LatestReceivedTick != PreviousLatestReceivedTick) {
+        AdjustServerTime();
+    }
+
     const Chaos::FReal WorldTime = GetWorld()->GetRealTimeSeconds();
     const Chaos::FReal WorldDt = WorldTime - LastWorldTime;
 
+    ServerTimescale = FMath::Lerp(ServerTimescale, ServerTargetTimescale, Settings->SimProxyTimeDilationAlpha);
     ServerTime += WorldDt * ServerTimescale;
     LastWorldTime = WorldTime;
 
@@ -152,15 +167,20 @@ void AClientPredictionReplicationManager::PostSceneTickGameThreadRemote() {
 }
 
 void AClientPredictionReplicationManager::SnapshotReceivedRemote_Implementation(const FReplicatedTickSnapshot& Snapshot) {
-    ProcessSnapshot(Snapshot, false);
+    FScopeLock QueuedSnapshotLock(&ReceiveQueueMutex);
+    SnapshotReceiveQueue.Enqueue({Snapshot, ClientPrediction::kStandard});
 }
 
 void AClientPredictionReplicationManager::SnapshotReceivedReliable_Implementation(const FReplicatedTickSnapshot& Snapshot) {
-    ProcessSnapshot(Snapshot, true);
+    FScopeLock QueuedSnapshotLock(&ReceiveQueueMutex);
+    SnapshotReceiveQueue.Enqueue({Snapshot, ClientPrediction::kFull});
 }
 
-void AClientPredictionReplicationManager::ProcessSnapshot(const FReplicatedTickSnapshot& Snapshot, bool bIsReliable) {
+void AClientPredictionReplicationManager::ProcessSnapshot(const TTuple<FReplicatedTickSnapshot, ClientPrediction::EDataCompleteness>& Tuple) {
     if (StateManager == nullptr) { return; }
+
+    const FReplicatedTickSnapshot& Snapshot = Tuple.Key;
+    const ClientPrediction::EDataCompleteness AutoProxyCompleteness = Tuple.Value;
 
     if (ServerStartTick == INDEX_NONE) {
         const Chaos::FReal WorldTime = GetWorld()->GetRealTimeSeconds();
@@ -171,31 +191,38 @@ void AClientPredictionReplicationManager::ProcessSnapshot(const FReplicatedTickS
         ServerTime = WorldTime;
     }
 
-    // Slow down the server time if it is too far ahead and speed it up if it is too far behind
-    const Chaos::FReal SnapshotServerTime = static_cast<double>(Snapshot.TickNumber - ServerStartTick) * Settings->FixedDt + ServerStartTime;
-
-    if (!bIsReliable) {
-        const Chaos::FReal ServerTimeDelta = SnapshotServerTime - ServerTime;
-        const Chaos::FReal DeltaAbs = FMath::Abs(ServerTimeDelta);
-
-        if (DeltaAbs >= Settings->SimProxySnapTimeDifference) {
-            ServerTime = SnapshotServerTime;
-            ServerTimescale = 1.0;
-        }
-        else if (DeltaAbs >= Settings->SimProxyAggressiveTimeDifference) {
-            ServerTime = (SnapshotServerTime + ServerTime) / 2.0;
-        }
-
-        const Chaos::FReal TargetTimescale = FMath::Sign(ServerTimeDelta) * Settings->SimProxyTimeDilation + 1.0;
-        ServerTimescale = FMath::Lerp(ServerTimescale, TargetTimescale, Settings->SimProxyTimeDilationAlpha);
-    }
-
+    const Chaos::FReal SnapshotServerTime = CalculateTimeForServerTick(Snapshot.TickNumber);
     for (const auto& AutoProxy : Snapshot.AutoProxyModels) {
         StateManager->PushStateToConsumer(Snapshot.TickNumber, AutoProxy.ModelId, AutoProxy.Data, SnapshotServerTime, ClientPrediction::kFull);
     }
 
-    const ClientPrediction::EDataCompleteness AutoProxyCompleteness = bIsReliable ? ClientPrediction::kFull : ClientPrediction::kStandard;
     for (const auto& SimProxy : Snapshot.SimProxyModels) {
         StateManager->PushStateToConsumer(Snapshot.TickNumber, SimProxy.ModelId, SimProxy.Data, SnapshotServerTime, AutoProxyCompleteness);
     }
+
+    LatestReceivedTick = FMath::Max(LatestReceivedTick, Snapshot.TickNumber);
+}
+
+void AClientPredictionReplicationManager::AdjustServerTime() {
+    const Chaos::FReal CurrentServerTime = CalculateTimeForServerTick(LatestReceivedTick);
+
+    const Chaos::FReal ServerTimeDelta = CurrentServerTime - ServerTime;
+    const Chaos::FReal DeltaAbs = FMath::Abs(ServerTimeDelta);
+
+    if (DeltaAbs >= Settings->SimProxySnapTimeDifference) {
+        ServerTime = CurrentServerTime;
+        ServerTargetTimescale = 1.0;
+
+        return;
+    }
+
+    if (DeltaAbs >= Settings->SimProxyAggressiveTimeDifference) {
+        ServerTime = (CurrentServerTime + ServerTime) / 2.0;
+    }
+
+    ServerTargetTimescale = FMath::Sign(ServerTimeDelta) * Settings->SimProxyTimeDilation + 1.0;
+}
+
+Chaos::FReal AClientPredictionReplicationManager::CalculateTimeForServerTick(const int32 Tick) const {
+    return static_cast<double>(Tick - ServerStartTick) * Settings->FixedDt + ServerStartTime;
 }

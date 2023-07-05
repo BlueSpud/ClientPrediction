@@ -69,10 +69,14 @@ private:
     UFUNCTION(Client, Reliable)
     void SnapshotReceivedReliable(const FReplicatedTickSnapshot& Snapshot);
 
-    void ProcessSnapshot(const FReplicatedTickSnapshot& Snapshot, bool bIsReliable);
+    void ProcessSnapshot(const TTuple<FReplicatedTickSnapshot, ClientPrediction::EDataCompleteness>& Tuple);
+    void AdjustServerTime();
+
+    Chaos::FReal CalculateTimeForServerTick(const int32 Tick) const;
 
     int32 ServerStartTick = INDEX_NONE;
     Chaos::FReal ServerStartTime = -1.0;
+    Chaos::FReal ServerTargetTimescale = 1.0;
     Chaos::FReal ServerTimescale = 1.0;
     Chaos::FReal ServerTime = -1.0;
 
@@ -83,7 +87,11 @@ private:
 
     struct ClientPrediction::FStateManager* StateManager = nullptr;
 
-    FCriticalSection QueuedSnapshotMutex;
-    TQueue<FReplicatedTickSnapshot> QueuedSnapshots;
-    TQueue<FReplicatedTickSnapshot> ReliableSnapshotQueue;
+    FCriticalSection SendQueueMutex;
+    TQueue<FReplicatedTickSnapshot> SnapshotSendQueue;
+    TQueue<FReplicatedTickSnapshot> ReliableSnapshotSendQueue;
+
+    FCriticalSection ReceiveQueueMutex;
+    TQueue<TTuple<FReplicatedTickSnapshot, ClientPrediction::EDataCompleteness>> SnapshotReceiveQueue;
+    int32 LatestReceivedTick = INDEX_NONE;
 };
