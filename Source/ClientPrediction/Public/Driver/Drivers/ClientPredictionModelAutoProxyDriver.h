@@ -61,6 +61,8 @@ namespace ClientPrediction {
         TArray<FInputPacketWrapper<InputType>> InputSlidingWindow; // Only used on game thread
 
         FControlPacket LastControlPacket{};
+
+        FStateManager* StateManager = nullptr;
     };
 
     template <typename InputType, typename StateType>
@@ -75,6 +77,8 @@ namespace ClientPrediction {
         FSimulatedModelDriver<InputType, StateType>::Register(WorldManager, ModelId);
         WorldManager->GetStateManager().RegisterConsumerForModel(ModelId, this);
         WorldManager->AddRewindCallback(this);
+
+        StateManager = &WorldManager->GetStateManager();
     }
 
     template <typename InputType, typename StateType>
@@ -82,6 +86,8 @@ namespace ClientPrediction {
         FSimulatedModelDriver<InputType, StateType>::Unregister(WorldManager, ModelId);
         WorldManager->GetStateManager().UnregisterConsumerForModel(ModelId);
         WorldManager->RemoveRewindCallback(this);
+
+        StateManager = nullptr;
     }
 
     template <typename InputType, typename StateType>
@@ -211,10 +217,17 @@ namespace ClientPrediction {
     void FModelAutoProxyDriver<InputType, StateType>::EmitInputs() {
         FScopeLock Lock(&InputSendMutex);
 
+        float EstimatedDisplayedServerTick = StateManager != nullptr ? StateManager->GetEstimatedCurrentServerTick() : INDEX_NONE;
         while (!InputSendQueue.IsEmpty()) {
             FInputPacketWrapper<InputType> Packet;
             InputSendQueue.Peek(Packet);
             InputSendQueue.Pop();
+
+            // Once a state is produced by the simulation, it is added to the history queue. The game thread will then interpolate between the produced states.
+            // Each state spends approximately 1 tick in the buffer, so we need to increment the tick by one because the server time will be about 1 tick in the future
+            // by the time that the state is actually displayed. If multiple ticks were done during this frame, each successive tick will spend about 1 more tick
+            // in the history buffer than the last, so we need to continuously increment the estimated time.
+            Packet.EstimatedDisplayedServerTick = ++EstimatedDisplayedServerTick;
 
             // Bundle the new packet up with the most recent inputs and send it to the authority
             InputSlidingWindow.Add(Packet);

@@ -33,6 +33,9 @@ namespace ClientPrediction {
         Chaos::FReal GetInterpolationTime() const { return InterpolationTime; }
         void SetInterpolationTime(const Chaos::FReal NewInterpolationTime) { InterpolationTime = NewInterpolationTime; }
 
+        float GetEstimatedCurrentServerTick() const { return EstimatedCurrentServerTick; }
+        void SetEstimatedCurrentServerTick(const float NewEstimatedTick) { EstimatedCurrentServerTick = NewEstimatedTick; }
+
         void PushStateToConsumer(int32 TickNumber, const FClientPredictionModelId& ModelId, const TArray<uint8>& Data, const Chaos::FReal ServerTime,
                                  const EDataCompleteness Completeness);
 
@@ -52,6 +55,12 @@ namespace ClientPrediction {
         TMap<FClientPredictionModelId, TArray<FSerializedState>> ProducedStates;
 
         Chaos::FReal InterpolationTime = 0.0;
+
+        /**
+         * On remotes, this is the estimated server tick that is currently displayed by sim proxies. This is an estimate because interpolation is calculated with
+         * time, rather than discrete ticks and it's possible that they are in-between server ticks.
+         */
+        float EstimatedCurrentServerTick = INDEX_NONE;
     };
 
     // State producers

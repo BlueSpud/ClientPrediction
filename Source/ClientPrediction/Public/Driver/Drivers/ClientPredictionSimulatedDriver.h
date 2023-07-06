@@ -76,9 +76,6 @@ namespace ClientPrediction {
         CurrentState.TickNumber = TickNumber;
         CurrentState.InputPacketTickNumber = CurrentInput.PacketNumber;
 
-        CurrentState.EstimatedDelayFromClient = CurrentInput.EstimatedDelayFromClient;
-        CurrentState.EstimatedClientSimProxyDelay = CurrentInput.EstimatedClientSimProxyDelay;
-
         auto* Handle = GetPhysicsHandle();
         if (Handle == nullptr) {
             UE_LOG(LogTemp, Error, TEXT("Tried post-simulate without a valid physics handle"));
@@ -118,7 +115,9 @@ namespace ClientPrediction {
             const FEvent<StateType>& Front = EventQueue[0];
             if (Front.State.StartTime > SimTime) { break; }
 
-            Delegate->DispatchEvents(Front.State, Front.Events, Front.State.EstimatedDelayFromClient, Front.State.EstimatedClientSimProxyDelay);
+            UE_LOG(LogTemp, Warning, TEXT("DELAY %f"), CurrentState.EstimatedAutoProxyDelay);
+            
+            Delegate->DispatchEvents(Front.State, Front.Events, 0.0, CurrentState.EstimatedAutoProxyDelay);
             EventQueue.RemoveAt(0);
         }
     }

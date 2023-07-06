@@ -73,6 +73,7 @@ private:
     void AdjustServerTime();
 
     Chaos::FReal CalculateTimeForServerTick(const int32 Tick) const;
+    float EstimateServerTick(const Chaos::FReal Time) const;
 
     int32 ServerStartTick = INDEX_NONE;
     Chaos::FReal ServerStartTime = -1.0;

@@ -38,15 +38,15 @@ namespace ClientPrediction {
         Chaos::FReal StartTime = 0.0;
         Chaos::FReal EndTime = 0.0;
 
-        /** This contains the estimated time elapsed in seconds since the auto proxy simulated a tick with TickNumber. This is only calculated on the authority. */
-        Chaos::FReal EstimatedDelayFromClient = 0.0;
-
         /**
-         * This contains the estimated time between when this state was generated and the point in time that the auto proxy was seeing for the simulated proxies.
-         * This value is useful for hit registration since going back in time by this amount will show the world as the auto proxy saw it when it was generating input.
-         * This is only calculated on the authority.
+         * When an auto proxy samples an input packet, it saves the authority tick that is being displayed when the input is being sampled. That value is sent to the
+         * authority so that the authority knows what the client saw when it generated the input. This can be used to rollback the world for things like hit detection
+         * to provide a better player experience. We send the actual value instead of trying to guess authoritatively to be more accurate. However, it is possible
+         * that a cheater could manipulate the value to be further back than they were actually seeing, thus giving them more time to react. We do check that this value
+         * is always either the same or more than the last input packet and not in the future, but it is important to make sure that any rollback that is done is capped
+         * to some fair value.
          */
-        Chaos::FReal EstimatedClientSimProxyDelay = 0.0;
+        Chaos::FReal EstimatedAutoProxyDelay = 0.0;
 
         void NetSerialize(FArchive& Ar, const EDataCompleteness Completeness);
         bool ShouldReconcile(const FStateWrapper& State) const;

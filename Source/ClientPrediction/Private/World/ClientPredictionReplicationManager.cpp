@@ -163,7 +163,9 @@ void AClientPredictionReplicationManager::PostSceneTickGameThreadRemote() {
     ServerTime += WorldDt * ServerTimescale;
     LastWorldTime = WorldTime;
 
-    StateManager->SetInterpolationTime(ServerTime - Settings->SimProxyDelay);
+    const Chaos::FReal InterpolationTime = ServerTime - Settings->SimProxyDelay;
+    StateManager->SetInterpolationTime(InterpolationTime);
+    StateManager->SetEstimatedCurrentServerTick(EstimateServerTick(InterpolationTime));
 }
 
 void AClientPredictionReplicationManager::SnapshotReceivedRemote_Implementation(const FReplicatedTickSnapshot& Snapshot) {
@@ -225,4 +227,9 @@ void AClientPredictionReplicationManager::AdjustServerTime() {
 
 Chaos::FReal AClientPredictionReplicationManager::CalculateTimeForServerTick(const int32 Tick) const {
     return static_cast<double>(Tick - ServerStartTick) * Settings->FixedDt + ServerStartTime;
+}
+
+float AClientPredictionReplicationManager::EstimateServerTick(const Chaos::FReal Time) const {
+    const Chaos::FReal TimeFromStart = Time - ServerStartTime;
+    return TimeFromStart / Settings->FixedDt + static_cast<float>(ServerStartTick);
 }

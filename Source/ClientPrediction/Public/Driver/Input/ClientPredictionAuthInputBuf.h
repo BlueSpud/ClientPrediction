@@ -15,9 +15,6 @@ namespace ClientPrediction {
         void QueueInputPackets(const TArray<Wrapper>& Packets, const float CurrentRtt);
         void GetNextInputPacket(Wrapper& OutPacket, Chaos::FReal Dt);
 
-    private:
-        void AddTimeSpentInInputBuffer(Chaos::FReal Dt);
-
     public:
         uint32 GetBufferSize() {
             FScopeLock Lock(&Mutex);
@@ -56,8 +53,6 @@ namespace ClientPrediction {
 
             if (!bAlreadyHasPacket) {
                 InputPackets.Add(Packet);
-                InputPackets.Last().EstimatedDelayFromClient = CurrentRtt / 2.0;
-                InputPackets.Last().EstimatedClientSimProxyDelay = CurrentRtt + Settings->SimProxyDelay;
             }
         }
 
@@ -73,8 +68,6 @@ namespace ClientPrediction {
         if (LastInputPacket.PacketNumber == INDEX_NONE) {
             if (!InputPackets.IsEmpty()) {
                 ConsumeFirstPacket(OutPacket);
-
-                AddTimeSpentInInputBuffer(Dt);
                 return;
             }
         }
@@ -85,8 +78,6 @@ namespace ClientPrediction {
         if (!InputPackets.IsEmpty()) {
             if (InputPackets[0].PacketNumber == ExpectedPacketNumber) {
                 ConsumeFirstPacket(OutPacket);
-
-                AddTimeSpentInInputBuffer(Dt);
                 return;
             }
         }
@@ -94,18 +85,6 @@ namespace ClientPrediction {
         LastInputPacket.PacketNumber = ExpectedPacketNumber;
         DroppedInputPacketIndices.Add(ExpectedPacketNumber);
         OutPacket = LastInputPacket;
-
-        AddTimeSpentInInputBuffer(Dt);
-    }
-
-    template <typename InputType>
-    void FAuthInputBuf<InputType>::AddTimeSpentInInputBuffer(Chaos::FReal Dt) {
-        if (bIsAuthorityGeneratingInput) { return; }
-
-        for (Wrapper& Packet : InputPackets) {
-            Packet.EstimatedDelayFromClient += Dt;
-            Packet.EstimatedClientSimProxyDelay += Dt;
-        }
     }
 
     template <typename InputType>

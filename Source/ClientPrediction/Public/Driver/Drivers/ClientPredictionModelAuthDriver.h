@@ -82,6 +82,22 @@ namespace ClientPrediction {
 
         if (bTakesInput) { Delegate->ModifyInputPhysicsThread(CurrentInput.Body, CurrentState, Dt); }
         PreTickSimulateWithCurrentInput(TickNumber, Dt);
+
+        if (bTakesInput || CurrentInput.EstimatedDisplayedServerTick == INDEX_NONE) {
+            return;
+        }
+
+        // If this value is in the future, it means that the client is running too far ahead of the server and will eventually be slowed down,
+        // or it means that the client is cheating.
+        if (CurrentInput.EstimatedDisplayedServerTick >= TickNumber) {
+            CurrentState.EstimatedAutoProxyDelay = 0.0;
+            return;
+        }
+
+        // TODO check that the EstimatedDisplayedServerTick is either the same or increasing
+
+        const int32 TickDelta = TickNumber - CurrentInput.EstimatedDisplayedServerTick;
+        CurrentState.EstimatedAutoProxyDelay = static_cast<Chaos::FReal>(TickDelta) * Settings->FixedDt;
     }
 
     template <typename InputType, typename StateType>
