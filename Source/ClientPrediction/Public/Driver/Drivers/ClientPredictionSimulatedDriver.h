@@ -115,7 +115,7 @@ namespace ClientPrediction {
             const FEvent<StateType>& Front = EventQueue[0];
             if (Front.State.StartTime > SimTime) { break; }
 
-            Delegate->DispatchEvents(Front.State, Front.Events, 0.0, CurrentState.EstimatedAutoProxyDelay);
+            Delegate->DispatchEvents(Front.State, Front.Events, CurrentState.EstimatedAutoProxyDelay);
             EventQueue.RemoveAt(0);
         }
     }

@@ -42,9 +42,8 @@ namespace ClientPrediction {
          * When an auto proxy samples an input packet, it saves the authority tick that is being displayed when the input is being sampled. That value is sent to the
          * authority so that the authority knows what the client saw when it generated the input. This can be used to rollback the world for things like hit detection
          * to provide a better player experience. We send the actual value instead of trying to guess authoritatively to be more accurate. However, it is possible
-         * that a cheater could manipulate the value to be further back than they were actually seeing, thus giving them more time to react. We do check that this value
-         * is always either the same or more than the last input packet and not in the future, but it is important to make sure that any rollback that is done is capped
-         * to some fair value.
+         * that a cheater could manipulate the value to be further back than they were actually seeing, thus giving them more time to react, so it is important to make
+         * sure that any rollback that is done is capped to some fair value.
          */
         Chaos::FReal EstimatedAutoProxyDelay = 0.0;
 

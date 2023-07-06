@@ -22,7 +22,6 @@ namespace ClientPrediction {
 
         virtual void SetTimeDilation(const Chaos::FReal TimeDilation) = 0;
         virtual void ForceSimulate(const uint32 NumTicks) = 0;
-        virtual Chaos::FReal GetWorldTimeNoDilation() const = 0;
         virtual void GetNetworkConditions(FNetworkConditions& NetworkConditions) const = 0;
 
         virtual void SimulatePrePhysics(const Chaos::FReal Dt, FPhysicsContext& Context, const InputType& Input, const FStateWrapper<StateType>& PrevState,
@@ -30,8 +29,7 @@ namespace ClientPrediction {
         virtual void SimulatePostPhysics(const Chaos::FReal Dt, const FPhysicsContext& Context, const InputType& Input, const FStateWrapper<StateType>& PrevState,
                                          FStateWrapper<StateType>& OutState) = 0;
 
-        virtual void DispatchEvents(const FStateWrapper<StateType>& State, const uint8 Events, Chaos::FReal EstimatedDelayFromClient,
-                                    Chaos::FReal EstimatedClientSimProxyDelay) = 0;
+        virtual void DispatchEvents(const FStateWrapper<StateType>& State, const uint8 Events, Chaos::FReal EstimatedWorldDelay) = 0;
     };
 
     template <typename InputType, typename StateType>

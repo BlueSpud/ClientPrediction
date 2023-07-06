@@ -4,6 +4,17 @@
 
 namespace ClientPrediction {
     template <typename StateType>
+    struct FHistoryEntry {
+        FStateWrapper<StateType> State;
+
+        /** This is set to true the first time that the state is used as the start for interpolation. */
+        bool bHasBeenConsumed = false;
+
+        /** This is the time spent in the buffer before the state was consumed. */
+        Chaos::FReal TimeWaitingToBeConsumed = 0.0;
+    };
+
+    template <typename StateType>
     struct FHistoryBuffer {
         explicit FHistoryBuffer(const int32 Capacity);
 
@@ -11,14 +22,17 @@ namespace ClientPrediction {
         bool GetStateAtTick(const int32 TickNumber, FStateWrapper<StateType>& OutState);
         void GetStateAtTime(const Chaos::FReal Time, StateType& OutState);
 
+        Chaos::FReal GetAverageTimeToConsumeState();
+        void UpdateTimeWaitingToBeConsumed(const Chaos::FReal Dt);
+
         int32 GetLatestTickNumber() {
             FScopeLock Lock(&Mutex);
-            return History.IsEmpty() ? INDEX_NONE : History.Last().TickNumber;
+            return History.IsEmpty() ? INDEX_NONE : History.Last().State.TickNumber;
         }
 
     private:
         int32 Capacity = 0;
-        TArray<FStateWrapper<StateType>> History;
+        TArray<FHistoryEntry<StateType>> History;
         FCriticalSection Mutex;
     };
 
@@ -32,7 +46,9 @@ namespace ClientPrediction {
         FScopeLock Lock(&Mutex);
 
         bool bUpdatedExistingState = false;
-        for (FStateWrapper<StateType>& ExistingState : History) {
+        for (FHistoryEntry<StateType>& Entry : History) {
+            FStateWrapper<StateType>& ExistingState = Entry.State;
+
             if (ExistingState.TickNumber == State.TickNumber) {
                 ExistingState = State;
                 bUpdatedExistingState = true;
@@ -41,9 +57,9 @@ namespace ClientPrediction {
 
         if (!bUpdatedExistingState) {
             // Ensure that history is contiguous
-            check(History.IsEmpty() || History.Last().TickNumber == 0 || History.Last().TickNumber + 1 == State.TickNumber)
+            check(History.IsEmpty() || History.Last().State.TickNumber == 0 || History.Last().State.TickNumber + 1 == State.TickNumber)
 
-            History.Add(State);
+            History.Add({State, false, 0.0});
         }
 
         while (History.Num() > Capacity) {
@@ -55,7 +71,9 @@ namespace ClientPrediction {
     bool FHistoryBuffer<StateType>::GetStateAtTick(const int32 TickNumber, FStateWrapper<StateType>& OutState) {
         FScopeLock Lock(&Mutex);
 
-        for (const FStateWrapper<StateType>& State : History) {
+        for (FHistoryEntry<StateType>& Entry : History) {
+            const FStateWrapper<StateType>& State = Entry.State;
+
             if (State.TickNumber == TickNumber) {
                 OutState = State;
                 return true;
@@ -72,10 +90,12 @@ namespace ClientPrediction {
 
         if (History.IsEmpty()) { return; }
         for (int i = 0; i < History.Num(); i++) {
-            if (History[i].EndTime >= Time) {
+            if (History[i].State.EndTime >= Time) {
                 if (i != 0) {
-                    const FStateWrapper<StateType>& Start = History[i - 1];
-                    const FStateWrapper<StateType>& End = History[i];
+                    const FStateWrapper<StateType>& Start = History[i - 1].State;
+                    const FStateWrapper<StateType>& End = History[i].State;
+
+                    History[i - 1].bHasBeenConsumed = true;
                     OutState = Start.Body;
 
                     const Chaos::FReal Denominator = End.EndTime - End.StartTime;
@@ -85,11 +105,42 @@ namespace ClientPrediction {
                     return;
                 }
 
-                OutState = History[0].Body;
+                OutState = History[0].State.Body;
+                History[0].bHasBeenConsumed = true;
+
                 return;
             }
         }
 
-        OutState = History.Last().Body;
+        OutState = History.Last().State.Body;
+    }
+
+    template <typename StateType>
+    Chaos::FReal FHistoryBuffer<StateType>::GetAverageTimeToConsumeState() {
+        Chaos::FReal TotalTime = 0.0;
+        int32 TotalSamples = 0;
+
+        for (; TotalSamples < History.Num(); ++TotalSamples) {
+            if (!History[TotalSamples].bHasBeenConsumed) {
+                break;
+            }
+
+            TotalTime += History[TotalSamples].TimeWaitingToBeConsumed;
+        }
+
+        return TotalTime / static_cast<Chaos::FReal>(TotalSamples);
+    }
+
+    template <typename StateType>
+    void FHistoryBuffer<StateType>::UpdateTimeWaitingToBeConsumed(const Chaos::FReal Dt) {
+        FScopeLock Lock(&Mutex);
+
+        for (int i = History.Num() - 1; i >= 0; --i) {
+            if (History[i].bHasBeenConsumed) {
+                break;
+            }
+
+            History[i].TimeWaitingToBeConsumed += Dt;
+        }
     }
 }

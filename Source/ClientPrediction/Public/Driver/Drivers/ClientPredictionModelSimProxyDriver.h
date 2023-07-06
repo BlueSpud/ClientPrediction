@@ -97,7 +97,7 @@ namespace ClientPrediction {
     void FModelSimProxyDriver<InputType, StateType>::QueueState(const FStateWrapper<StateType>& State) {
         // If the state is in the past, any events that were included need to be dispatched
         if (State.StartTime <= InterpolationTime) {
-            Delegate->DispatchEvents(State, State.Events, 0.0, 0.0);
+            Delegate->DispatchEvents(State, State.Events, 0.0);
         }
 
         const bool bAlreadyHasState = States.ContainsByPredicate([&](const auto& Candidate) {
@@ -162,7 +162,7 @@ namespace ClientPrediction {
     void FModelSimProxyDriver<InputType, StateType>::DispatchEvents(Chaos::FReal StartTime, Chaos::FReal EndTime) {
         for (const FStateWrapper<StateType>& State : States) {
             if (State.StartTime > StartTime && State.StartTime <= EndTime) {
-                Delegate->DispatchEvents(State, State.Events, 0.0, 0.0);
+                Delegate->DispatchEvents(State, State.Events, 0.0);
             }
         }
     }

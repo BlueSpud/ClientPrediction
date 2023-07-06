@@ -12,7 +12,7 @@ namespace ClientPrediction {
         FAuthInputBuf(const UClientPredictionSettings* Settings, bool bIsAuthorityGeneratingInput) : Settings(Settings),
                                                                                                      bIsAuthorityGeneratingInput(bIsAuthorityGeneratingInput) {}
 
-        void QueueInputPackets(const TArray<Wrapper>& Packets, const float CurrentRtt);
+        void QueueInputPackets(const TArray<Wrapper>& Packets);
         void GetNextInputPacket(Wrapper& OutPacket, Chaos::FReal Dt);
 
     public:
@@ -41,7 +41,7 @@ namespace ClientPrediction {
     };
 
     template <typename InputType>
-    void FAuthInputBuf<InputType>::QueueInputPackets(const TArray<Wrapper>& Packets, const float CurrentRtt) {
+    void FAuthInputBuf<InputType>::QueueInputPackets(const TArray<Wrapper>& Packets) {
         FScopeLock Lock(&Mutex);
 
         for (const Wrapper& Packet : Packets) {

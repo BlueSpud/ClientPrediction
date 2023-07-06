@@ -70,7 +70,7 @@ namespace ClientPrediction {
             Packet.PacketNumber = TickNumber;
             Delegate->ProduceInput(Packet.Body);
 
-            InputBuf.QueueInputPackets({Packet}, 0.0);
+            InputBuf.QueueInputPackets({Packet});
         }
     }
 
@@ -93,8 +93,6 @@ namespace ClientPrediction {
             CurrentState.EstimatedAutoProxyDelay = 0.0;
             return;
         }
-
-        // TODO check that the EstimatedDisplayedServerTick is either the same or increasing
 
         const int32 TickDelta = TickNumber - CurrentInput.EstimatedDisplayedServerTick;
         CurrentState.EstimatedAutoProxyDelay = static_cast<Chaos::FReal>(TickDelta) * Settings->FixedDt;
@@ -135,9 +133,6 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::ReceiveInputPackets(const TArray<FInputPacketWrapper<InputType>>& Packets) {
-        FNetworkConditions NetworkConditions{};
-        Delegate->GetNetworkConditions(NetworkConditions);
-
-        InputBuf.QueueInputPackets(Packets, NetworkConditions.Latency);
+        InputBuf.QueueInputPackets(Packets);
     }
 }

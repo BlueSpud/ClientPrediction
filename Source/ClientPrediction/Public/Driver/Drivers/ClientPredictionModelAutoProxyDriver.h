@@ -174,6 +174,7 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
+        History.UpdateTimeWaitingToBeConsumed(Dt);
         EmitInputs();
 
         InterpolateStateGameThread(SimTime, Dt);
@@ -217,17 +218,20 @@ namespace ClientPrediction {
     void FModelAutoProxyDriver<InputType, StateType>::EmitInputs() {
         FScopeLock Lock(&InputSendMutex);
 
-        float EstimatedDisplayedServerTick = StateManager != nullptr ? StateManager->GetEstimatedCurrentServerTick() : INDEX_NONE;
+        const float EstimatedDisplayedServerTick = StateManager != nullptr ? StateManager->GetEstimatedCurrentServerTick() : INDEX_NONE;
+        float EstimatedOffsetFromWaitingInBuffer = History.GetAverageTimeToConsumeState() / Settings->FixedDt;
+
         while (!InputSendQueue.IsEmpty()) {
             FInputPacketWrapper<InputType> Packet;
             InputSendQueue.Peek(Packet);
             InputSendQueue.Pop();
 
             // Once a state is produced by the simulation, it is added to the history queue. The game thread will then interpolate between the produced states.
-            // Each state spends approximately 1 tick in the buffer, so we need to increment the tick by one because the server time will be about 1 tick in the future
-            // by the time that the state is actually displayed. If multiple ticks were done during this frame, each successive tick will spend about 1 more tick
-            // in the history buffer than the last, so we need to continuously increment the estimated time.
-            Packet.EstimatedDisplayedServerTick = ++EstimatedDisplayedServerTick;
+            // Events are not actually dispatched until the simulation time has passed the start time of the state, so there is some time that needs to be accounted for.
+            // We can't know the true time (since that is something that is going to happen in the future), so we just use the current rolling average for time in the
+            // buffer. If more than one input packets were produced during this update, each successive tick will spend about 1 tick of time longer in the history
+            // queue, so we increment the EstimatedOffsetFromWaitingInBuffer.
+            Packet.EstimatedDisplayedServerTick = EstimatedDisplayedServerTick + EstimatedOffsetFromWaitingInBuffer++;
 
             // Bundle the new packet up with the most recent inputs and send it to the authority
             InputSlidingWindow.Add(Packet);

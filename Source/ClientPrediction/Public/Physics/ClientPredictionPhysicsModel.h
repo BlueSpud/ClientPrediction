@@ -54,18 +54,6 @@ namespace ClientPrediction {
         FStateWrapper<StateType>& StateWrapper;
     };
 
-    struct FDelayInfo {
-        /** This contains the estimated time elapsed in seconds since the auto proxy simulated a tick with TickNumber. This is only calculated on the authority. */
-        Chaos::FReal EstimatedDelayFromClient = 0.0;
-
-        /**
-         * This contains the estimated time between when this state was generated and the point in time that the auto proxy was seeing for the simulated proxies.
-         * This value is useful for hit registration since going back in time by this amount will show the world as the auto proxy saw it when it was generating input.
-         * This is only calculated on the authority.
-         */
-        Chaos::FReal EstimatedClientSimProxyDelay = 0.0;
-    };
-
     // Model declaration
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -103,7 +91,6 @@ namespace ClientPrediction {
 
         virtual void SetTimeDilation(const Chaos::FReal TimeDilation) override final;
         virtual void ForceSimulate(const uint32 NumTicks) override final;
-        virtual Chaos::FReal GetWorldTimeNoDilation() const override final;
         virtual void GetNetworkConditions(FNetworkConditions& NetworkConditions) const override final;
 
         // IModelDriverDelegate
@@ -120,8 +107,7 @@ namespace ClientPrediction {
         virtual void SimulatePostPhysics(Chaos::FReal Dt, const FPhysicsContext& Context, const InputType& Input, const FStateWrapper<StateType>& PrevState,
                                          FStateWrapper<StateType>& OutState) override final;
 
-        virtual void DispatchEvents(const FStateWrapper<StateType>& State, uint8 Events, Chaos::FReal EstimatedDelayFromClient,
-                                    Chaos::FReal EstimatedClientSimProxyDelay) override final;
+        virtual void DispatchEvents(const FStateWrapper<StateType>& State, uint8 Events, Chaos::FReal EstimatedWorldDelay) override final;
 
     public:
         DECLARE_DELEGATE_OneParam(FPhysicsModelProduceInput, InputType&)
@@ -137,7 +123,14 @@ namespace ClientPrediction {
         DECLARE_DELEGATE_TwoParams(FPhysicsModelFinalize, const StateType&, Chaos::FReal)
         FPhysicsModelFinalize FinalizeDelegate;
 
-        DECLARE_DELEGATE_FourParams(FPhysicsModelDispatchEvent, EventType, const StateType&, const FPhysicsState&, const FDelayInfo&)
+        /**
+         * The last Chaos::FReal parameter contains the estimated delay since the event was actually executed. For sim proxies and auto proxies, this is always 0.0
+         * since there is no delay. However, for the authority has to wait for inputs from the client and then buffers them, there is latency between the auto proxy
+         * seeing an event and the authority seeing it. This value can be used to rollback the world for things like hit detection. However, the value is calculated
+         * from a tick index provided by the auto proxy so it could potentially be used to cheat. For that reason, care needs to be taken when using it to ensure that
+         * play remains fair.
+         */
+        DECLARE_DELEGATE_FourParams(FPhysicsModelDispatchEvent, EventType, const StateType&, const FPhysicsState&, const Chaos::FReal)
         FPhysicsModelDispatchEvent DispatchEventDelegate;
 
     private:
@@ -278,16 +271,6 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType, typename EventType>
-    Chaos::FReal FPhysicsModel<InputType, StateType, EventType>::GetWorldTimeNoDilation() const {
-        check(CachedComponent);
-        if (const UWorld* World = CachedComponent->GetWorld()) {
-            return World->GetRealTimeSeconds();
-        }
-
-        return -1.0;
-    }
-
-    template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::GetNetworkConditions(FNetworkConditions& NetworkConditions) const {
         check(Delegate)
         Delegate->GetNetworkConditions(NetworkConditions);
@@ -322,12 +305,11 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType, typename EventType>
-    void FPhysicsModel<InputType, StateType, EventType>::DispatchEvents(const FStateWrapper<StateType>& State, const uint8 Events, Chaos::FReal EstimatedDelayFromClient,
-                                                                        Chaos::FReal EstimatedClientSimProxyDelay) {
-        FDelayInfo DelayInfo{EstimatedDelayFromClient, EstimatedClientSimProxyDelay};
+    void FPhysicsModel<InputType, StateType,
+                       EventType>::DispatchEvents(const FStateWrapper<StateType>& State, const uint8 Events, const Chaos::FReal EstimatedWorldDelay) {
         for (uint8 Event = 0; Event < 8; ++Event) {
             if ((Events & (0b1 << Event)) != 0) {
-                DispatchEventDelegate.ExecuteIfBound(static_cast<EventType>(Event), State.Body, State.PhysicsState, DelayInfo);
+                DispatchEventDelegate.ExecuteIfBound(static_cast<EventType>(Event), State.Body, State.PhysicsState, EstimatedWorldDelay);
             }
         }
     }
