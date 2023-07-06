@@ -21,8 +21,8 @@ namespace ClientPrediction {
         class Chaos::FRigidBodyHandle_Internal* GetPhysicsHandle() const;
 
     public:
-        void PreTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt);
-        void PostTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime);
+        void PreTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime);
+        void PostTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt);
 
     protected:
         void InterpolateStateGameThread(Chaos::FReal SimTime, Chaos::FReal Dt);
@@ -69,12 +69,14 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType>
-    void FSimulatedModelDriver<InputType, StateType>::PreTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt) {
+    void FSimulatedModelDriver<InputType, StateType>::PreTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
         LastState = CurrentState;
 
         CurrentState = {};
         CurrentState.TickNumber = TickNumber;
         CurrentState.InputPacketTickNumber = CurrentInput.PacketNumber;
+        CurrentState.StartTime = StartTime;
+        CurrentState.EndTime = EndTime;
 
         auto* Handle = GetPhysicsHandle();
         if (Handle == nullptr) {
@@ -87,7 +89,7 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType>
-    void FSimulatedModelDriver<InputType, StateType>::PostTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
+    void FSimulatedModelDriver<InputType, StateType>::PostTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt) {
         const auto Handle = GetPhysicsHandle();
         if (Handle == nullptr) {
             UE_LOG(LogTemp, Error, TEXT("Tried post-simulate without a valid physics handle"));
@@ -95,8 +97,6 @@ namespace ClientPrediction {
         }
 
         CurrentState.FillState(Handle);
-        CurrentState.StartTime = StartTime;
-        CurrentState.EndTime = EndTime;
 
         const FPhysicsContext Context(Handle, UpdatedComponent, {LastState.PhysicsState.R, LastState.PhysicsState.X});
         Delegate->SimulatePostPhysics(Dt, Context, CurrentInput.Body, LastState, CurrentState);
@@ -115,8 +115,6 @@ namespace ClientPrediction {
             const FEvent<StateType>& Front = EventQueue[0];
             if (Front.State.StartTime > SimTime) { break; }
 
-            UE_LOG(LogTemp, Warning, TEXT("DELAY %f"), CurrentState.EstimatedAutoProxyDelay);
-            
             Delegate->DispatchEvents(Front.State, Front.Events, 0.0, CurrentState.EstimatedAutoProxyDelay);
             EventQueue.RemoveAt(0);
         }

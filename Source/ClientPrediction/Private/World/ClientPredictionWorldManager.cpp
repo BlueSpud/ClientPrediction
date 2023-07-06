@@ -217,21 +217,20 @@ namespace ClientPrediction {
     void FWorldManager::ProcessInputs_Internal(int32 PhysicsStep) {
         const Chaos::FReal Dt = Solver->GetLastDt();
 
-        FScopeLock Lock(&CallbacksMutex);
-        for (ITickCallback* Callback : TickCallbacks) {
-            Callback->PreTickPhysicsThread(PhysicsStep, Dt);
-        }
-
         CachedLastTickNumber = PhysicsStep;
         CachedSolverStartTime = Solver->GetSolverTime();
+
+        const Chaos::FReal TickEndTime = CachedSolverStartTime + Dt;
+        FScopeLock Lock(&CallbacksMutex);
+        for (ITickCallback* Callback : TickCallbacks) {
+            Callback->PreTickPhysicsThread(PhysicsStep, Dt, CachedSolverStartTime, TickEndTime);
+        }
     }
 
     void FWorldManager::PostAdvance_Internal(Chaos::FReal Dt) {
-        const Chaos::FReal TickEndTime = CachedSolverStartTime + Dt;
-
         FScopeLock Lock(&CallbacksMutex);
         for (ITickCallback* Callback : TickCallbacks) {
-            Callback->PostTickPhysicsThread(CachedLastTickNumber, Dt, CachedSolverStartTime, TickEndTime);
+            Callback->PostTickPhysicsThread(CachedLastTickNumber, Dt);
         }
 
         StateManager.ProduceData(CachedLastTickNumber);

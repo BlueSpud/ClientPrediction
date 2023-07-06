@@ -22,8 +22,8 @@ namespace ClientPrediction {
     public:
         // Ticking
         virtual void PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) override;
-        virtual void PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) override;
-        virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) override;
+        virtual void PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) override;
+        virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) override;
 
         virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
 
@@ -75,13 +75,13 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType>
-    void FModelAuthDriver<InputType, StateType>::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
+    void FModelAuthDriver<InputType, StateType>::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
         if (CurrentInput.PacketNumber != INDEX_NONE || InputBuf.GetBufferSize() >= static_cast<uint32>(Settings->DesiredInputBufferSize) || bTakesInput) {
             InputBuf.GetNextInputPacket(CurrentInput, Dt);
         }
 
         if (bTakesInput) { Delegate->ModifyInputPhysicsThread(CurrentInput.Body, CurrentState, Dt); }
-        PreTickSimulateWithCurrentInput(TickNumber, Dt);
+        PreTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
 
         if (bTakesInput || CurrentInput.EstimatedDisplayedServerTick == INDEX_NONE) {
             return;
@@ -101,8 +101,8 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType>
-    void FModelAuthDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
-        PostTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
+    void FModelAuthDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
+        PostTickSimulateWithCurrentInput(TickNumber, Dt);
     }
 
     template <typename InputType, typename StateType>

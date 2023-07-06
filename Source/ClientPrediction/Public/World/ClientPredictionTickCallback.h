@@ -28,17 +28,17 @@ namespace ClientPrediction {
          * Called before a tick on the physics thread.
          * @param [in] TickNumber The index of the current tick.
          * @param [in] Dt The delta time for the tick that is about to run.
+         * @param [in] StartTime The absolute start time of the finished tick.
+         * @param [in] EndTime The absolute end time of the finished tick.
          */
-        virtual void PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {}
+        virtual void PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {}
 
         /**
          * Called after a tick on the physics thread.
          * @param [in] TickNumber The index of the current tick.
          * @param [in] Dt The delta time for the tick that has just run.
-         * @param [in] StartTime The absolute start time of the finished tick.
-         * @param [in] EndTime The absolute end time of the finished tick.
          */
-        virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {}
+        virtual void PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {}
 
         /**
          * @brief Called after physics finishes on the game thread. It's possible that none, one or many physics ticks were executed.
