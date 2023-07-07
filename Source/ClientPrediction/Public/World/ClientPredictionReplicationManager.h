@@ -52,6 +52,9 @@ class CLIENTPREDICTION_API AClientPredictionReplicationManager : public AActor {
 
 public:
     AClientPredictionReplicationManager();
+    virtual void PostActorCreated() override;
+
+    virtual bool IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const override;
     virtual void PostNetInit() override;
 
     void SetStateManager(struct ClientPrediction::FStateManager* NewStateManager) { StateManager = NewStateManager; }
@@ -95,4 +98,7 @@ private:
     FCriticalSection ReceiveQueueMutex;
     TQueue<TTuple<FReplicatedTickSnapshot, ClientPrediction::EDataCompleteness>> SnapshotReceiveQueue;
     int32 LatestReceivedTick = INDEX_NONE;
+
+    /** This is intentionally not a UPROPERTY so that if the owner is destroyed, we will still have the reference to what the owner was. */
+    UObject* CachedOwner = nullptr;
 };

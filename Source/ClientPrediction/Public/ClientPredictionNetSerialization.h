@@ -32,7 +32,7 @@ struct FNetSerializationProxy {
             Decompressor << SerializedBits;
         }
         else {
-            checkSlow(NetSerializeFunc());
+            checkSlow(NetSerializeFunc);
 
             FNetBitWriter Writer(nullptr, 32768);
             NetSerializeFunc(Writer);

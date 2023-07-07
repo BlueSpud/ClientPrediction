@@ -94,9 +94,7 @@ namespace ClientPrediction {
     }
 
     void FWorldManager::DestroyReplicationManagerForPlayer(AController* Controller) {
-        const APlayerController* PlayerController = Cast<APlayerController>(Controller);
-        if (PlayerController || PlayerController->GetNetConnection() == nullptr) { return; }
-
+        const APlayerController* PlayerController = reinterpret_cast<APlayerController*>(Controller);
         if (ReplicationManagers.Contains(PlayerController)) {
             ReplicationManagers[PlayerController]->Destroy();
             ReplicationManagers.Remove(PlayerController);

@@ -58,11 +58,19 @@ bool FReplicatedTickSnapshot::Identical(const FReplicatedTickSnapshot* Other, ui
 
 AClientPredictionReplicationManager::AClientPredictionReplicationManager() : Settings(GetDefault<UClientPredictionSettings>()) {
     PrimaryActorTick.bCanEverTick = false;
-    bOnlyRelevantToOwner = true;
     bAlwaysRelevant = true;
     bReplicates = true;
 
     SetReplicateMovement(false);
+}
+
+void AClientPredictionReplicationManager::PostActorCreated() {
+    Super::PostActorCreated();
+    CachedOwner = GetOwner();
+}
+
+bool AClientPredictionReplicationManager::IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const {
+    return RealViewer == CachedOwner;
 }
 
 void AClientPredictionReplicationManager::PostNetInit() {
