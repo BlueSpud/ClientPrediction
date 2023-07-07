@@ -66,15 +66,15 @@ void FClientPredictionModule::OnPlayerLogin(AGameModeBase* /* Gamemode */, APlay
 	}
 }
 
-void FClientPredictionModule::OnPlayerLogout(AGameModeBase* /* Gamemode */, AController* PlayerController) {
-	const UWorld* World = PlayerController->GetWorld();
+void FClientPredictionModule::OnPlayerLogout(AGameModeBase* Gamemode, AController* PlayerController) {
+	const UWorld* World = Gamemode->GetWorld();
 	const ENetMode NetMode = World->GetNetMode();
 
 	if (NetMode != ENetMode::NM_DedicatedServer && NetMode != ENetMode::NM_ListenServer) {
 		return;
 	}
 
-	ClientPrediction::FWorldManager* WorldManager = ClientPrediction::FWorldManager::ManagerForWorld(PlayerController->GetWorld());
+	ClientPrediction::FWorldManager* WorldManager = ClientPrediction::FWorldManager::ManagerForWorld(World);
 	if (WorldManager != nullptr) {
 		WorldManager->DestroyReplicationManagerForPlayer(PlayerController);
 	}

@@ -78,8 +78,10 @@ void AClientPredictionReplicationManager::PostNetInit() {
 void AClientPredictionReplicationManager::PostTickAuthority(int32 TickNumber) {
     if (StateManager == nullptr && TickNumber % Settings->SnapshotSendCadence != 0) { return; }
 
-    const UPlayer* OwningPlayer = GetOwner()->GetNetOwningPlayer();
-    check(OwningPlayer);
+    // If there is no owning player, that player has logged out and this replication manager will be destroyed shortly
+    if (Owner == nullptr) { return; }
+    const UPlayer* OwningPlayer = Owner->GetNetOwningPlayer();
+    if (OwningPlayer == nullptr) { return; }
 
     ClientPrediction::FTickSnapshot TickSnapshot{};
     StateManager->GetProducedDataForTick(TickNumber, TickSnapshot);

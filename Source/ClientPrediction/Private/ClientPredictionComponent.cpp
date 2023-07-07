@@ -57,8 +57,8 @@ void UClientPredictionComponent::BeginPlay() {
     CheckOwnerRoleChanged();
 }
 
-void UClientPredictionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
-    Super::EndPlay(EndPlayReason);
+void UClientPredictionComponent::UninitializeComponent() {
+    Super::UninitializeComponent();
     if (PhysicsModel != nullptr) {
         PhysicsModel->Cleanup();
     }
