@@ -57,9 +57,19 @@ void UClientPredictionComponent::BeginPlay() {
     CheckOwnerRoleChanged();
 }
 
+void UClientPredictionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
+    Super::EndPlay(EndPlayReason);
+
+    if (PhysicsModel != nullptr) {
+        PhysicsModel->Cleanup();
+    }
+}
+
 void UClientPredictionComponent::UninitializeComponent() {
     Super::UninitializeComponent();
-    if (PhysicsModel != nullptr) {
+
+    // This will handle cleanup if the owning actor could not be spawned. In this case, EndPlay is never called, so we preform the cleanup here.
+    if (!HasBegunPlay() && PhysicsModel != nullptr) {
         PhysicsModel->Cleanup();
     }
 }

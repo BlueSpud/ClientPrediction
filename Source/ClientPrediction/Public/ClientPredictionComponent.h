@@ -23,6 +23,7 @@ public:
     void CheckOwnerRoleChanged();
 
     virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void UninitializeComponent() override;
 
     template <typename ModelType>

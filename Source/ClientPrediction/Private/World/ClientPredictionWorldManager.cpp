@@ -159,7 +159,6 @@ namespace ClientPrediction {
             ForcedSimulationTicks = 0;
         }
 
-        //AdjustedNumTicks =  FMath::Min(static_cast<int32>(AdjustedNumTicks), ClientPredictionMaxForcedSimulationTicks);
         const Chaos::FReal SimulationTime = static_cast<Chaos::FReal>(AdjustedNumTicks) * Solver->GetAsyncDeltaTime();
         bIsForceSimulating = true;
 
