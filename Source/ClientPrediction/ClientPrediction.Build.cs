@@ -36,13 +36,23 @@ public class ClientPrediction : ModuleRules
 			new string[]
 			{
 				"CoreUObject",
-				"Engine",
-				"Settings"
+				"Engine"
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
-		
-		
+
+		if (Target.Type == TargetType.Editor)
+		{
+			PrivateDependencyModuleNames.AddRange(
+	            new string[]
+	            {
+            		"Settings"
+            		// ... add private dependencies that you statically link with here ...	
+	            }
+	            );
+		}
+
+
 		DynamicallyLoadedModuleNames.AddRange(
 			new string[]
 			{

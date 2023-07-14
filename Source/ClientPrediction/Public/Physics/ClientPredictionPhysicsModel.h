@@ -172,10 +172,16 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::Cleanup() {
+        // Sometimes the world manager might get cleaned up first, so we want to check if it actually exists
+        const UWorld* World = CachedComponent->GetWorld();
+        if (World == nullptr) { return; }
+
+        CachedWorldManager = FWorldManager::ManagerForWorld(World);
         if (CachedWorldManager != nullptr && ModelDriver != nullptr) {
             ModelDriver->Unregister(CachedWorldManager, ModelId);
         }
 
+        CachedComponent = nullptr;
         CachedWorldManager = nullptr;
         ModelDriver = nullptr;
     }

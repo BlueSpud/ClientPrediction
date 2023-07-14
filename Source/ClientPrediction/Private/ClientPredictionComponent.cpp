@@ -62,6 +62,7 @@ void UClientPredictionComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
 
     if (PhysicsModel != nullptr) {
         PhysicsModel->Cleanup();
+        PhysicsModel = nullptr;
     }
 }
 
@@ -69,8 +70,9 @@ void UClientPredictionComponent::UninitializeComponent() {
     Super::UninitializeComponent();
 
     // This will handle cleanup if the owning actor could not be spawned. In this case, EndPlay is never called, so we preform the cleanup here.
-    if (!HasBegunPlay() && PhysicsModel != nullptr) {
+    if (PhysicsModel != nullptr) {
         PhysicsModel->Cleanup();
+        PhysicsModel = nullptr;
     }
 }
 

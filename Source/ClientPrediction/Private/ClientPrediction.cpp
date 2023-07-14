@@ -1,10 +1,11 @@
 #include "ClientPrediction.h"
 
+#if WITH_EDITOR
 #include "ISettingsModule.h"
+#endif
 
 #include "ClientPredictionSettings.h"
 #include "GameFramework/GameModeBase.h"
-#include "World/ClientPredictionReplicationManager.h"
 #include "World/ClientPredictionWorldManager.h"
 
 #define LOCTEXT_NAMESPACE "FClientPredictionModule"
