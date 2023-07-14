@@ -178,6 +178,11 @@ namespace ClientPrediction {
         check(UpdatedComponent);
 
         UpdatedComponent->SetSimulatePhysics(false);
+
+        if (Settings->bDisableCollisionsOnSimProxies) {
+            UpdatedComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        }
+
         UpdatedComponent->SetWorldLocation(CurrentState.PhysicsState.X);
         UpdatedComponent->SetWorldRotation(CurrentState.PhysicsState.R);
     }

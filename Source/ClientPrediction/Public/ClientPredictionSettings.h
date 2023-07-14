@@ -56,4 +56,7 @@ public:
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
     int32 SnapshotSendCadence = 3;
+
+    UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
+    bool bDisableCollisionsOnSimProxies = true;
 };
