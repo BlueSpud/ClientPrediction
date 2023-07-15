@@ -140,43 +140,6 @@ namespace ClientPrediction {
         PhysScene->SetNetworkDeltaTimeScale(TimeDilation);
     }
 
-    void FWorldManager::ForceSimulate(const uint32 NumTicks) {
-        if (bIsForceSimulating) { return; }
-
-        FScopeLock Lock(&ForcedSimulationTicksMutex);
-        ForcedSimulationTicks += NumTicks;
-    }
-
-    void FWorldManager::DoForceSimulateIfNeeded() {
-        if (PhysScene == nullptr || Solver == nullptr || bIsForceSimulating) { return; }
-
-        int32 AdjustedNumTicks;
-        {
-            FScopeLock Lock(&ForcedSimulationTicksMutex);
-            if (ForcedSimulationTicks == 0) { return; }
-
-            AdjustedNumTicks = ForcedSimulationTicks;
-            ForcedSimulationTicks = 0;
-        }
-
-        const Chaos::FReal SimulationTime = static_cast<Chaos::FReal>(AdjustedNumTicks) * Solver->GetAsyncDeltaTime();
-        bIsForceSimulating = true;
-
-        const Chaos::EThreadingModeTemp CachedThreadingMode = Solver->GetThreadingMode();
-        const float CachedTimeDilation = PhysScene->GetNetworkDeltaTimeScale();
-
-        Solver->SetThreadingMode_External(Chaos::EThreadingModeTemp::SingleThread);
-        PhysScene->SetNetworkDeltaTimeScale(1.0);
-
-        Solver->AdvanceAndDispatch_External(SimulationTime);
-        Solver->UpdateGameThreadStructures();
-
-        PhysScene->SetNetworkDeltaTimeScale(CachedTimeDilation);
-        Solver->SetThreadingMode_External(CachedThreadingMode);
-
-        bIsForceSimulating = false;
-    }
-
     FWorldManager::~FWorldManager() {
         if (PhysScene == nullptr || Solver == nullptr) { return; }
 
@@ -263,7 +226,6 @@ namespace ClientPrediction {
             }
         }
 
-        if (!bIsForceSimulating) { DoForceSimulateIfNeeded(); }
         LastResultsTime = ResultsTime;
 
         FScopeLock ManagerLock(&ManagersMutex);
@@ -273,8 +235,6 @@ namespace ClientPrediction {
     }
 
     int32 FWorldManager::TriggerRewindIfNeeded_Internal(int32 CurrentTickNumber) {
-        if (bIsForceSimulating) { return INDEX_NONE; }
-
         FScopeLock Lock(&CallbacksMutex);
         if (RewindCallback == nullptr) { return INDEX_NONE; }
 

@@ -118,14 +118,18 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::SuggestTimeDilation() {
-        const uint16 InputBufferSize = InputBuf.GetBufferSize();
-        const uint16 DesiredInputBufferSize = Settings->DesiredInputBufferSize + InputBuf.GetNumRecentlyDroppedInputPackets();
+        const int16 InputBufferSize = InputBuf.GetBufferSize();
+        const int16 AdjustedDesiredInputBufferSize = Settings->DesiredInputBufferSize + InputBuf.GetNumRecentlyDroppedInputPackets();
 
-        const Chaos::FReal TargetTimeDilation = InputBufferSize > DesiredInputBufferSize ? -1.0 : (InputBufferSize < DesiredInputBufferSize ? 1.0 : 0.0);
+        const int16 DeltaFromTarget = InputBufferSize - AdjustedDesiredInputBufferSize;
+        const Chaos::FReal DeltaFromTargetPercentage = static_cast<Chaos::FReal>(DeltaFromTarget) / static_cast<Chaos::FReal>(Settings->DesiredInputBufferSize);
+        const Chaos::FReal TargetTimeDilation = -FMath::Sign(DeltaFromTarget);
+
         LastSuggestedTimeDilation = FMath::Lerp(LastSuggestedTimeDilation, TargetTimeDilation, Settings->TimeDilationAlpha);
 
         FControlPacket ControlPacket{};
         ControlPacket.SetTimeDilation(LastSuggestedTimeDilation);
+        ControlPacket.bIsInputBufferVeryUnhealthy = DeltaFromTargetPercentage < -Settings->UnhealthyInputBufferPercentage;
 
         ControlProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { ControlPacket.NetSerialize(Ar); };
         ControlProxyRep.Dispatch();

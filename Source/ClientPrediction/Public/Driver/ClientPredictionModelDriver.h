@@ -21,7 +21,6 @@ namespace ClientPrediction {
         virtual void ModifyInputPhysicsThread(InputType& Packet, const FStateWrapper<StateType>& State, Chaos::FReal Dt) = 0;
 
         virtual void SetTimeDilation(const Chaos::FReal TimeDilation) = 0;
-        virtual void ForceSimulate(const uint32 NumTicks) = 0;
         virtual void GetNetworkConditions(FNetworkConditions& NetworkConditions) const = 0;
 
         virtual void SimulatePrePhysics(const Chaos::FReal Dt, FPhysicsContext& Context, const InputType& Input, const FStateWrapper<StateType>& PrevState,

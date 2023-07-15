@@ -25,6 +25,9 @@ public:
     int32 DesiredInputBufferSize = 3;
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
+    float UnhealthyInputBufferPercentage = 1.2;
+
+    UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
     int32 DroppedPacketMemoryTickLength = 25;
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
@@ -35,6 +38,9 @@ public:
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
     float MaxAutoProxyTimeDilation = 0.01;
+
+    UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
+    float AutoProxyMaxSpeedupTimescale = 1.4;
 
     UPROPERTY(config, EditAnywhere, Category = "ClientPrediction", meta=(ShowOnlyInnerProperties))
     float AutoProxyAuthorityCatchupTimescale = 0.1;

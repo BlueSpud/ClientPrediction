@@ -41,13 +41,9 @@ namespace ClientPrediction {
         // These should only be called from the game thread
         void SetTimeDilation(const Chaos::FReal TimeDilation) const;
 
-        void ForceSimulate(const uint32 NumTicks);
-
         FStateManager& GetStateManager() { return StateManager; }
 
     private:
-        void DoForceSimulateIfNeeded();
-
         DECLARE_DELEGATE_OneParam(FTickCallback, int32);
         DECLARE_DELEGATE_RetVal_OneParam(int32, FRewindTickCallback, int32);
 
@@ -106,9 +102,5 @@ namespace ClientPrediction {
         FCriticalSection CallbacksMutex;
         TSet<class ITickCallback*> TickCallbacks;
         class IRewindCallback* RewindCallback = nullptr;
-
-        FCriticalSection ForcedSimulationTicksMutex;
-        uint32 ForcedSimulationTicks = 0;
-        TAtomic<bool> bIsForceSimulating = false;
     };
 }

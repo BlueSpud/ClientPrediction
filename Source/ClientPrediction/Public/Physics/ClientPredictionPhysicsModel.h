@@ -90,7 +90,6 @@ namespace ClientPrediction {
         virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) const override final;
 
         virtual void SetTimeDilation(const Chaos::FReal TimeDilation) override final;
-        virtual void ForceSimulate(const uint32 NumTicks) override final;
         virtual void GetNetworkConditions(FNetworkConditions& NetworkConditions) const override final;
 
         // IModelDriverDelegate
@@ -268,12 +267,6 @@ namespace ClientPrediction {
     void FPhysicsModel<InputType, StateType, EventType>::SetTimeDilation(const Chaos::FReal TimeDilation) {
         check(CachedWorldManager)
         CachedWorldManager->SetTimeDilation(TimeDilation);
-    }
-
-    template <typename InputType, typename StateType, typename EventType>
-    void FPhysicsModel<InputType, StateType, EventType>::ForceSimulate(const uint32 NumTicks) {
-        check(CachedWorldManager)
-        CachedWorldManager->ForceSimulate(NumTicks);
     }
 
     template <typename InputType, typename StateType, typename EventType>

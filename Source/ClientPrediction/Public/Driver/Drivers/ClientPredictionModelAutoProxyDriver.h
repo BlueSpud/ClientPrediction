@@ -179,24 +179,18 @@ namespace ClientPrediction {
 
         InterpolateStateGameThread(SimTime, Dt);
 
+        // If the input buffer is really unhealthy, the client needs to catch up quickly
         Chaos::FReal NewTimeDilation = 1.0 + LastControlPacket.GetTimeDilation() * Settings->MaxAutoProxyTimeDilation;
-        int32 NumForceSimulatedTicks = 0;
+
+        if (LastControlPacket.bIsInputBufferVeryUnhealthy) {
+            UE_LOG(LogTemp, Warning, TEXT("Input buffer is very unhealthy, so the auto proxy will be sped up significantly"));
+            NewTimeDilation = Settings->AutoProxyMaxSpeedupTimescale;
+        }
 
         {
             FScopeLock Lock(&PendingAuthorityStatesMutex);
             if (!PendingAuthorityStates.IsEmpty()) {
-                const int32 LocalTickNumber = PendingAuthorityStates[0].InputPacketTickNumber;
                 const int32 CurrentTickNumber = History.GetLatestTickNumber();
-
-                // If the auto proxy has fallen behind the authority, fast forward to catch back up.
-                if (LocalTickNumber > CurrentTickNumber) {
-                    FNetworkConditions NetConditions{};
-                    Delegate->GetNetworkConditions(NetConditions);
-
-                    // We simulate by a full RTT since the authority state we're getting the delta from is already 1/2 RTT old
-                    const int32 LatencyTicks = FMath::CeilToInt32((NetConditions.Latency + NetConditions.Jitter) / Settings->FixedDt);
-                    NumForceSimulatedTicks = LocalTickNumber - CurrentTickNumber + LatencyTicks;
-                }
 
                 // If the auto proxy is far ahead of the authority, slow down time significantly so the authority can catch up
                 if (PendingAuthorityStates.Last().InputPacketTickNumber <= CurrentTickNumber - RewindBufferSize) {
@@ -204,11 +198,6 @@ namespace ClientPrediction {
                     NewTimeDilation = Settings->AutoProxyAuthorityCatchupTimescale;
                 }
             }
-        }
-
-        if (NumForceSimulatedTicks > 0) {
-            UE_LOG(LogTemp, Warning, TEXT("Force simulating %d"), NumForceSimulatedTicks);
-            Delegate->ForceSimulate(NumForceSimulatedTicks);
         }
 
         Delegate->SetTimeDilation(NewTimeDilation);

@@ -172,21 +172,35 @@ namespace ClientPrediction {
 
     struct FControlPacket {
         void SetTimeDilation(const Chaos::FReal Dilation) {
-            const int32 Rounded = FMath::RoundToInt(Dilation * 127.0);
-            TimeDilation = FMath::Clamp(Rounded, -127, 127);
+            const int32 Rounded = FMath::RoundToInt(Dilation * 63.0) + 64;
+            TimeDilation = FMath::Clamp(Rounded, 0, 127);
         }
 
         Chaos::FReal GetTimeDilation() const {
-            return static_cast<Chaos::FReal>(TimeDilation) / static_cast<Chaos::FReal>(TNumericLimits<int8>::Max());
+            return (static_cast<Chaos::FReal>(TimeDilation) - 64.0) / 63.0;
         }
 
         void NetSerialize(FArchive& Ar) {
-            Ar << TimeDilation;
+            uint8 PackedData;
+
+            if (Ar.IsSaving()) {
+                PackedData = (bIsInputBufferVeryUnhealthy << 7) | TimeDilation;
+            }
+
+            Ar << PackedData;
+
+            if (Ar.IsLoading()) {
+                TimeDilation = PackedData & 0b01111111;
+                bIsInputBufferVeryUnhealthy = PackedData & 0b10000000;
+            }
         }
+
+        /** If the input buffer has too many faults, this will be set to true to instruct the client to speed up more than is normally allowed */
+        bool bIsInputBufferVeryUnhealthy = false;
 
     private:
         /** This stores time dilation in the range [-127, 127] (since 128 can't be represented with an int8)*/
-        int8 TimeDilation = 0;
+        uint8 TimeDilation = 0;
     };
 
     struct FNetworkConditions {
