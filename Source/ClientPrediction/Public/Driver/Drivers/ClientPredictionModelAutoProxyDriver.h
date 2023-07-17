@@ -263,7 +263,8 @@ namespace ClientPrediction {
 
             // Check against the historic state
             FStateWrapper<StateType> HistoricState;
-            check(History.GetStateAtTick(AuthLocalTickNumber, HistoricState));
+            const bool bHadHistoricState = History.GetStateAtTick(AuthLocalTickNumber, HistoricState);
+            check(bHadHistoricState);
             check(HistoricState.TickNumber == AuthLocalTickNumber)
 
             if (AuthState.ShouldReconcile(HistoricState)) {
