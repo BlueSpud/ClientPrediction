@@ -96,9 +96,9 @@ namespace ClientPrediction {
             Ar << InputPacketTickNumber;
         }
 
-        Ar << PhysicsState.ObjectState;
-
         if (Completeness == EDataCompleteness::kFull) {
+            Ar << PhysicsState.ObjectState;
+
             // Serialize manually to make sure that they are serialized as doubles
             Ar << PhysicsState.X.X;
             Ar << PhysicsState.X.Y;
@@ -121,9 +121,7 @@ namespace ClientPrediction {
         }
         else {
             SerializeHalfPrecision(PhysicsState.X, Ar);
-            SerializeHalfPrecision(PhysicsState.V, Ar);
             SerializeHalfPrecision(PhysicsState.R, Ar);
-            SerializeHalfPrecision(PhysicsState.W, Ar);
         }
 
         Body.NetSerialize(Ar, Completeness);
