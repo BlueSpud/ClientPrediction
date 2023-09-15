@@ -101,6 +101,7 @@ namespace ClientPrediction {
         const FPhysicsContext Context(Handle, UpdatedComponent, {LastState.PhysicsState.R, LastState.PhysicsState.X});
         Delegate->SimulatePostPhysics(Dt, Context, CurrentInput.Body, LastState, CurrentState);
 
+        Delegate->ProcessExternalStimulus(CurrentState.Body);
         UpdateHistory(CurrentState);
     }
 

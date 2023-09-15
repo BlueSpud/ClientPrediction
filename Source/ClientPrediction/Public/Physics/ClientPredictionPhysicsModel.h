@@ -108,6 +108,8 @@ namespace ClientPrediction {
 
         virtual void DispatchEvents(const FStateWrapper<StateType>& State, uint8 Events, Chaos::FReal EstimatedWorldDelay) override final;
 
+        virtual void ProcessExternalStimulus(StateType& State) override final;
+
     public:
         DECLARE_DELEGATE_OneParam(FPhysicsModelProduceInput, InputType&)
         FPhysicsModelProduceInput ProduceInputDelegate;
@@ -131,6 +133,16 @@ namespace ClientPrediction {
          */
         DECLARE_DELEGATE_FourParams(FPhysicsModelDispatchEvent, EventType, const StateType&, const FPhysicsState&, const Chaos::FReal)
         FPhysicsModelDispatchEvent DispatchEventDelegate;
+
+        /**
+         * This delegate will be executed on the PHYSICS THREAD and can be used to modify states post tick.
+         * This is a good place to apply the result of things that exist external to this simulation. For instance, this would be a good place to subtract health
+         * as a result of being hit by a projectile.
+         *
+         * This is not called for simulated proxies.
+         */
+        DECLARE_DELEGATE_OneParam(FPhysicsModelProcessExternalStimulus, StateType&)
+        FPhysicsModelProcessExternalStimulus ProcessExternalStimulusDelegate;
 
     private:
         class UPrimitiveComponent* CachedComponent = nullptr;
@@ -311,5 +323,10 @@ namespace ClientPrediction {
                 DispatchEventDelegate.ExecuteIfBound(static_cast<EventType>(Event), State.Body, State.PhysicsState, EstimatedWorldDelay);
             }
         }
+    }
+
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::ProcessExternalStimulus(StateType& State) {
+        ProcessExternalStimulusDelegate.ExecuteIfBound(State);
     }
 }
