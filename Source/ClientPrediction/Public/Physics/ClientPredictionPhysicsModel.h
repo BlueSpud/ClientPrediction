@@ -50,6 +50,10 @@ namespace ClientPrediction {
             StateWrapper.Events |= 0b1 << Event;
         }
 
+        void EndSimulation() {
+            StateWrapper.bIsFinalState = true;
+        }
+
     private:
         FStateWrapper<StateType>& StateWrapper;
     };
@@ -110,6 +114,8 @@ namespace ClientPrediction {
 
         virtual void ProcessExternalStimulus(StateType& State) override final;
 
+        virtual void EndSimulation() override final;
+
     public:
         DECLARE_DELEGATE_OneParam(FPhysicsModelProduceInput, InputType&)
         FPhysicsModelProduceInput ProduceInputDelegate;
@@ -143,6 +149,9 @@ namespace ClientPrediction {
          */
         DECLARE_DELEGATE_OneParam(FPhysicsModelProcessExternalStimulus, StateType&)
         FPhysicsModelProcessExternalStimulus ProcessExternalStimulusDelegate;
+
+        DECLARE_DELEGATE(FPhysicsModelEndSimulation)
+        FPhysicsModelEndSimulation EndSimulationDelegate;
 
     private:
         class UPrimitiveComponent* CachedComponent = nullptr;
@@ -328,5 +337,10 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::ProcessExternalStimulus(StateType& State) {
         ProcessExternalStimulusDelegate.ExecuteIfBound(State);
+    }
+
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::EndSimulation() {
+        EndSimulationDelegate.ExecuteIfBound();
     }
 }

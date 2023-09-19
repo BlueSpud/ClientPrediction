@@ -31,6 +31,8 @@ namespace ClientPrediction {
         virtual void DispatchEvents(const FStateWrapper<StateType>& State, const uint8 Events, Chaos::FReal EstimatedWorldDelay) = 0;
 
         virtual void ProcessExternalStimulus(StateType& State) = 0;
+
+        virtual void EndSimulation() = 0;
     };
 
     template <typename InputType, typename StateType>

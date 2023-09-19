@@ -65,6 +65,8 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) {
+        if (HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
+
         if (bTakesInput) {
             FInputPacketWrapper<InputType> Packet;
             Packet.PacketNumber = TickNumber;
@@ -76,6 +78,8 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
+        if (HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
+
         if (CurrentInput.PacketNumber != INDEX_NONE || InputBuf.GetBufferSize() >= static_cast<uint32>(Settings->DesiredInputBufferSize) || bTakesInput) {
             InputBuf.GetNextInputPacket(CurrentInput, Dt);
         }
@@ -100,19 +104,27 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
-        PostTickSimulateWithCurrentInput(TickNumber, Dt);
+        if (HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
+
+        PostTickSimulateWithCurrentInput(TickNumber, Dt, true);
+        FinalTick = CurrentState.bIsFinalState ? CurrentState.TickNumber : INDEX_NONE;
     }
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
+        if (bHasSimulationEndedGameThread) { return; }
+
         InterpolateStateGameThread(SimTime, Dt);
         SuggestTimeDilation();
     }
 
     template <typename InputType, typename StateType>
     bool FModelAuthDriver<InputType, StateType>::ProduceUnserializedStateForTick(const int32 Tick, FStateWrapper<StateType>& State, bool& bShouldBeReliable) {
+        if (HasSimulationEndedOnPhysicsThread(Tick)) { return false; }
+
         State = CurrentState;
-        bShouldBeReliable = State.Events != 0;
+        bShouldBeReliable = State.Events != 0 || State.bIsFinalState;
+
         return true;
     }
 

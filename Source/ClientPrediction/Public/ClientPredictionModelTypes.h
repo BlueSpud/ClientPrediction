@@ -47,6 +47,12 @@ namespace ClientPrediction {
          */
         Chaos::FReal EstimatedAutoProxyDelay = 0.0;
 
+        /**
+         * This is true if the state is the final state in the simulation. Only the authority can end the simulation to avoid issues where the auto proxy
+         * mispredicts and the end of simulation cleanup is run.
+         */
+        bool bIsFinalState = false;
+
         void NetSerialize(FArchive& Ar, const EDataCompleteness Completeness);
         bool ShouldReconcile(const FStateWrapper& State) const;
 
@@ -90,7 +96,19 @@ namespace ClientPrediction {
 
     template <typename StateType>
     void FStateWrapper<StateType>::NetSerialize(FArchive& Ar, const EDataCompleteness Completeness) {
-        Ar << TickNumber;
+        if (Ar.IsSaving()) {
+            checkSlow(TickNumber >= INDEX_NONE);
+
+            uint32 Packed = (TickNumber + 1) | (bIsFinalState << 31);
+            Ar << Packed;
+        }
+        else {
+            uint32 Packed;
+            Ar << Packed;
+
+            TickNumber = static_cast<int32>(Packed & ~0x80000000) - 1;
+            bIsFinalState = static_cast<bool>(Packed >> 31);
+        }
 
         if (Completeness == EDataCompleteness::kFull) {
             Ar << InputPacketTickNumber;
@@ -135,6 +153,7 @@ namespace ClientPrediction {
         if ((State.PhysicsState.R - PhysicsState.R).Size() > ClientPredictionRotationTolerance) { return true; }
         if ((State.PhysicsState.W - PhysicsState.W).Size() > ClientPredictionAngularVelTolerance) { return true; }
         if (State.Events != Events) { return true; }
+        if (State.bIsFinalState != bIsFinalState) { return true; }
 
         return Body.ShouldReconcile(State.Body);
     }

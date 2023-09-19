@@ -124,6 +124,8 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) {
+        if (HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
+
         FInputPacketWrapper<InputType> Packet;
         Packet.PacketNumber = TickNumber;
         Delegate->ProduceInput(Packet.Body);
@@ -134,6 +136,8 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
         ApplyCorrectionIfNeeded(TickNumber);
+
+        if (HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
 
         // This provides mutable pointer to the input in the input buffer so that any modifications made in the next step will also update the
         // input stored in the input buffer
@@ -165,19 +169,33 @@ namespace ClientPrediction {
 
         CurrentState = PendingCorrection;
         UpdateHistory(CurrentState);
+
+        if (CurrentState.bIsFinalState) {
+            FinalTick = CurrentState.TickNumber;
+            History.RemoveAfterTick(FinalTick);
+        }
     }
 
     template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
-        PostTickSimulateWithCurrentInput(TickNumber, Dt);
+        if (HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
+
+        PostTickSimulateWithCurrentInput(TickNumber, Dt, false);
     }
 
     template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
+        if (bHasSimulationEndedGameThread) { return; }
+
         History.UpdateTimeWaitingToBeConsumed(Dt);
         EmitInputs();
 
         InterpolateStateGameThread(SimTime, Dt);
+
+        if (bHasSimulationEndedGameThread) {
+            Delegate->SetTimeDilation(1.0);
+            return;
+        }
 
         // If the input buffer is really unhealthy, the client needs to catch up quickly
         Chaos::FReal NewTimeDilation = 1.0 + LastControlPacket.GetTimeDilation() * Settings->MaxAutoProxyTimeDilation;
@@ -234,6 +252,8 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     int32 FModelAutoProxyDriver<InputType, StateType>::GetRewindTickNumber(int32 CurrentTickNumber, const Chaos::FRewindData& RewindData) {
+        if (HasSimulationEndedOnPhysicsThread(CurrentTickNumber)) { return INDEX_NONE; }
+
         FScopeLock Lock(&PendingAuthorityStatesMutex);
 
         // If the latest authority state is too old to reconcile with, just don't rewind. This will be handled by stopping the auto proxy

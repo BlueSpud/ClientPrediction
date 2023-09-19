@@ -25,7 +25,7 @@ namespace ClientPrediction {
         virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
 
     private:
-        void GetInterpolatedStateAssumingStatesNotEmpty(FStateWrapper<StateType>& OutState);
+        void GetInterpolatedStateAssumingStatesNotEmpty(FStateWrapper<StateType>& OutState, bool& bIsFinalState);
 
         void DispatchEvents(Chaos::FReal StartTime, Chaos::FReal EndTime);
         void Finalize(Chaos::FReal Dt);
@@ -35,6 +35,9 @@ namespace ClientPrediction {
 
     private:
         UPrimitiveComponent* UpdatedComponent = nullptr;
+        ECollisionEnabled::Type CachedCollisionMode = ECollisionEnabled::NoCollision;
+        bool bCachedPhysicsEnabled = false;
+
         IModelDriverDelegate<InputType, StateType>* Delegate = nullptr;
         TArray<FStateWrapper<StateType>> States;
 
@@ -42,6 +45,7 @@ namespace ClientPrediction {
 
         /** If the buffer is empty this is the state that will be used. */
         FStateWrapper<StateType> CurrentState = {};
+        bool bHasSeenFinalState = false;
 
         FStateManager* StateManager = nullptr;
         Chaos::FReal InterpolationTime = 0.0;
@@ -112,7 +116,7 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelSimProxyDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
-        if (StateManager == nullptr) { return; }
+        if (StateManager == nullptr || bHasSeenFinalState) { return; }
 
         const Chaos::FReal LastInterpolationTime = InterpolationTime;
         InterpolationTime = StateManager->GetInterpolationTime();
@@ -124,16 +128,27 @@ namespace ClientPrediction {
             return;
         }
 
-        GetInterpolatedStateAssumingStatesNotEmpty(CurrentState);
+        GetInterpolatedStateAssumingStatesNotEmpty(CurrentState, bHasSeenFinalState);
         Finalize(Dt);
 
         TrimStateBuffer();
+
+        if (bHasSeenFinalState) {
+            if (Settings->bDisableCollisionsOnSimProxies) {
+                UpdatedComponent->SetSimulatePhysics(bCachedPhysicsEnabled);
+                UpdatedComponent->SetCollisionEnabled(CachedCollisionMode);
+            }
+
+            Delegate->EndSimulation();
+        }
     }
 
     template <typename InputType, typename StateType>
-    void FModelSimProxyDriver<InputType, StateType>::GetInterpolatedStateAssumingStatesNotEmpty(FStateWrapper<StateType>& OutState) {
+    void FModelSimProxyDriver<InputType, StateType>::GetInterpolatedStateAssumingStatesNotEmpty(FStateWrapper<StateType>& OutState, bool& bIsFinalState) {
         if (States.Num() == 1) {
             OutState = States[0];
+            bIsFinalState = States[0].bIsFinalState;
+
             return;
         }
 
@@ -141,6 +156,8 @@ namespace ClientPrediction {
             if (InterpolationTime >= States[i].StartTime && InterpolationTime <= States[i + 1].StartTime) {
                 const FStateWrapper<StateType>& Start = States[i];
                 const FStateWrapper<StateType>& End = States[i + 1];
+                check(!Start.bIsFinalState);
+
                 OutState = Start;
 
                 const Chaos::FReal TimeFromStart = InterpolationTime - Start.StartTime;
@@ -156,6 +173,7 @@ namespace ClientPrediction {
         }
 
         OutState = States.Last();
+        bIsFinalState = States.Last().bIsFinalState;
     }
 
     template <typename InputType, typename StateType>
@@ -177,9 +195,18 @@ namespace ClientPrediction {
     void FModelSimProxyDriver<InputType, StateType>::ApplyPhysicsState() {
         check(UpdatedComponent);
 
+        if (UpdatedComponent->IsSimulatingPhysics()) {
+            bCachedPhysicsEnabled = true;
+        }
+
         UpdatedComponent->SetSimulatePhysics(false);
 
         if (Settings->bDisableCollisionsOnSimProxies) {
+            const ECollisionEnabled::Type CurrentCollisionMode = UpdatedComponent->GetCollisionEnabled();
+            if (CurrentCollisionMode != ECollisionEnabled::NoCollision) {
+                CachedCollisionMode = CurrentCollisionMode;
+            }
+
             UpdatedComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
         }
 
