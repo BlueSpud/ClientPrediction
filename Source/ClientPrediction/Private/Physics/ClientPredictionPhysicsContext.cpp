@@ -71,7 +71,8 @@ namespace ClientPrediction {
 		QueryParams.AddIgnoredActor(Component->GetOwner());
 		QueryParams.bTraceComplex = false;
 
-		return World->LineTraceSingleByChannel(OutHit, Start, End, ECC_WorldStatic, QueryParams);
+		const FCollisionObjectQueryParams ObjectQueryParams(FCollisionObjectQueryParams::InitType::AllStaticObjects);
+		return World->LineTraceSingleByObjectType(OutHit, Start, End, ObjectQueryParams, QueryParams);
 	}
 
 	// bool FPhysicsContext::SweepSingle(FHitResult& OutHit, const FVector& Start, const FVector& End, const FCollisionShape& CollisionShape, const FQuat& Rotation) const {

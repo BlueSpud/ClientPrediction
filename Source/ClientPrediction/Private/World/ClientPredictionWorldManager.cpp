@@ -168,8 +168,13 @@ namespace ClientPrediction {
     void FWorldManager::ProcessInputs_External(int32 PhysicsStep) {
         const Chaos::FReal Dt = Solver->GetLastDt();
 
-        FScopeLock Lock(&CallbacksMutex);
-        for (ITickCallback* Callback : TickCallbacks) {
+        TSet<ITickCallback*> CurrentTickCallbacks;
+        {
+            FScopeLock Lock(&CallbacksMutex);
+            CurrentTickCallbacks = TickCallbacks;
+        }
+
+        for (ITickCallback* Callback : CurrentTickCallbacks) {
             Callback->PrepareTickGameThread(PhysicsStep, Dt);
         }
     }
@@ -180,16 +185,26 @@ namespace ClientPrediction {
         CachedLastTickNumber = PhysicsStep;
         CachedSolverStartTime = Solver->GetSolverTime();
 
+        TSet<ITickCallback*> CurrentTickCallbacks;
+        {
+            FScopeLock Lock(&CallbacksMutex);
+            CurrentTickCallbacks = TickCallbacks;
+        }
+
         const Chaos::FReal TickEndTime = CachedSolverStartTime + Dt;
-        FScopeLock Lock(&CallbacksMutex);
-        for (ITickCallback* Callback : TickCallbacks) {
+        for (ITickCallback* Callback : CurrentTickCallbacks) {
             Callback->PreTickPhysicsThread(PhysicsStep, Dt, CachedSolverStartTime, TickEndTime);
         }
     }
 
     void FWorldManager::PostAdvance_Internal(Chaos::FReal Dt) {
-        FScopeLock Lock(&CallbacksMutex);
-        for (ITickCallback* Callback : TickCallbacks) {
+        TSet<ITickCallback*> CurrentTickCallbacks;
+        {
+            FScopeLock Lock(&CallbacksMutex);
+            CurrentTickCallbacks = TickCallbacks;
+        }
+
+        for (ITickCallback* Callback : CurrentTickCallbacks) {
             Callback->PostTickPhysicsThread(CachedLastTickNumber, Dt);
         }
 
@@ -219,11 +234,14 @@ namespace ClientPrediction {
             }
         }
 
+        TSet<ITickCallback*> CurrentTickCallbacks;
         {
             FScopeLock Lock(&CallbacksMutex);
-            for (ITickCallback* Callback : TickCallbacks) {
-                Callback->PostPhysicsGameThread(ResultsTime, Dt);
-            }
+            CurrentTickCallbacks = TickCallbacks;
+        }
+
+        for (ITickCallback* Callback : CurrentTickCallbacks) {
+            Callback->PostPhysicsGameThread(ResultsTime, Dt);
         }
 
         LastResultsTime = ResultsTime;

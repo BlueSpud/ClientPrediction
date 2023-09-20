@@ -155,7 +155,7 @@ namespace ClientPrediction {
         }
 
         CurrentInput = *BufferedInput;
-        PreTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
+        PreTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime, false);
     }
 
     template <typename InputType, typename StateType>
@@ -164,6 +164,11 @@ namespace ClientPrediction {
         check(PendingPhysicsCorrectionFrame == TickNumber);
 
         auto* PhysicsHandle = GetPhysicsHandle();
+        if (PhysicsHandle == nullptr) {
+            UE_LOG(LogTemp, Error, TEXT("Tried apply correction without a valid physics handle"));
+            return;
+        }
+
         PendingCorrection.Reconcile(PhysicsHandle);
         PendingPhysicsCorrectionFrame = INDEX_NONE;
 
@@ -180,7 +185,7 @@ namespace ClientPrediction {
     void FModelAutoProxyDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
         if (HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
 
-        PostTickSimulateWithCurrentInput(TickNumber, Dt, false);
+        PostTickSimulateWithCurrentInput(TickNumber, Dt);
     }
 
     template <typename InputType, typename StateType>
@@ -194,6 +199,8 @@ namespace ClientPrediction {
 
         if (bHasSimulationEndedGameThread) {
             Delegate->SetTimeDilation(1.0);
+            HandleSimulationEndGameThread();
+
             return;
         }
 

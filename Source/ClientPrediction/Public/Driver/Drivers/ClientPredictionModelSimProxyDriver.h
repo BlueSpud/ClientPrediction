@@ -36,7 +36,6 @@ namespace ClientPrediction {
     private:
         UPrimitiveComponent* UpdatedComponent = nullptr;
         ECollisionEnabled::Type CachedCollisionMode = ECollisionEnabled::NoCollision;
-        bool bCachedPhysicsEnabled = false;
 
         IModelDriverDelegate<InputType, StateType>* Delegate = nullptr;
         TArray<FStateWrapper<StateType>> States;
@@ -135,7 +134,6 @@ namespace ClientPrediction {
 
         if (bHasSeenFinalState) {
             if (Settings->bDisableCollisionsOnSimProxies) {
-                UpdatedComponent->SetSimulatePhysics(bCachedPhysicsEnabled);
                 UpdatedComponent->SetCollisionEnabled(CachedCollisionMode);
             }
 
@@ -194,10 +192,6 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     void FModelSimProxyDriver<InputType, StateType>::ApplyPhysicsState() {
         check(UpdatedComponent);
-
-        if (UpdatedComponent->IsSimulatingPhysics()) {
-            bCachedPhysicsEnabled = true;
-        }
 
         UpdatedComponent->SetSimulatePhysics(false);
 

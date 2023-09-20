@@ -85,7 +85,7 @@ namespace ClientPrediction {
         }
 
         if (bTakesInput) { Delegate->ModifyInputPhysicsThread(CurrentInput.Body, CurrentState, Dt); }
-        PreTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
+        PreTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime, true);
 
         if (bTakesInput || CurrentInput.EstimatedDisplayedServerTick == INDEX_NONE) {
             return;
@@ -106,7 +106,7 @@ namespace ClientPrediction {
     void FModelAuthDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
         if (HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
 
-        PostTickSimulateWithCurrentInput(TickNumber, Dt, true);
+        PostTickSimulateWithCurrentInput(TickNumber, Dt);
         FinalTick = CurrentState.bIsFinalState ? CurrentState.TickNumber : INDEX_NONE;
     }
 
@@ -115,6 +115,12 @@ namespace ClientPrediction {
         if (bHasSimulationEndedGameThread) { return; }
 
         InterpolateStateGameThread(SimTime, Dt);
+
+        if (bHasSimulationEndedGameThread) {
+            HandleSimulationEndGameThread();
+            return;
+        }
+
         SuggestTimeDilation();
     }
 
