@@ -171,8 +171,8 @@ namespace ClientPrediction {
         History.GetStateAtTick(History.GetLatestTickNumber(), FinalState);
 
         // Ensure that the body is in sync with the final result of the physics simulation
-        UpdatedComponent->SetWorldLocation(FinalState.PhysicsState.X);
-        UpdatedComponent->SetWorldRotation(FinalState.PhysicsState.R);
+        // UpdatedComponent->SetWorldLocation(FinalState.PhysicsState.X);
+        // UpdatedComponent->SetWorldRotation(FinalState.PhysicsState.R);
 
         Delegate->EndSimulation();
     }
