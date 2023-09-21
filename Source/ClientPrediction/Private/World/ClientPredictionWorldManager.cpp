@@ -57,6 +57,10 @@ namespace ClientPrediction {
         check(Solver->IsDetemerministic());
 
         UPhysicsSettings::Get()->MaxPhysicsDeltaTime = Settings->MaxPhysicsTime;
+
+        // We require error correction duration to be zero so that when a simulation ends there will be no interpolation.
+        // If this was nonzero the auto proxy would be in between where it was when it performed the rollback and the true end position, which is not desired.
+        check(GEngine->Exec(World, TEXT("p.RenderInterp.ErrorCorrectionDuration 0")));
     }
 
     void FWorldManager::CreateCallbacks() {

@@ -166,13 +166,7 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     void FSimulatedModelDriver<InputType, StateType>::HandleSimulationEndGameThread() {
         UpdatedComponent->SetSimulatePhysics(false);
-
-        FStateWrapper<StateType> FinalState{};
-        History.GetStateAtTick(History.GetLatestTickNumber(), FinalState);
-
-        // Ensure that the body is in sync with the final result of the physics simulation
-        // UpdatedComponent->SetWorldLocation(FinalState.PhysicsState.X);
-        // UpdatedComponent->SetWorldRotation(FinalState.PhysicsState.R);
+        UpdatedComponent->SetMobility(EComponentMobility::Static);
 
         Delegate->EndSimulation();
     }
