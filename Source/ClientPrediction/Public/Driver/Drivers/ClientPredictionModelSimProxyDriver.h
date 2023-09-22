@@ -133,8 +133,6 @@ namespace ClientPrediction {
         TrimStateBuffer();
 
         if (bHasSeenFinalState) {
-            UpdatedComponent->SetMobility(EComponentMobility::Static);
-
             if (Settings->bDisableCollisionsOnSimProxies) {
                 UpdatedComponent->SetCollisionEnabled(CachedCollisionMode);
             }

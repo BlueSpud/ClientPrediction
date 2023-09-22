@@ -160,7 +160,6 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     void FSimulatedModelDriver<InputType, StateType>::HandleSimulationEndGameThread() {
         UpdatedComponent->SetSimulatePhysics(false);
-        UpdatedComponent->SetMobility(EComponentMobility::Static);
 
         Delegate->EndSimulation();
     }
