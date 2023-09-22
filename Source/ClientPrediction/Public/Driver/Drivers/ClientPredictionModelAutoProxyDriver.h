@@ -155,7 +155,7 @@ namespace ClientPrediction {
         }
 
         CurrentInput = *BufferedInput;
-        PreTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime, false);
+        PreTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
     }
 
     template <typename InputType, typename StateType>

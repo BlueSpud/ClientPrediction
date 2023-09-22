@@ -32,6 +32,7 @@ namespace ClientPrediction {
 
         virtual void ProcessExternalStimulus(StateType& State) = 0;
 
+        virtual bool IsSimulationOver(const StateType& CurrentState) = 0;
         virtual void EndSimulation() = 0;
     };
 

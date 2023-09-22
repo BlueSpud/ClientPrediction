@@ -22,7 +22,7 @@ namespace ClientPrediction {
         bool HasSimulationEndedOnPhysicsThread(const int32 TickNumber) const;
 
     public:
-        void PreTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime, bool bCanEndSimulation);
+        void PreTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime);
         void PostTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt);
 
     protected:
@@ -79,8 +79,7 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType>
-    void FSimulatedModelDriver<InputType, StateType>::PreTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime,
-                                                                                      bool bCanEndSimulation) {
+    void FSimulatedModelDriver<InputType, StateType>::PreTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
         LastState = CurrentState;
 
         CurrentState = {};
@@ -97,11 +96,6 @@ namespace ClientPrediction {
 
         FPhysicsContext Context(Handle, UpdatedComponent, {LastState.PhysicsState.R, LastState.PhysicsState.X});
         Delegate->SimulatePrePhysics(Dt, Context, CurrentInput.Body, LastState, CurrentState);
-
-        CurrentState.bIsFinalState &= bCanEndSimulation;
-        if (CurrentState.bIsFinalState) {
-            Handle->SetObjectState(Chaos::EObjectStateType::Static);
-        }
     }
 
     template <typename InputType, typename StateType>

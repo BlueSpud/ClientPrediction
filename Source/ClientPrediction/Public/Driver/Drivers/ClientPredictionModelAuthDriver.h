@@ -85,7 +85,7 @@ namespace ClientPrediction {
         }
 
         if (bTakesInput) { Delegate->ModifyInputPhysicsThread(CurrentInput.Body, CurrentState, Dt); }
-        PreTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime, true);
+        PreTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
 
         if (bTakesInput || CurrentInput.EstimatedDisplayedServerTick == INDEX_NONE) {
             return;
@@ -100,6 +100,15 @@ namespace ClientPrediction {
 
         const int32 TickDelta = TickNumber - CurrentInput.EstimatedDisplayedServerTick;
         CurrentState.EstimatedAutoProxyDelay = static_cast<Chaos::FReal>(TickDelta) * Settings->FixedDt;
+
+        if (Delegate->IsSimulationOver(CurrentState.Body)) {
+            CurrentState.bIsFinalState = true;
+            FinalTick = TickNumber;
+
+            if (auto* Handle = GetPhysicsHandle()) {
+                Handle->SetObjectState(Chaos::EObjectStateType::Static);
+            }
+        }
     }
 
     template <typename InputType, typename StateType>
@@ -107,7 +116,6 @@ namespace ClientPrediction {
         if (HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
 
         PostTickSimulateWithCurrentInput(TickNumber, Dt);
-        FinalTick = CurrentState.bIsFinalState ? CurrentState.TickNumber : INDEX_NONE;
     }
 
     template <typename InputType, typename StateType>
