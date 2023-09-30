@@ -117,6 +117,8 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FSimulatedModelDriver<InputType, StateType>::InterpolateStateGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
+        check(!bHasSimulationEndedGameThread);
+
         StateType InterpolatedState{};
         History.GetStateAtTime(SimTime, InterpolatedState, bHasSimulationEndedGameThread);
         Delegate->Finalize(InterpolatedState, Dt);
