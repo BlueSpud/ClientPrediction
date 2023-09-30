@@ -57,6 +57,10 @@ namespace ClientPrediction {
         check(Solver->IsDetemerministic());
 
         UPhysicsSettings::Get()->MaxPhysicsDeltaTime = Settings->MaxPhysicsTime;
+
+        // We require error correction duration to be zero so that when a simulation ends there will be no interpolation.
+        // If this was nonzero the auto proxy would be in between where it was when it performed the rollback and the true end position, which is not desired.
+        check(GEngine->Exec(World, TEXT("p.RenderInterp.ErrorCorrectionDuration 0")));
     }
 
     void FWorldManager::CreateCallbacks() {
@@ -169,7 +173,9 @@ namespace ClientPrediction {
         const Chaos::FReal Dt = Solver->GetLastDt();
 
         FScopeLock Lock(&CallbacksMutex);
-        for (ITickCallback* Callback : TickCallbacks) {
+        TSet<ITickCallback*> CurrentTickCallbacks = TickCallbacks;
+
+        for (ITickCallback* Callback : CurrentTickCallbacks) {
             Callback->PrepareTickGameThread(PhysicsStep, Dt);
         }
     }
@@ -180,16 +186,20 @@ namespace ClientPrediction {
         CachedLastTickNumber = PhysicsStep;
         CachedSolverStartTime = Solver->GetSolverTime();
 
-        const Chaos::FReal TickEndTime = CachedSolverStartTime + Dt;
         FScopeLock Lock(&CallbacksMutex);
-        for (ITickCallback* Callback : TickCallbacks) {
+        TSet<ITickCallback*> CurrentTickCallbacks = TickCallbacks;
+
+        const Chaos::FReal TickEndTime = CachedSolverStartTime + Dt;
+        for (ITickCallback* Callback : CurrentTickCallbacks) {
             Callback->PreTickPhysicsThread(PhysicsStep, Dt, CachedSolverStartTime, TickEndTime);
         }
     }
 
     void FWorldManager::PostAdvance_Internal(Chaos::FReal Dt) {
         FScopeLock Lock(&CallbacksMutex);
-        for (ITickCallback* Callback : TickCallbacks) {
+        TSet<ITickCallback*> CurrentTickCallbacks = TickCallbacks;
+
+        for (ITickCallback* Callback : CurrentTickCallbacks) {
             Callback->PostTickPhysicsThread(CachedLastTickNumber, Dt);
         }
 
@@ -221,7 +231,9 @@ namespace ClientPrediction {
 
         {
             FScopeLock Lock(&CallbacksMutex);
-            for (ITickCallback* Callback : TickCallbacks) {
+            TSet<ITickCallback*> CurrentTickCallbacks = TickCallbacks;
+
+            for (ITickCallback* Callback : CurrentTickCallbacks) {
                 Callback->PostPhysicsGameThread(ResultsTime, Dt);
             }
         }

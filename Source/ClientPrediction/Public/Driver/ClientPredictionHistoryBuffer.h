@@ -20,7 +20,8 @@ namespace ClientPrediction {
 
         void Update(const FStateWrapper<StateType>& State);
         bool GetStateAtTick(const int32 TickNumber, FStateWrapper<StateType>& OutState);
-        void GetStateAtTime(const Chaos::FReal Time, StateType& OutState);
+        void GetStateAtTime(const Chaos::FReal Time, StateType& OutState, bool& bIsFinalState);
+        void RemoveAfterTick(const int32 TickNumber);
 
         Chaos::FReal GetAverageTimeToConsumeState();
         void UpdateTimeWaitingToBeConsumed(const Chaos::FReal Dt);
@@ -84,9 +85,11 @@ namespace ClientPrediction {
     }
 
     template <typename StateType>
-    void FHistoryBuffer<StateType>::GetStateAtTime(const Chaos::FReal Time, StateType& OutState) {
+    void FHistoryBuffer<StateType>::GetStateAtTime(const Chaos::FReal Time, StateType& OutState, bool& bIsFinalState) {
         FScopeLock Lock(&Mutex);
+
         OutState = {};
+        bIsFinalState = false;
 
         if (History.IsEmpty()) { return; }
         for (int i = 0; i < History.Num(); i++) {
@@ -113,6 +116,21 @@ namespace ClientPrediction {
         }
 
         OutState = History.Last().State.Body;
+        bIsFinalState = History.Last().State.bIsFinalState;
+    }
+
+    template <typename StateType>
+    void FHistoryBuffer<StateType>::RemoveAfterTick(const int32 TickNumber) {
+        FScopeLock Lock(&Mutex);
+
+        for (int i = 0; i < History.Num();) {
+            if (History[i].State.TickNumber > TickNumber) {
+                History.RemoveAt(i);
+                continue;
+            }
+
+            ++i;
+        }
     }
 
     template <typename StateType>

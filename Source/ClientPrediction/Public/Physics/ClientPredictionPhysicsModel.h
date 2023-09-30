@@ -110,6 +110,13 @@ namespace ClientPrediction {
 
         virtual void ProcessExternalStimulus(StateType& State) override final;
 
+        /**
+         * This is called on the authority from the physics thread, returning true will end the simulation. The end state is then sent to auto and simulated proxies
+         * so that all clients are left with the same final state. Physics will also be disabled on the updated component to make sure that it stays in sync.
+         */
+        virtual bool IsSimulationOver(const StateType& CurrentState) override;
+        virtual void EndSimulation() override final;
+
     public:
         DECLARE_DELEGATE_OneParam(FPhysicsModelProduceInput, InputType&)
         FPhysicsModelProduceInput ProduceInputDelegate;
@@ -143,6 +150,13 @@ namespace ClientPrediction {
          */
         DECLARE_DELEGATE_OneParam(FPhysicsModelProcessExternalStimulus, StateType&)
         FPhysicsModelProcessExternalStimulus ProcessExternalStimulusDelegate;
+
+        /**
+         * This delegate will be executed on the game thread after the end of the simulation is reached. There will likely be a short delay between this being called
+         * and the physics thread actually ending the simulation since results are interpolated on the game thread.
+         */
+        DECLARE_DELEGATE(FPhysicsModelEndSimulation)
+        FPhysicsModelEndSimulation EndSimulationDelegate;
 
     private:
         class UPrimitiveComponent* CachedComponent = nullptr;
@@ -328,5 +342,15 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::ProcessExternalStimulus(StateType& State) {
         ProcessExternalStimulusDelegate.ExecuteIfBound(State);
+    }
+
+    template <typename InputType, typename StateType, typename EventType>
+    bool FPhysicsModel<InputType, StateType, EventType>::IsSimulationOver(const StateType& CurrentState) {
+        return false;
+    }
+
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::EndSimulation() {
+        EndSimulationDelegate.ExecuteIfBound();
     }
 }

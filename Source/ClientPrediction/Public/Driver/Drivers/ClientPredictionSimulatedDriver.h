@@ -19,6 +19,7 @@ namespace ClientPrediction {
 
     protected:
         class Chaos::FRigidBodyHandle_Internal* GetPhysicsHandle() const;
+        bool HasSimulationEndedOnPhysicsThread(const int32 TickNumber) const;
 
     public:
         void PreTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime);
@@ -27,6 +28,7 @@ namespace ClientPrediction {
     protected:
         void InterpolateStateGameThread(Chaos::FReal SimTime, Chaos::FReal Dt);
         void UpdateHistory(const FStateWrapper<StateType>& State);
+        void HandleSimulationEndGameThread();
 
     protected:
         UPrimitiveComponent* UpdatedComponent = nullptr;
@@ -38,6 +40,9 @@ namespace ClientPrediction {
         FInputPacketWrapper<InputType> CurrentInput{}; // Only used on physics thread
         FStateWrapper<StateType> CurrentState{}; // Only used on physics thread
         FStateWrapper<StateType> LastState{}; // Only used on physics thread
+
+        std::atomic<int32> FinalTick = INDEX_NONE; // Used on both threads
+        bool bHasSimulationEndedGameThread = false; // Only used on game thread
 
         // Events have their own queue since we do not want to dispatch events more than once during re-simulates if they are the same.
         FCriticalSection EventQueueMutex;
@@ -66,6 +71,11 @@ namespace ClientPrediction {
         if (BodyInstance == nullptr) { return nullptr; }
 
         return BodyInstance->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
+    }
+
+    template <typename InputType, typename StateType>
+    bool FSimulatedModelDriver<InputType, StateType>::HasSimulationEndedOnPhysicsThread(const int32 TickNumber) const {
+        return FinalTick != INDEX_NONE && TickNumber > FinalTick;
     }
 
     template <typename InputType, typename StateType>
@@ -100,15 +110,17 @@ namespace ClientPrediction {
 
         const FPhysicsContext Context(Handle, UpdatedComponent, {LastState.PhysicsState.R, LastState.PhysicsState.X});
         Delegate->SimulatePostPhysics(Dt, Context, CurrentInput.Body, LastState, CurrentState);
-
         Delegate->ProcessExternalStimulus(CurrentState.Body);
+
         UpdateHistory(CurrentState);
     }
 
     template <typename InputType, typename StateType>
     void FSimulatedModelDriver<InputType, StateType>::InterpolateStateGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
+        check(!bHasSimulationEndedGameThread);
+
         StateType InterpolatedState{};
-        History.GetStateAtTime(SimTime, InterpolatedState);
+        History.GetStateAtTime(SimTime, InterpolatedState, bHasSimulationEndedGameThread);
         Delegate->Finalize(InterpolatedState, Dt);
 
         FScopeLock EventQueueLock(&EventQueueMutex);
@@ -145,5 +157,12 @@ namespace ClientPrediction {
         }
 
         History.Update(State);
+    }
+
+    template <typename InputType, typename StateType>
+    void FSimulatedModelDriver<InputType, StateType>::HandleSimulationEndGameThread() {
+        UpdatedComponent->SetSimulatePhysics(false);
+
+        Delegate->EndSimulation();
     }
 }
