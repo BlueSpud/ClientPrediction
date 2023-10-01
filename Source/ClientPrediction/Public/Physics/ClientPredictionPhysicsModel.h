@@ -165,6 +165,7 @@ namespace ClientPrediction {
         IPhysicsModelDelegate* Delegate = nullptr;
 
         FClientPredictionModelId ModelId{};
+        bool bHasEndedSimulation = false;
     };
 
     // Implementation
@@ -197,6 +198,8 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::Cleanup() {
+        if (CachedComponent == nullptr) { return; }
+
         // Sometimes the world manager might get cleaned up first, so we want to check if it actually exists
         const UWorld* World = CachedComponent->GetWorld();
         if (World == nullptr) { return; }
@@ -213,6 +216,10 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& ControlProxyRep) {
+        if (bHasEndedSimulation) {
+            return;
+        }
+
         check(CachedWorldManager)
         check(CachedComponent)
         check(Delegate)
@@ -221,7 +228,7 @@ namespace ClientPrediction {
             ModelDriver->Unregister(CachedWorldManager, ModelId);
         }
 
-        int32 RewindBufferSize = CachedWorldManager->GetRewindBufferSize();
+        const int32 RewindBufferSize = CachedWorldManager->GetRewindBufferSize();
         switch (Role) {
         case ROLE_Authority:
             ModelDriver = MakeUnique<FModelAuthDriver<InputType, StateType>>(CachedComponent, this, ControlProxyRep, RewindBufferSize, bShouldTakeInput);
@@ -351,6 +358,9 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::EndSimulation() {
+        bHasEndedSimulation = true;
+
         EndSimulationDelegate.ExecuteIfBound();
+        Cleanup();
     }
 }
