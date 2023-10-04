@@ -93,8 +93,8 @@ namespace ClientPrediction {
 
             if (auto* Handle = GetPhysicsHandle()) {
                 Handle->SetObjectState(Chaos::EObjectStateType::Static);
-                Handle->SetV({});
-                Handle->SetW({});
+                Handle->SetV(Chaos::FVec3::ZeroVector);
+                Handle->SetW(Chaos::FVec3::ZeroVector);
             }
         }
 
