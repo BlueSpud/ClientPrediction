@@ -28,10 +28,10 @@ namespace ClientPrediction {
     struct FPhysicsModelBase {
         virtual ~FPhysicsModelBase() = default;
 
-        virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) = 0;
+        virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate, FRepProxy& FinalStateRepProxy) = 0;
         virtual void Cleanup() = 0;
 
-        virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& ControlProxyRep) = 0;
+        virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& ControlRepProxy) = 0;
         virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) const = 0;
     };
 
@@ -81,12 +81,16 @@ namespace ClientPrediction {
         void SetModelId(const FClientPredictionModelId& NewModelId);
 
         // FPhysicsModelBase
-        virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) override final;
+        virtual void Initialize(class UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate, FRepProxy& FinalStateRepProxy) override final;
 
+    private:
+        void BindToFinalStateRepProxy(FRepProxy& FinalStateRepProxy);
+
+    public:
         virtual ~FPhysicsModel() override = default;
         virtual void Cleanup() override final;
 
-        virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& ControlProxyRep) override final;
+        virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& ControlRepProxy) override final;
         virtual void ReceiveInputPackets(FNetSerializationProxy& Proxy) const override final;
 
         virtual void SetTimeDilation(const Chaos::FReal TimeDilation) override final;
@@ -116,6 +120,10 @@ namespace ClientPrediction {
          */
         virtual bool IsSimulationOver(const StateType& CurrentState) override;
         virtual void EndSimulation() override final;
+
+    private:
+        /** This is called when a model is created on the remote but the authority has already finished its simulation. */
+        void ApplyFinalSimulationState();
 
     public:
         DECLARE_DELEGATE_OneParam(FPhysicsModelProduceInput, InputType&)
@@ -166,6 +174,10 @@ namespace ClientPrediction {
 
         FClientPredictionModelId ModelId{};
         bool bHasEndedSimulation = false;
+
+        /** The final state from the rep proxy */
+        FRepProxy* FinalStateRepProxyRef = nullptr;
+        FStateWrapper<StateType> RepFinalState;
     };
 
     // Implementation
@@ -177,7 +189,7 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType, typename EventType>
-    void FPhysicsModel<InputType, StateType, EventType>::Initialize(UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate) {
+    void FPhysicsModel<InputType, StateType, EventType>::Initialize(UPrimitiveComponent* Component, IPhysicsModelDelegate* InDelegate, FRepProxy& FinalStateRepProxy) {
         CachedComponent = Component;
         check(CachedComponent);
 
@@ -189,6 +201,17 @@ namespace ClientPrediction {
 
         CachedWorldManager = FWorldManager::ManagerForWorld(World);
         check(CachedWorldManager)
+
+        BindToFinalStateRepProxy(FinalStateRepProxy);
+    }
+
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::BindToFinalStateRepProxy(FRepProxy& FinalStateRepProxy) {
+        FinalStateRepProxyRef = &FinalStateRepProxy;
+
+        FinalStateRepProxy.SerializeFunc = [&](FArchive& Ar) {
+            RepFinalState.NetSerialize(Ar, EDataCompleteness::kFull);
+        };
     }
 
     template <typename InputType, typename StateType, typename EventType>
@@ -215,14 +238,15 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType, typename EventType>
-    void FPhysicsModel<InputType, StateType, EventType>::SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& ControlProxyRep) {
-        if (bHasEndedSimulation) {
+    void FPhysicsModel<InputType, StateType, EventType>::SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& ControlRepProxy) {
+        if (bHasEndedSimulation || CachedComponent == nullptr || CachedWorldManager == nullptr || Delegate == nullptr) {
             return;
         }
 
-        check(CachedWorldManager)
-        check(CachedComponent)
-        check(Delegate)
+        if (RepFinalState.TickNumber != INDEX_NONE) {
+            ApplyFinalSimulationState();
+            return;
+        }
 
         if (ModelDriver != nullptr) {
             ModelDriver->Unregister(CachedWorldManager, ModelId);
@@ -231,10 +255,11 @@ namespace ClientPrediction {
         const int32 RewindBufferSize = CachedWorldManager->GetRewindBufferSize();
         switch (Role) {
         case ROLE_Authority:
-            ModelDriver = MakeUnique<FModelAuthDriver<InputType, StateType>>(CachedComponent, this, ControlProxyRep, RewindBufferSize, bShouldTakeInput);
+            ModelDriver = MakeUnique<FModelAuthDriver<InputType, StateType>>(CachedComponent, this, ControlRepProxy, *FinalStateRepProxyRef, RewindBufferSize,
+                                                                             bShouldTakeInput);
             break;
         case ROLE_AutonomousProxy: {
-            ModelDriver = MakeUnique<FModelAutoProxyDriver<InputType, StateType>>(CachedComponent, this, ControlProxyRep, RewindBufferSize);
+            ModelDriver = MakeUnique<FModelAutoProxyDriver<InputType, StateType>>(CachedComponent, this, ControlRepProxy, RewindBufferSize);
         }
         break;
         case ROLE_SimulatedProxy:
@@ -362,5 +387,17 @@ namespace ClientPrediction {
 
         EndSimulationDelegate.ExecuteIfBound();
         Cleanup();
+    }
+
+    template <typename InputType, typename StateType, typename EventType>
+    void FPhysicsModel<InputType, StateType, EventType>::ApplyFinalSimulationState() {
+        CachedComponent->SetSimulatePhysics(false);
+
+        CachedComponent->SetWorldLocation(RepFinalState.PhysicsState.X);
+        CachedComponent->SetWorldRotation(RepFinalState.PhysicsState.R);
+
+        FinalizeDelegate.ExecuteIfBound(RepFinalState.Body, 0.0);
+
+        EndSimulation();
     }
 }

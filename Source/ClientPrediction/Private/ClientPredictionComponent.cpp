@@ -12,7 +12,8 @@ UClientPredictionComponent::UClientPredictionComponent() {
 void UClientPredictionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-    DOREPLIFETIME_CONDITION(UClientPredictionComponent, ControlProxyRep, COND_AutonomousOnly);
+    DOREPLIFETIME_CONDITION(UClientPredictionComponent, ControlRepProxy, COND_AutonomousOnly);
+    DOREPLIFETIME(UClientPredictionComponent, FinalStateRepProxy);
 }
 
 void UClientPredictionComponent::InitializeComponent() {
@@ -22,7 +23,7 @@ void UClientPredictionComponent::InitializeComponent() {
     check(UpdatedComponent);
 
     check(PhysicsModel);
-    PhysicsModel->Initialize(UpdatedComponent, this);
+    PhysicsModel->Initialize(UpdatedComponent, this, FinalStateRepProxy);
 
     CheckOwnerRoleChanged();
 }
@@ -38,7 +39,7 @@ void UClientPredictionComponent::PreNetReceive() {
 }
 
 void UClientPredictionComponent::CheckOwnerRoleChanged() {
-    if (PhysicsModel == nullptr) { return; }
+    if (PhysicsModel == nullptr || !HasBegunPlay()) { return; }
 
     const AActor* OwnerActor = GetOwner();
     const ENetRole CurrentRole = OwnerActor->GetLocalRole();
@@ -49,7 +50,7 @@ void UClientPredictionComponent::CheckOwnerRoleChanged() {
     CachedRole = CurrentRole;
     bCachedAuthorityTakesInput = bAuthorityTakesInput;
 
-    PhysicsModel->SetNetRole(CurrentRole, bAuthorityTakesInput, ControlProxyRep);
+    PhysicsModel->SetNetRole(CurrentRole, bAuthorityTakesInput, ControlRepProxy);
 }
 
 void UClientPredictionComponent::BeginPlay() {

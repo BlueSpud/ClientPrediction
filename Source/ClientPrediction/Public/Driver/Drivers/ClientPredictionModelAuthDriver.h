@@ -11,8 +11,8 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     class FModelAuthDriver final : public FSimulatedModelDriver<InputType, StateType>, public StateProducerBase<FStateWrapper<StateType>> {
     public:
-        FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FRepProxy& ControlProxyRep,
-                         int32 RewindBufferSize, const bool bTakesInput);
+        FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FRepProxy& ControlRepProxy,
+                         FRepProxy& FinalStateRepProxy, int32 RewindBufferSize, const bool bTakesInput);
 
         virtual ~FModelAuthDriver() override = default;
 
@@ -27,6 +27,10 @@ namespace ClientPrediction {
 
         virtual void PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) override;
 
+    protected:
+        virtual void HandleSimulationEndGameThread() override;
+
+    public:
         // StateProducerBase
         virtual bool ProduceUnserializedStateForTick(const int32 Tick, FStateWrapper<StateType>& State, bool& bShouldBeReliable) override;
 
@@ -38,7 +42,9 @@ namespace ClientPrediction {
         virtual void ReceiveInputPackets(const TArray<FInputPacketWrapper<InputType>>& Packets) override;
 
     private:
-        FRepProxy& ControlProxyRep;
+        FRepProxy& ControlRepProxy;
+        FRepProxy& FinalStateRepProxy;
+
         bool bTakesInput = false;
 
         FAuthInputBuf<InputType> InputBuf; // Written to on game thread, read from physics thread
@@ -47,8 +53,8 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     FModelAuthDriver<InputType, StateType>::FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate,
-                                                             FRepProxy& ControlProxyRep, int32 RewindBufferSize, const bool bTakesInput)
-        : FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), ControlProxyRep(ControlProxyRep),
+                                                             FRepProxy& ControlRepProxy, FRepProxy& FinalStateRepProxy, int32 RewindBufferSize, const bool bTakesInput)
+        : FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), ControlRepProxy(ControlRepProxy), FinalStateRepProxy(FinalStateRepProxy),
           bTakesInput(bTakesInput), InputBuf(Settings, bTakesInput) {}
 
     template <typename InputType, typename StateType>
@@ -135,6 +141,17 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType>
+    void FModelAuthDriver<InputType, StateType>::HandleSimulationEndGameThread() {
+        FStateWrapper<StateType> FinalState;
+        History.GetStateAtTick(FinalTick, FinalState);
+
+        FinalStateRepProxy.SerializeFunc = [=](FArchive& Ar) mutable { FinalState.NetSerialize(Ar, EDataCompleteness::kFull); };
+        FinalStateRepProxy.Dispatch();
+
+        FSimulatedModelDriver<InputType, StateType>::HandleSimulationEndGameThread();
+    }
+
+    template <typename InputType, typename StateType>
     bool FModelAuthDriver<InputType, StateType>::ProduceUnserializedStateForTick(const int32 Tick, FStateWrapper<StateType>& State, bool& bShouldBeReliable) {
         if (HasSimulationEndedOnPhysicsThread(Tick)) { return false; }
 
@@ -159,8 +176,8 @@ namespace ClientPrediction {
         ControlPacket.SetTimeDilation(LastSuggestedTimeDilation);
         ControlPacket.bIsInputBufferVeryUnhealthy = DeltaFromTargetPercentage < -Settings->UnhealthyInputBufferPercentage;
 
-        ControlProxyRep.SerializeFunc = [=](FArchive& Ar) mutable { ControlPacket.NetSerialize(Ar); };
-        ControlProxyRep.Dispatch();
+        ControlRepProxy.SerializeFunc = [=](FArchive& Ar) mutable { ControlPacket.NetSerialize(Ar); };
+        ControlRepProxy.Dispatch();
     }
 
     template <typename InputType, typename StateType>

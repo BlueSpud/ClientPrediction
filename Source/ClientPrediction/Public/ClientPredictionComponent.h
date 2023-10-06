@@ -38,7 +38,10 @@ private:
 
 private:
     UPROPERTY(Replicated)
-    FRepProxy ControlProxyRep;
+    FRepProxy ControlRepProxy;
+
+    UPROPERTY(Replicated)
+    FRepProxy FinalStateRepProxy;
 
     UPROPERTY()
     class UPrimitiveComponent* UpdatedComponent;

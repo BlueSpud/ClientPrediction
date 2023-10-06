@@ -28,7 +28,7 @@ namespace ClientPrediction {
     protected:
         void InterpolateStateGameThread(Chaos::FReal SimTime, Chaos::FReal Dt);
         void UpdateHistory(const FStateWrapper<StateType>& State);
-        void HandleSimulationEndGameThread();
+        virtual void HandleSimulationEndGameThread();
 
     protected:
         UPrimitiveComponent* UpdatedComponent = nullptr;

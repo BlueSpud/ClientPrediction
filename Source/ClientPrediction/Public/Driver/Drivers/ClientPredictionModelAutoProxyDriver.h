@@ -12,7 +12,7 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     class FModelAutoProxyDriver final : public FSimulatedModelDriver<InputType, StateType>, public IRewindCallback, public StateConsumerBase<FStateWrapper<StateType>> {
     public:
-        FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FRepProxy& ControlProxyRep,
+        FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate, FRepProxy& ControlRepProxy,
                               int32 RewindBufferSize);
 
         virtual ~FModelAutoProxyDriver() override = default;
@@ -21,7 +21,7 @@ namespace ClientPrediction {
         virtual void Unregister(struct FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) override;
 
     private:
-        void BindToRepProxy(FRepProxy& ControlProxyRep);
+        void BindToRepProxy(FRepProxy& ControlRepProxy);
 
     public:
         virtual void ConsumeUnserializedStateForTick(const int32 Tick, const FStateWrapper<StateType>& State, const Chaos::FReal ServerTime) override;
@@ -67,9 +67,9 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     FModelAutoProxyDriver<InputType, StateType>::FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate,
-                                                                       FRepProxy& ControlProxyRep, int32 RewindBufferSize) :
+                                                                       FRepProxy& ControlRepProxy, int32 RewindBufferSize) :
         FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), RewindBufferSize(RewindBufferSize) {
-        BindToRepProxy(ControlProxyRep);
+        BindToRepProxy(ControlRepProxy);
     }
 
     template <typename InputType, typename StateType>
@@ -91,8 +91,8 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType>
-    void FModelAutoProxyDriver<InputType, StateType>::BindToRepProxy(FRepProxy& ControlProxyRep) {
-        ControlProxyRep.SerializeFunc = [&](FArchive& Ar) {
+    void FModelAutoProxyDriver<InputType, StateType>::BindToRepProxy(FRepProxy& ControlRepProxy) {
+        ControlRepProxy.SerializeFunc = [&](FArchive& Ar) {
             LastControlPacket.NetSerialize(Ar);
         };
     }
