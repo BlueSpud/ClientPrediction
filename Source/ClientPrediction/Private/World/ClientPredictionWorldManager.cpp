@@ -60,7 +60,9 @@ namespace ClientPrediction {
 
         // We require error correction duration to be zero so that when a simulation ends there will be no interpolation.
         // If this was nonzero the auto proxy would be in between where it was when it performed the rollback and the true end position, which is not desired.
-        check(GEngine->Exec(World, TEXT("p.RenderInterp.ErrorCorrectionDuration 0")));
+        if (!GEngine->Exec(World, TEXT("p.RenderInterp.ErrorCorrectionDuration 0"))) {
+            UE_LOG(LogTemp, Error, TEXT("Failed to set error correction duration!"));
+        }
     }
 
     void FWorldManager::CreateCallbacks() {
@@ -147,7 +149,6 @@ namespace ClientPrediction {
     FWorldManager::~FWorldManager() {
         if (PhysScene == nullptr || Solver == nullptr) { return; }
 
-        Solver->SetRewindCallback({});
         Solver->RemovePostAdvanceCallback(PostAdvanceDelegate);
         PhysScene->OnPhysScenePostTick.Remove(PostPhysSceneTickDelegate);
     }
