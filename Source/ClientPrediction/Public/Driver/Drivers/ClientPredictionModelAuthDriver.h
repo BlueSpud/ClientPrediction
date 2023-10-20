@@ -98,7 +98,7 @@ namespace ClientPrediction {
             FinalTick = TickNumber;
 
             if (auto* Handle = GetPhysicsHandle()) {
-                Handle->SetObjectState(Chaos::EObjectStateType::Static);
+                Handle->SetObjectState(Chaos::EObjectStateType::Kinematic);
                 Handle->SetV(Chaos::FVec3::ZeroVector);
                 Handle->SetW(Chaos::FVec3::ZeroVector);
             }

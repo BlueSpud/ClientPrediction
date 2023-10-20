@@ -391,10 +391,16 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::ApplyFinalSimulationState() {
-        CachedComponent->SetSimulatePhysics(false);
+        FBodyInstance* BodyInstance = CachedComponent->GetBodyInstance();
+        if (BodyInstance == nullptr) { return; }
 
-        CachedComponent->SetWorldLocation(RepFinalState.PhysicsState.X);
-        CachedComponent->SetWorldRotation(RepFinalState.PhysicsState.R);
+        auto& Handle = BodyInstance->GetPhysicsActorHandle()->GetGameThreadAPI();
+        Handle.SetObjectState(Chaos::EObjectStateType::Kinematic);
+        Handle.SetX(RepFinalState.PhysicsState.X);
+        Handle.SetR(RepFinalState.PhysicsState.R);
+
+        CachedComponent->SyncComponentToRBPhysics();
+        BodyInstance->SetInstanceSimulatePhysics(false, true, true);
 
         FinalizeDelegate.ExecuteIfBound(RepFinalState.Body, 0.0);
 

@@ -137,6 +137,11 @@ namespace ClientPrediction {
                 UpdatedComponent->SetCollisionEnabled(CachedCollisionMode);
             }
 
+            UpdatedComponent->SyncComponentToRBPhysics();
+            if (FBodyInstance* BodyInstance = UpdatedComponent->GetBodyInstance()) {
+                BodyInstance->SetInstanceSimulatePhysics(false, true, true);
+            }
+
             Delegate->EndSimulation();
         }
     }
@@ -193,19 +198,23 @@ namespace ClientPrediction {
     void FModelSimProxyDriver<InputType, StateType>::ApplyPhysicsState() {
         check(UpdatedComponent);
 
-        UpdatedComponent->SetSimulatePhysics(false);
+        FBodyInstance* BodyInstance = UpdatedComponent->GetBodyInstance();
+        if (BodyInstance == nullptr) { return; }
+
+        auto& Handle = BodyInstance->GetPhysicsActorHandle()->GetGameThreadAPI();
+        Handle.SetObjectState(Chaos::EObjectStateType::Kinematic);
 
         if (Settings->bDisableCollisionsOnSimProxies) {
             const ECollisionEnabled::Type CurrentCollisionMode = UpdatedComponent->GetCollisionEnabled();
-            if (CurrentCollisionMode != ECollisionEnabled::NoCollision) {
+            if (CurrentCollisionMode != ECollisionEnabled::QueryAndProbe) {
                 CachedCollisionMode = CurrentCollisionMode;
             }
 
-            UpdatedComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+            UpdatedComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndProbe);
         }
 
-        UpdatedComponent->SetWorldLocation(CurrentState.PhysicsState.X);
-        UpdatedComponent->SetWorldRotation(CurrentState.PhysicsState.R);
+        Handle.SetX(CurrentState.PhysicsState.X);
+        Handle.SetR(CurrentState.PhysicsState.R);
     }
 
     template <typename InputType, typename StateType>

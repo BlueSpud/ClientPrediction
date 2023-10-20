@@ -161,7 +161,23 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FSimulatedModelDriver<InputType, StateType>::HandleSimulationEndGameThread() {
-        UpdatedComponent->SetSimulatePhysics(false);
+        if (FBodyInstance* BodyInstance = UpdatedComponent->GetBodyInstance()) {
+            auto& Handle = BodyInstance->GetPhysicsActorHandle()->GetGameThreadAPI();
+
+            FStateWrapper<StateType> FinalState{};
+            if (History.GetStateAtTick(FinalTick, FinalState)) {
+                Handle.SetX(FinalState.PhysicsState.X);
+                Handle.SetR(FinalState.PhysicsState.R);
+
+                // These should both be zero
+                Handle.SetV(FinalState.PhysicsState.V);
+                Handle.SetW(FinalState.PhysicsState.W);
+
+                UpdatedComponent->SyncComponentToRBPhysics();
+            }
+
+            BodyInstance->SetInstanceSimulatePhysics(false, true, true);
+        }
 
         Delegate->EndSimulation();
     }
