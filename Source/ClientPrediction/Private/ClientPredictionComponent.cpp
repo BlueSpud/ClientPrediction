@@ -23,7 +23,9 @@ void UClientPredictionComponent::InitializeComponent() {
     check(UpdatedComponent);
 
     check(PhysicsModel);
-    PhysicsModel->Initialize(UpdatedComponent, this, FinalStateRepProxy);
+    if (UpdatedComponent != nullptr && PhysicsModel != nullptr) {
+        PhysicsModel->Initialize(UpdatedComponent, this, FinalStateRepProxy);
+    }
 
     CheckOwnerRoleChanged();
 }
