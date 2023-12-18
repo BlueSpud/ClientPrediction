@@ -39,7 +39,7 @@ void UClientPredictionComponent::PreNetReceive() {
 }
 
 void UClientPredictionComponent::CheckOwnerRoleChanged() {
-    if (PhysicsModel == nullptr || !HasBegunPlay()) { return; }
+    if (PhysicsModel == nullptr) { return; }
 
     const AActor* OwnerActor = GetOwner();
     const ENetRole CurrentRole = OwnerActor->GetLocalRole();
