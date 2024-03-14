@@ -22,9 +22,13 @@ namespace ClientPrediction {
 	void FPhysicsContext::AddImpulseAtLocation(FVector Impulse, FVector Location) {
 		const Chaos::FVec3 WorldCOM = Chaos::FParticleUtilitiesXR::GetCoMWorldPosition(BodyHandle);
 		BodyHandle->SetLinearImpulse(BodyHandle->LinearImpulseVelocity() + (Impulse * BodyHandle->InvM()), true, false);
+		AddAngularImpulse(Chaos::FVec3::CrossProduct(Location - WorldCOM, Impulse));
 
+		SetBodySleeping(false);
+	}
+
+	void FPhysicsContext::AddAngularImpulse(FVector AngularImpulse) {
 		const Chaos::FMatrix33 WorldInvI = Chaos::Utilities::ComputeWorldSpaceInertia(BodyHandle->R() * BodyHandle->RotationOfMass(), BodyHandle->InvI());
-		const Chaos::FVec3 AngularImpulse = Chaos::FVec3::CrossProduct(Location - WorldCOM, Impulse);
 		BodyHandle->SetAngularImpulse(BodyHandle->AngularImpulseVelocity() + WorldInvI * AngularImpulse, true, false);
 
 		SetBodySleeping(false);
@@ -55,6 +59,7 @@ namespace ClientPrediction {
 
 	FTransform FPhysicsContext::GetTransform() const { return {BodyHandle->R(), BodyHandle->X(), FVector(1.0)}; }
 	const FTransform& FPhysicsContext::GetPreviousTransform() const { return PrevTransform; }
+	FVector FPhysicsContext::GetCenterOfMass() const { return Chaos::FParticleUtilitiesXR::GetCoMWorldPosition(BodyHandle); }
 
 	FVector FPhysicsContext::GetLinearVelocity() const { return BodyHandle->V(); }
 	FVector FPhysicsContext::GetLinearVelocityAtLocation(const FVector& WorldLocation) const {

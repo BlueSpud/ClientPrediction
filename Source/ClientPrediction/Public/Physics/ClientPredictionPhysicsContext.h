@@ -8,6 +8,7 @@ namespace ClientPrediction {
 		void AddForce(const FVector& Force, bool bAccelerateChange = false);
 		void AddTorqueInRadians(const FVector& Torque, bool bAccelerateChange = false);
 		void AddImpulseAtLocation(FVector Impulse, FVector Location);
+		void AddAngularImpulse(FVector AngularImpulse);
 		void SetBodySleeping(const bool Sleeping);
 
 		Chaos::FReal GetMass() const;
@@ -16,6 +17,7 @@ namespace ClientPrediction {
 
 		FTransform GetTransform() const;
 		const FTransform& GetPreviousTransform() const;
+		FVector GetCenterOfMass() const;
 
 		FVector GetLinearVelocity() const;
 		FVector GetLinearVelocityAtLocation(const FVector& WorldLocation) const;
