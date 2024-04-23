@@ -15,7 +15,7 @@ class CLIENTPREDICTION_API UClientPredictionComponent : public UActorComponent,
 
 public:
     UClientPredictionComponent();
-    virtual ~UClientPredictionComponent() override = default;
+    virtual ~UClientPredictionComponent() override;
 
     virtual void InitializeComponent() override;
     virtual void PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) override;
@@ -28,6 +28,9 @@ public:
 
     template <typename ModelType>
     ModelType* CreateModel();
+
+private:
+    void DestroyModel();
 
 private:
     virtual void EmitInputPackets(FNetSerializationProxy& Proxy) override;
@@ -54,6 +57,8 @@ private:
 
 template <typename ModelType>
 ModelType* UClientPredictionComponent::CreateModel() {
+    check(PhysicsModel == nullptr);
+
     ModelType* Model = new ModelType();
     Model->SetModelId(FClientPredictionModelId(GetOwner()));
 

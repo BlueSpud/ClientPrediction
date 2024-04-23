@@ -9,6 +9,10 @@ UClientPredictionComponent::UClientPredictionComponent() {
     PrimaryComponentTick.bStartWithTickEnabled = false;
 }
 
+UClientPredictionComponent::~UClientPredictionComponent() {
+    DestroyModel();
+}
+
 void UClientPredictionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
@@ -62,17 +66,15 @@ void UClientPredictionComponent::BeginPlay() {
 
 void UClientPredictionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
     Super::EndPlay(EndPlayReason);
-
-    if (PhysicsModel != nullptr) {
-        PhysicsModel->Cleanup();
-        PhysicsModel = nullptr;
-    }
+    DestroyModel();
 }
 
 void UClientPredictionComponent::UninitializeComponent() {
     Super::UninitializeComponent();
+    DestroyModel();
+}
 
-    // This will handle cleanup if the owning actor could not be spawned. In this case, EndPlay is never called, so we preform the cleanup here.
+void UClientPredictionComponent::DestroyModel() {
     if (PhysicsModel != nullptr) {
         PhysicsModel->Cleanup();
         PhysicsModel = nullptr;

@@ -231,6 +231,7 @@ namespace ClientPrediction {
         }
 
         {
+            // We copy the current tick callbacks because the end of a simulation can result in a tick callback being removed.
             FScopeLock Lock(&CallbacksMutex);
             TSet<ITickCallback*> CurrentTickCallbacks = TickCallbacks;
 

@@ -87,7 +87,7 @@ namespace ClientPrediction {
         void BindToFinalStateRepProxy(FRepProxy& FinalStateRepProxy);
 
     public:
-        virtual ~FPhysicsModel() override = default;
+        virtual ~FPhysicsModel() override;
         virtual void Cleanup() override final;
 
         virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& ControlRepProxy) override final;
@@ -220,6 +220,11 @@ namespace ClientPrediction {
     }
 
     template <typename InputType, typename StateType, typename EventType>
+    FPhysicsModel<InputType, StateType, EventType>::~FPhysicsModel() {
+        check(ModelDriver == nullptr);
+    }
+
+    template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::Cleanup() {
         if (CachedComponent == nullptr) { return; }
 
@@ -250,6 +255,7 @@ namespace ClientPrediction {
 
         if (ModelDriver != nullptr) {
             ModelDriver->Unregister(CachedWorldManager, ModelId);
+            ModelDriver = nullptr;
         }
 
         const int32 RewindBufferSize = CachedWorldManager->GetRewindBufferSize();
@@ -258,14 +264,14 @@ namespace ClientPrediction {
             ModelDriver = MakeUnique<FModelAuthDriver<InputType, StateType>>(CachedComponent, this, ControlRepProxy, *FinalStateRepProxyRef, RewindBufferSize,
                                                                              bShouldTakeInput);
             break;
-        case ROLE_AutonomousProxy: {
+        case ROLE_AutonomousProxy:
             ModelDriver = MakeUnique<FModelAutoProxyDriver<InputType, StateType>>(CachedComponent, this, ControlRepProxy, RewindBufferSize);
-        }
-        break;
+            break;
         case ROLE_SimulatedProxy:
             ModelDriver = MakeUnique<FModelSimProxyDriver<InputType, StateType>>(CachedComponent, this);
             break;
         default:
+            check(false);
             break;
         }
 

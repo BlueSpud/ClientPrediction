@@ -80,6 +80,12 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FSimulatedModelDriver<InputType, StateType>::PreTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
+        auto* Handle = GetPhysicsHandle();
+        if (Handle == nullptr) {
+            UE_LOG(LogTemp, Error, TEXT("Tried post-simulate without a valid physics handle"));
+            return;
+        }
+
         LastState = CurrentState;
 
         CurrentState = {};
@@ -88,18 +94,15 @@ namespace ClientPrediction {
         CurrentState.StartTime = StartTime;
         CurrentState.EndTime = EndTime;
 
-        auto* Handle = GetPhysicsHandle();
-        if (Handle == nullptr) {
-            UE_LOG(LogTemp, Error, TEXT("Tried post-simulate without a valid physics handle"));
-            return;
-        }
-
         FPhysicsContext Context(Handle, UpdatedComponent, {LastState.PhysicsState.R, LastState.PhysicsState.X});
         Delegate->SimulatePrePhysics(Dt, Context, CurrentInput.Body, LastState, CurrentState);
     }
 
     template <typename InputType, typename StateType>
     void FSimulatedModelDriver<InputType, StateType>::PostTickSimulateWithCurrentInput(int32 TickNumber, Chaos::FReal Dt) {
+        // This ensures that if for some reason PreTickSimulateWithCurrentInput() was skipped because of an invalid physics handle, post tick won't run
+        if (CurrentState.TickNumber == INDEX_NONE) { return; }
+
         const auto Handle = GetPhysicsHandle();
         if (Handle == nullptr) {
             UE_LOG(LogTemp, Error, TEXT("Tried post-simulate without a valid physics handle"));

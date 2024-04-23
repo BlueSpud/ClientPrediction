@@ -160,8 +160,7 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::ApplyCorrectionIfNeeded(const int32 TickNumber) {
-        if (PendingPhysicsCorrectionFrame == INDEX_NONE) { return; }
-        check(PendingPhysicsCorrectionFrame == TickNumber);
+        if (PendingPhysicsCorrectionFrame == INDEX_NONE || PendingPhysicsCorrectionFrame != TickNumber) { return; }
 
         auto* PhysicsHandle = GetPhysicsHandle();
         if (PhysicsHandle == nullptr) {
