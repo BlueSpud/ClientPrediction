@@ -57,8 +57,6 @@ private:
 
 template <typename ModelType>
 ModelType* UClientPredictionComponent::CreateModel() {
-    check(PhysicsModel == nullptr);
-
     ModelType* Model = new ModelType();
     Model->SetModelId(FClientPredictionModelId(GetOwner()));
 

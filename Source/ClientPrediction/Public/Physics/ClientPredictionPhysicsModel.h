@@ -87,7 +87,6 @@ namespace ClientPrediction {
         void BindToFinalStateRepProxy(FRepProxy& FinalStateRepProxy);
 
     public:
-        virtual ~FPhysicsModel() override;
         virtual void Cleanup() override final;
 
         virtual void SetNetRole(ENetRole Role, bool bShouldTakeInput, FRepProxy& ControlRepProxy) override final;
@@ -217,11 +216,6 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType, typename EventType>
     void FPhysicsModel<InputType, StateType, EventType>::Finalize(const StateType& State, Chaos::FReal Dt) {
         FinalizeDelegate.ExecuteIfBound(State, Dt);
-    }
-
-    template <typename InputType, typename StateType, typename EventType>
-    FPhysicsModel<InputType, StateType, EventType>::~FPhysicsModel() {
-        check(ModelDriver == nullptr);
     }
 
     template <typename InputType, typename StateType, typename EventType>
