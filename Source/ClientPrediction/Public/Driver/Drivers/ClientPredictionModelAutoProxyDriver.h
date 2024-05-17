@@ -68,7 +68,7 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     FModelAutoProxyDriver<InputType, StateType>::FModelAutoProxyDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate,
                                                                        FRepProxy& ControlRepProxy, int32 RewindBufferSize) :
-        FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), RewindBufferSize(RewindBufferSize) {
+        FSimulatedModelDriver<InputType, StateType>(UpdatedComponent, Delegate, RewindBufferSize), RewindBufferSize(RewindBufferSize) {
         BindToRepProxy(ControlRepProxy);
     }
 
@@ -124,11 +124,11 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) {
-        if (HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
+        if (FSimulatedModelDriver<InputType, StateType>::HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
 
         FInputPacketWrapper<InputType> Packet;
         Packet.PacketNumber = TickNumber;
-        Delegate->ProduceInput(Packet.Body);
+        FSimulatedModelDriver<InputType, StateType>::Delegate->ProduceInput(Packet.Body);
 
         InputBuf.QueueInputPacket(Packet);
     }
@@ -137,7 +137,7 @@ namespace ClientPrediction {
     void FModelAutoProxyDriver<InputType, StateType>::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
         ApplyCorrectionIfNeeded(TickNumber);
 
-        if (HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
+        if (FSimulatedModelDriver<InputType, StateType>::HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
 
         // This provides mutable pointer to the input in the input buffer so that any modifications made in the next step will also update the
         // input stored in the input buffer
@@ -147,22 +147,22 @@ namespace ClientPrediction {
         // We guard against modifying packets older than LastModifiedInputPacket, so that they can't be re-modified during a resim.
         // Once the packet has been modified once, it is considered final and can be sent to the authority.
         if (LastModifiedInputPacket < BufferedInput->PacketNumber) {
-            Delegate->ModifyInputPhysicsThread(BufferedInput->Body, CurrentState, Dt);
+            FSimulatedModelDriver<InputType, StateType>::Delegate->ModifyInputPhysicsThread(BufferedInput->Body, FSimulatedModelDriver<InputType, StateType>::CurrentState, Dt);
             LastModifiedInputPacket = BufferedInput->PacketNumber;
 
             FScopeLock Lock(&InputSendMutex);
             InputSendQueue.Enqueue(*BufferedInput);
         }
 
-        CurrentInput = *BufferedInput;
-        PreTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
+        FSimulatedModelDriver<InputType, StateType>::CurrentInput = *BufferedInput;
+        FSimulatedModelDriver<InputType, StateType>::PreTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
     }
 
     template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::ApplyCorrectionIfNeeded(const int32 TickNumber) {
         if (PendingPhysicsCorrectionFrame == INDEX_NONE || PendingPhysicsCorrectionFrame != TickNumber) { return; }
 
-        auto* PhysicsHandle = GetPhysicsHandle();
+        auto* PhysicsHandle = FSimulatedModelDriver<InputType, StateType>::GetPhysicsHandle();
         if (PhysicsHandle == nullptr) {
             UE_LOG(LogTemp, Error, TEXT("Tried apply correction without a valid physics handle"));
             return;
@@ -171,60 +171,60 @@ namespace ClientPrediction {
         PendingCorrection.Reconcile(PhysicsHandle);
         PendingPhysicsCorrectionFrame = INDEX_NONE;
 
-        CurrentState = PendingCorrection;
-        UpdateHistory(CurrentState);
+        FSimulatedModelDriver<InputType, StateType>::CurrentState = PendingCorrection;
+        FSimulatedModelDriver<InputType, StateType>::UpdateHistory(FSimulatedModelDriver<InputType, StateType>::CurrentState);
 
-        if (CurrentState.bIsFinalState) {
-            FinalTick = CurrentState.TickNumber;
-            History.RemoveAfterTick(FinalTick);
+        if (FSimulatedModelDriver<InputType, StateType>::CurrentState.bIsFinalState) {
+            FSimulatedModelDriver<InputType, StateType>::FinalTick = FSimulatedModelDriver<InputType, StateType>::CurrentState.TickNumber;
+            FSimulatedModelDriver<InputType, StateType>::History.RemoveAfterTick(FSimulatedModelDriver<InputType, StateType>::FinalTick);
         }
     }
 
     template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
-        if (HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
+        if (FSimulatedModelDriver<InputType, StateType>::HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
 
-        PostTickSimulateWithCurrentInput(TickNumber, Dt);
+        FSimulatedModelDriver<InputType, StateType>::PostTickSimulateWithCurrentInput(TickNumber, Dt);
     }
 
     template <typename InputType, typename StateType>
     void FModelAutoProxyDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
-        if (bHasSimulationEndedGameThread) { return; }
+        if (FSimulatedModelDriver<InputType, StateType>::bHasSimulationEndedGameThread) { return; }
 
-        History.UpdateTimeWaitingToBeConsumed(Dt);
+        FSimulatedModelDriver<InputType, StateType>::History.UpdateTimeWaitingToBeConsumed(Dt);
         EmitInputs();
 
-        InterpolateStateGameThread(SimTime, Dt);
+        FSimulatedModelDriver<InputType, StateType>::InterpolateStateGameThread(SimTime, Dt);
 
-        if (bHasSimulationEndedGameThread) {
-            Delegate->SetTimeDilation(1.0);
-            HandleSimulationEndGameThread();
+        if (FSimulatedModelDriver<InputType, StateType>::bHasSimulationEndedGameThread) {
+            FSimulatedModelDriver<InputType, StateType>::Delegate->SetTimeDilation(1.0);
+            FSimulatedModelDriver<InputType, StateType>::HandleSimulationEndGameThread();
 
             return;
         }
 
         // If the input buffer is really unhealthy, the client needs to catch up quickly
-        Chaos::FReal NewTimeDilation = 1.0 + LastControlPacket.GetTimeDilation() * Settings->MaxAutoProxyTimeDilation;
+        Chaos::FReal NewTimeDilation = 1.0 + LastControlPacket.GetTimeDilation() * FSimulatedModelDriver<InputType, StateType>::Settings->MaxAutoProxyTimeDilation;
 
         if (LastControlPacket.bIsInputBufferVeryUnhealthy) {
             UE_LOG(LogTemp, Warning, TEXT("Input buffer is very unhealthy, so the auto proxy will be sped up significantly"));
-            NewTimeDilation = Settings->AutoProxyMaxSpeedupTimescale;
+            NewTimeDilation = FSimulatedModelDriver<InputType, StateType>::Settings->AutoProxyMaxSpeedupTimescale;
         }
 
         {
             FScopeLock Lock(&PendingAuthorityStatesMutex);
             if (!PendingAuthorityStates.IsEmpty()) {
-                const int32 CurrentTickNumber = History.GetLatestTickNumber();
+                const int32 CurrentTickNumber = FSimulatedModelDriver<InputType, StateType>::History.GetLatestTickNumber();
 
                 // If the auto proxy is far ahead of the authority, slow down time significantly so the authority can catch up
                 if (PendingAuthorityStates.Last().InputPacketTickNumber <= CurrentTickNumber - RewindBufferSize) {
                     UE_LOG(LogTemp, Warning, TEXT("Auto proxy is too far ahead of the authority"));
-                    NewTimeDilation = Settings->AutoProxyAuthorityCatchupTimescale;
+                    NewTimeDilation = FSimulatedModelDriver<InputType, StateType>::Settings->AutoProxyAuthorityCatchupTimescale;
                 }
             }
         }
 
-        Delegate->SetTimeDilation(NewTimeDilation);
+        FSimulatedModelDriver<InputType, StateType>::Delegate->SetTimeDilation(NewTimeDilation);
     }
 
     template <typename InputType, typename StateType>
@@ -232,7 +232,7 @@ namespace ClientPrediction {
         FScopeLock Lock(&InputSendMutex);
 
         const float EstimatedDisplayedServerTick = StateManager != nullptr ? StateManager->GetEstimatedCurrentServerTick() : INDEX_NONE;
-        float EstimatedOffsetFromWaitingInBuffer = History.GetAverageTimeToConsumeState() / Settings->FixedDt;
+        float EstimatedOffsetFromWaitingInBuffer = FSimulatedModelDriver<InputType, StateType>::History.GetAverageTimeToConsumeState() / FSimulatedModelDriver<InputType, StateType>::Settings->FixedDt;
 
         while (!InputSendQueue.IsEmpty()) {
             FInputPacketWrapper<InputType> Packet;
@@ -248,17 +248,17 @@ namespace ClientPrediction {
 
             // Bundle the new packet up with the most recent inputs and send it to the authority
             InputSlidingWindow.Add(Packet);
-            while (InputSlidingWindow.Num() > Settings->InputSlidingWindowSize) {
+            while (InputSlidingWindow.Num() > FSimulatedModelDriver<InputType, StateType>::Settings->InputSlidingWindowSize) {
                 InputSlidingWindow.RemoveAt(0);
             }
 
-            Delegate->EmitInputPackets(InputSlidingWindow);
+            FSimulatedModelDriver<InputType, StateType>::Delegate->EmitInputPackets(InputSlidingWindow);
         }
     }
 
     template <typename InputType, typename StateType>
     int32 FModelAutoProxyDriver<InputType, StateType>::GetRewindTickNumber(int32 CurrentTickNumber, const Chaos::FRewindData& RewindData) {
-        if (HasSimulationEndedOnPhysicsThread(CurrentTickNumber)) { return INDEX_NONE; }
+        if (FSimulatedModelDriver<InputType, StateType>::HasSimulationEndedOnPhysicsThread(CurrentTickNumber)) { return INDEX_NONE; }
 
         FScopeLock Lock(&PendingAuthorityStatesMutex);
 
@@ -289,7 +289,7 @@ namespace ClientPrediction {
 
             // Check against the historic state
             FStateWrapper<StateType> HistoricState;
-            const bool bHadHistoricState = History.GetStateAtTick(AuthLocalTickNumber, HistoricState);
+            const bool bHadHistoricState = FSimulatedModelDriver<InputType, StateType>::History.GetStateAtTick(AuthLocalTickNumber, HistoricState);
             check(bHadHistoricState);
             check(HistoricState.TickNumber == AuthLocalTickNumber)
 
@@ -308,9 +308,9 @@ namespace ClientPrediction {
 
                 // TODO this needs some work, since during a resim the events might not be dirty and won't get re-added to the queue.
                 // Remove events for ticks that will be re-simulated, since their state / events might be different
-                FScopeLock EventQueueLock(&EventQueueMutex);
-                while (!EventQueue.IsEmpty() && EventQueue.Last().State.TickNumber >= PendingCorrection.TickNumber) {
-                    EventQueue.RemoveAt(EventQueue.Num() - 1);
+                FScopeLock EventQueueLock(&(FSimulatedModelDriver<InputType, StateType>::EventQueueMutex));
+                while (!FSimulatedModelDriver<InputType, StateType>::EventQueue.IsEmpty() && FSimulatedModelDriver<InputType, StateType>::EventQueue.Last().State.TickNumber >= PendingCorrection.TickNumber) {
+                    FSimulatedModelDriver<InputType, StateType>::EventQueue.RemoveAt(FSimulatedModelDriver<InputType, StateType>::EventQueue.Num() - 1);
                 }
 
                 return AuthLocalTickNumber + 1;

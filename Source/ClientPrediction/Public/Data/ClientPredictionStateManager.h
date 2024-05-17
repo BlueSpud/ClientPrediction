@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Serialization/MemoryWriter.h"
 
 #include "ClientPredictionModelId.h"
 #include "ClientPredictionDataCompleteness.h"

@@ -54,8 +54,9 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     FModelAuthDriver<InputType, StateType>::FModelAuthDriver(UPrimitiveComponent* UpdatedComponent, IModelDriverDelegate<InputType, StateType>* Delegate,
                                                              FRepProxy& ControlRepProxy, FRepProxy& FinalStateRepProxy, int32 RewindBufferSize, const bool bTakesInput)
-        : FSimulatedModelDriver(UpdatedComponent, Delegate, RewindBufferSize), ControlRepProxy(ControlRepProxy), FinalStateRepProxy(FinalStateRepProxy),
-          bTakesInput(bTakesInput), InputBuf(Settings, bTakesInput) {}
+        : FSimulatedModelDriver<InputType, StateType>(UpdatedComponent, Delegate, RewindBufferSize), ControlRepProxy(ControlRepProxy),
+          FinalStateRepProxy(FinalStateRepProxy),
+          bTakesInput(bTakesInput), InputBuf(FSimulatedModelDriver<InputType, StateType>::Settings, bTakesInput) {}
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::Register(FWorldManager* WorldManager, const FClientPredictionModelId& ModelId) {
@@ -71,12 +72,12 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PrepareTickGameThread(int32 TickNumber, Chaos::FReal Dt) {
-        if (HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
+        if (FSimulatedModelDriver<InputType, StateType>::HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
 
         if (bTakesInput) {
             FInputPacketWrapper<InputType> Packet;
             Packet.PacketNumber = TickNumber;
-            Delegate->ProduceInput(Packet.Body);
+            FSimulatedModelDriver<InputType, StateType>::Delegate->ProduceInput(Packet.Body);
 
             InputBuf.QueueInputPackets({Packet});
         }
@@ -84,55 +85,60 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PreTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt, Chaos::FReal StartTime, Chaos::FReal EndTime) {
-        if (HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
+        if (FSimulatedModelDriver<InputType, StateType>::HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
 
-        if (CurrentInput.PacketNumber != INDEX_NONE || InputBuf.GetBufferSize() >= static_cast<uint32>(Settings->DesiredInputBufferSize) || bTakesInput) {
-            InputBuf.GetNextInputPacket(CurrentInput, Dt);
+        if (FSimulatedModelDriver<InputType, StateType>::CurrentInput.PacketNumber != INDEX_NONE || InputBuf.GetBufferSize() >= static_cast<uint32>(FSimulatedModelDriver<
+            InputType, StateType>::Settings->DesiredInputBufferSize) || bTakesInput) {
+            InputBuf.GetNextInputPacket(FSimulatedModelDriver<InputType, StateType>::CurrentInput, Dt);
         }
 
-        if (bTakesInput) { Delegate->ModifyInputPhysicsThread(CurrentInput.Body, CurrentState, Dt); }
-        PreTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
+        if (bTakesInput) {
+            FSimulatedModelDriver<InputType, StateType>::Delegate->ModifyInputPhysicsThread(FSimulatedModelDriver<InputType, StateType>::CurrentInput.Body,
+                                                                                            FSimulatedModelDriver<InputType, StateType>::CurrentState, Dt);
+        }
+        FSimulatedModelDriver<InputType, StateType>::PreTickSimulateWithCurrentInput(TickNumber, Dt, StartTime, EndTime);
 
-        if (Delegate->IsSimulationOver(CurrentState.Body)) {
-            CurrentState.bIsFinalState = true;
-            FinalTick = TickNumber;
+        if (FSimulatedModelDriver<InputType, StateType>::Delegate->IsSimulationOver(FSimulatedModelDriver<InputType, StateType>::CurrentState.Body)) {
+            FSimulatedModelDriver<InputType, StateType>::CurrentState.bIsFinalState = true;
+            FSimulatedModelDriver<InputType, StateType>::FinalTick = TickNumber;
 
-            if (auto* Handle = GetPhysicsHandle()) {
+            if (auto* Handle = FSimulatedModelDriver<InputType, StateType>::GetPhysicsHandle()) {
                 Handle->SetObjectState(Chaos::EObjectStateType::Kinematic);
                 Handle->SetV(Chaos::FVec3::ZeroVector);
                 Handle->SetW(Chaos::FVec3::ZeroVector);
             }
         }
 
-        if (bTakesInput || CurrentInput.EstimatedDisplayedServerTick == INDEX_NONE) {
+        if (bTakesInput || FSimulatedModelDriver<InputType, StateType>::CurrentInput.EstimatedDisplayedServerTick == static_cast<float>(INDEX_NONE)) {
             return;
         }
 
         // If this value is in the future, it means that the client is running too far ahead of the server and will eventually be slowed down,
         // or it means that the client is cheating.
-        if (CurrentInput.EstimatedDisplayedServerTick >= TickNumber) {
-            CurrentState.EstimatedAutoProxyDelay = 0.0;
+        if (FSimulatedModelDriver<InputType, StateType>::CurrentInput.EstimatedDisplayedServerTick >= TickNumber) {
+            FSimulatedModelDriver<InputType, StateType>::CurrentState.EstimatedAutoProxyDelay = 0.0;
             return;
         }
 
-        const int32 TickDelta = TickNumber - CurrentInput.EstimatedDisplayedServerTick;
-        CurrentState.EstimatedAutoProxyDelay = static_cast<Chaos::FReal>(TickDelta) * Settings->FixedDt;
+        const int32 TickDelta = TickNumber - FSimulatedModelDriver<InputType, StateType>::CurrentInput.EstimatedDisplayedServerTick;
+        FSimulatedModelDriver<InputType, StateType>::CurrentState.EstimatedAutoProxyDelay = static_cast<Chaos::FReal>(TickDelta) * FSimulatedModelDriver<
+            InputType, StateType>::Settings->FixedDt;
     }
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PostTickPhysicsThread(int32 TickNumber, Chaos::FReal Dt) {
-        if (HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
+        if (FSimulatedModelDriver<InputType, StateType>::HasSimulationEndedOnPhysicsThread(TickNumber)) { return; }
 
-        PostTickSimulateWithCurrentInput(TickNumber, Dt);
+        FSimulatedModelDriver<InputType, StateType>::PostTickSimulateWithCurrentInput(TickNumber, Dt);
     }
 
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::PostPhysicsGameThread(Chaos::FReal SimTime, Chaos::FReal Dt) {
-        if (bHasSimulationEndedGameThread) { return; }
+        if (FSimulatedModelDriver<InputType, StateType>::bHasSimulationEndedGameThread) { return; }
 
-        InterpolateStateGameThread(SimTime, Dt);
+        FSimulatedModelDriver<InputType, StateType>::InterpolateStateGameThread(SimTime, Dt);
 
-        if (bHasSimulationEndedGameThread) {
+        if (FSimulatedModelDriver<InputType, StateType>::bHasSimulationEndedGameThread) {
             HandleSimulationEndGameThread();
             return;
         }
@@ -143,7 +149,7 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::HandleSimulationEndGameThread() {
         FStateWrapper<StateType> FinalState;
-        History.GetStateAtTick(FinalTick, FinalState);
+        FSimulatedModelDriver<InputType, StateType>::History.GetStateAtTick(FSimulatedModelDriver<InputType, StateType>::FinalTick, FinalState);
 
         FinalStateRepProxy.SerializeFunc = [=](FArchive& Ar) mutable { FinalState.NetSerialize(Ar, EDataCompleteness::kFull); };
         FinalStateRepProxy.Dispatch();
@@ -153,9 +159,9 @@ namespace ClientPrediction {
 
     template <typename InputType, typename StateType>
     bool FModelAuthDriver<InputType, StateType>::ProduceUnserializedStateForTick(const int32 Tick, FStateWrapper<StateType>& State, bool& bShouldBeReliable) {
-        if (HasSimulationEndedOnPhysicsThread(Tick)) { return false; }
+        if (FSimulatedModelDriver<InputType, StateType>::HasSimulationEndedOnPhysicsThread(Tick)) { return false; }
 
-        State = CurrentState;
+        State = FSimulatedModelDriver<InputType, StateType>::CurrentState;
         bShouldBeReliable = State.Events != 0 || State.bIsFinalState;
 
         return true;
@@ -164,17 +170,19 @@ namespace ClientPrediction {
     template <typename InputType, typename StateType>
     void FModelAuthDriver<InputType, StateType>::SuggestTimeDilation() {
         const int16 InputBufferSize = InputBuf.GetBufferSize();
-        const int16 AdjustedDesiredInputBufferSize = Settings->DesiredInputBufferSize + InputBuf.GetNumRecentlyDroppedInputPackets();
+        const int16 AdjustedDesiredInputBufferSize = FSimulatedModelDriver<InputType, StateType>::Settings->DesiredInputBufferSize + InputBuf.
+            GetNumRecentlyDroppedInputPackets();
 
         const int16 DeltaFromTarget = InputBufferSize - AdjustedDesiredInputBufferSize;
-        const Chaos::FReal DeltaFromTargetPercentage = static_cast<Chaos::FReal>(DeltaFromTarget) / static_cast<Chaos::FReal>(Settings->DesiredInputBufferSize);
+        const Chaos::FReal DeltaFromTargetPercentage = static_cast<Chaos::FReal>(DeltaFromTarget) / static_cast<Chaos::FReal>(FSimulatedModelDriver<
+            InputType, StateType>::Settings->DesiredInputBufferSize);
         const Chaos::FReal TargetTimeDilation = -FMath::Sign(DeltaFromTarget);
 
-        LastSuggestedTimeDilation = FMath::Lerp(LastSuggestedTimeDilation, TargetTimeDilation, Settings->TimeDilationAlpha);
+        LastSuggestedTimeDilation = FMath::Lerp(LastSuggestedTimeDilation, TargetTimeDilation, FSimulatedModelDriver<InputType, StateType>::Settings->TimeDilationAlpha);
 
         FControlPacket ControlPacket{};
         ControlPacket.SetTimeDilation(LastSuggestedTimeDilation);
-        ControlPacket.bIsInputBufferVeryUnhealthy = DeltaFromTargetPercentage < -Settings->UnhealthyInputBufferPercentage;
+        ControlPacket.bIsInputBufferVeryUnhealthy = DeltaFromTargetPercentage < -FSimulatedModelDriver<InputType, StateType>::Settings->UnhealthyInputBufferPercentage;
 
         ControlRepProxy.SerializeFunc = [=](FArchive& Ar) mutable { ControlPacket.NetSerialize(Ar); };
         ControlRepProxy.Dispatch();
