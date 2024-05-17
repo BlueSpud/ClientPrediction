@@ -43,8 +43,8 @@ namespace ClientPrediction {
         Solver = PhysScene->GetSolver();
         if (Solver == nullptr) { return; }
 
-        SetupPhysicsScene();
-        CreateCallbacks();
+        // SetupPhysicsScene();
+        // CreateCallbacks();
     }
 
     void FWorldManager::SetupPhysicsScene() {
