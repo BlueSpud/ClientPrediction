@@ -49,3 +49,7 @@ void UClientPredictionV2Component::DestroySimulation() {
         SimCoordinator = nullptr;
     }
 }
+
+void UClientPredictionV2Component::ServerRecvInput_Implementation(const ClientPrediction::FInputBundle& Bundle) {
+    if (SimInput != nullptr) { SimInput->ConsumeInputBundle(Bundle); }
+}

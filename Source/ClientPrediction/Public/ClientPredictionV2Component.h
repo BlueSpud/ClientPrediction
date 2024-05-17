@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "ClientPredictionSimCoordinator.h"
+#include "ClientPredictionSimInput.h"
 
 #include "ClientPredictionV2Component.generated.h"
 
@@ -19,17 +20,28 @@ public:
     virtual void UninitializeComponent() override;
 
     template <typename Traits>
-    void CreateSimulation();
+    ClientPrediction::FSimDelegates<Traits>& CreateSimulation();
 
 private:
     void DestroySimulation();
 
+    UFUNCTION(Server, Unreliable)
+    void ServerRecvInput(const ClientPrediction::FInputBundle& Bundle);
+
     UPROPERTY()
     class UPrimitiveComponent* UpdatedComponent;
+
     TUniquePtr<ClientPrediction::USimCoordinatorBase> SimCoordinator;
+    TSharedPtr<ClientPrediction::USimInputBase> SimInput;
 };
 
 template <typename Traits>
-void UClientPredictionV2Component::CreateSimulation() {
-    SimCoordinator = MakeUnique<ClientPrediction::USimCoordinator<Traits>>();
+ClientPrediction::FSimDelegates<Traits>& UClientPredictionV2Component::CreateSimulation() {
+    TSharedPtr<ClientPrediction::USimInput<Traits>> InputImpl = MakeShared<ClientPrediction::USimInput<Traits>>();
+    SimInput = InputImpl;
+
+    TUniquePtr<ClientPrediction::USimCoordinator<Traits>> Impl = MakeUnique<ClientPrediction::USimCoordinator<Traits>>(InputImpl);
+    SimCoordinator = MoveTemp(Impl);
+
+    return Impl->GetSimDelegates();
 }

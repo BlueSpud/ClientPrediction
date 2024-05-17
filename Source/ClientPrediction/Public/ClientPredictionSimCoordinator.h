@@ -4,29 +4,28 @@
 #include "PBDRigidsSolver.h"
 #include "Physics/NetworkPhysicsComponent.h"
 
+#include "ClientPredictionDelegate.h"
+#include "ClientPredictionSimInput.h"
+#include "ClientPredictionTick.h"
+
 namespace ClientPrediction {
-    struct FClientPredictionInputBuf {};
-
-    struct FNetTickInfo {
-        int32 LocalTick = INDEX_NONE;
-        int32 ServerTick = INDEX_NONE;
-
-        bool bIsResim = false;
-        Chaos::FReal Dt = 0.0;
-    };
-
-    class USimCoordinatorBase {
+    struct USimCoordinatorBase {
     public:
         virtual ~USimCoordinatorBase() = default;
-        virtual void Initialize(UPrimitiveComponent* NewUpdatedComponent, bool bNowHasNetConnection, ENetRole NewRole) = 0;
+        virtual void Initialize(UPrimitiveComponent* NewUpdatedComponent, bool bNowHasNetConnection, ENetRole NewSimRole) = 0;
         virtual void Destroy() = 0;
     };
 
     template <typename Traits>
     class USimCoordinator : public USimCoordinatorBase {
     public:
+        explicit USimCoordinator(const TSharedPtr<USimInput<Traits>>& SimInput);
         virtual ~USimCoordinator() override = default;
-        virtual void Initialize(UPrimitiveComponent* NewUpdatedComponent, bool bNowHasNetConnection, ENetRole NewRole) override;
+
+    private:
+        TSharedPtr<USimInput<Traits>> SimInput;
+
+        virtual void Initialize(UPrimitiveComponent* NewUpdatedComponent, bool bNowHasNetConnection, ENetRole NewSimRole) override;
         virtual void Destroy() override;
 
     private:
@@ -34,7 +33,6 @@ namespace ClientPrediction {
         void PostAdvance(Chaos::FReal Dt);
 
         bool BuildTickInfo(FNetTickInfo& Info) const;
-        bool ShouldProduceInputForTick(FNetTickInfo& Info) const;
 
         FDelegateHandle PreAdvanceDelegate;
         FDelegateHandle PostAdvanceDelegate;
@@ -45,13 +43,24 @@ namespace ClientPrediction {
         Chaos::FPhysicsSolver* GetSolver() const;
         FNetworkPhysicsCallback* GetPhysCallback() const;
 
+    public:
+        TSharedPtr<FSimDelegates<Traits>> GetSimDelegates() { return SimDelegates; };
+
+    private:
+        TSharedPtr<FSimDelegates<Traits>> SimDelegates = MakeShared<TSharedPtr<FSimDelegates<Traits>>>;
+
         class UPrimitiveComponent* UpdatedComponent = nullptr;
         bool bHasNetConnection = false;
-        ENetRole Role = ROLE_None;
+        ENetRole SimRole = ROLE_None;
     };
 
     template <typename Traits>
-    void USimCoordinator<Traits>::Initialize(UPrimitiveComponent* NewUpdatedComponent, bool bNowHasNetConnection, ENetRole NewRole) {
+    USimCoordinator<Traits>::USimCoordinator(const TSharedPtr<ClientPrediction::USimInput<Traits>>& SimInput) : SimInput(SimInput) {
+        SimInput->SetSimDelegates(SimDelegates);
+    }
+
+    template <typename Traits>
+    void USimCoordinator<Traits>::Initialize(UPrimitiveComponent* NewUpdatedComponent, bool bNowHasNetConnection, ENetRole NewSimRole) {
         Chaos::FPhysicsSolver* Solver = GetSolver();
         if (Solver == nullptr) { return; }
 
@@ -63,7 +72,7 @@ namespace ClientPrediction {
 
         UpdatedComponent = NewUpdatedComponent;
         bHasNetConnection = bNowHasNetConnection;
-        Role = NewRole;
+        SimRole = NewSimRole;
     }
 
     template <typename Traits>
@@ -98,10 +107,15 @@ namespace ClientPrediction {
         Chaos::FRewindData* RewindData = Solver->GetRewindData();
         if (RewindData == nullptr) { return false; }
 
+        Info.bHasNetConnection = bHasNetConnection;
         Info.bIsResim = Solver->GetEvolution()->IsResimming();
+
         Info.Dt = Solver->GetAsyncDeltaTime();
 
-        if (Role != ROLE_Authority) {
+        Info.UpdatedComponent = UpdatedComponent;
+        Info.SimRole = SimRole;
+
+        if (SimRole != ROLE_Authority) {
             if (APlayerController* PC = GetPlayerController()) {
                 FAsyncPhysicsTimestamp SyncedTimestamp = PC->GetPhysicsTimestamp();
                 Info.LocalTick = SyncedTimestamp.LocalFrame;
@@ -115,11 +129,6 @@ namespace ClientPrediction {
         }
 
         return true;
-    }
-
-    template <typename Traits>
-    bool USimCoordinator<Traits>::ShouldProduceInputForTick(FNetTickInfo& Info) const {
-        return Role == ROLE_AutonomousProxy || (Role == ROLE_Authority && !bHasNetConnection);
     }
 
     template <typename Traits>
