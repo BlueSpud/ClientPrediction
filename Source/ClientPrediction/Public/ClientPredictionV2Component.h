@@ -38,10 +38,14 @@ private:
 template <typename Traits>
 TSharedPtr<ClientPrediction::FSimDelegates<Traits>> UClientPredictionV2Component::CreateSimulation() {
     TSharedPtr<ClientPrediction::USimInput<Traits>> InputImpl = MakeShared<ClientPrediction::USimInput<Traits>>();
-    SimInput = InputImpl;
+    InputImpl->EmitInputBundleDelegate.BindUFunction(this, TEXT("ServerRecvInput"));
 
     TUniquePtr<ClientPrediction::USimCoordinator<Traits>> Impl = MakeUnique<ClientPrediction::USimCoordinator<Traits>>(InputImpl);
+
+    TSharedPtr<ClientPrediction::FSimDelegates<Traits>> Delegates = Impl->GetSimDelegates();
+
+    SimInput = MoveTemp(InputImpl);
     SimCoordinator = MoveTemp(Impl);
 
-    return Impl->GetSimDelegates();
+    return Delegates;
 }

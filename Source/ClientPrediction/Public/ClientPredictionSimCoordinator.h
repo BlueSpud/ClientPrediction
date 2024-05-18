@@ -29,13 +29,17 @@ namespace ClientPrediction {
         virtual void Destroy() override;
 
     private:
-        void PreAdvance(const int32 PhysicsStep);
+        void InjectInputsGameThread(const int32 StartTick, const int32 NumTicks);
+        void PreAdvance(const int32 TickNum);
         void PostAdvance(Chaos::FReal Dt);
+        void OnPhysScenePostTick(FChaosScene* Scene);
 
-        bool BuildTickInfo(FNetTickInfo& Info) const;
+        bool BuildTickInfo(int32 TickNum, FNetTickInfo& Info) const;
 
+        FDelegateHandle InjectInputsGameThreadDelegate;
         FDelegateHandle PreAdvanceDelegate;
         FDelegateHandle PostAdvanceDelegate;
+        FDelegateHandle PhysScenePostTickDelegate;
 
         UWorld* GetWorld() const;
         APlayerController* GetPlayerController() const;
@@ -61,51 +65,85 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimCoordinator<Traits>::Initialize(UPrimitiveComponent* NewUpdatedComponent, bool bNowHasNetConnection, ENetRole NewSimRole) {
+        UpdatedComponent = NewUpdatedComponent;
+        bHasNetConnection = bNowHasNetConnection;
+        SimRole = NewSimRole;
+
+        FPhysScene* PhysScene = GetPhysScene();
+        if (PhysScene == nullptr) { return; }
+
         Chaos::FPhysicsSolver* Solver = GetSolver();
         if (Solver == nullptr) { return; }
 
         FNetworkPhysicsCallback* PhysCallback = GetPhysCallback();
         if (PhysCallback == nullptr) { return; }
 
+        InjectInputsGameThreadDelegate = PhysCallback->InjectInputsExternal.AddRaw(this, &USimCoordinator::InjectInputsGameThread);
         PreAdvanceDelegate = PhysCallback->PreProcessInputsInternal.AddRaw(this, &USimCoordinator::PreAdvance);
         PostAdvanceDelegate = Solver->AddPostAdvanceCallback(FSolverPostAdvance::FDelegate::CreateRaw(this, &USimCoordinator::PostAdvance));
-
-        UpdatedComponent = NewUpdatedComponent;
-        bHasNetConnection = bNowHasNetConnection;
-        SimRole = NewSimRole;
+        PhysScenePostTickDelegate = PhysScene->OnPhysScenePostTick.AddRaw(this, &USimCoordinator::OnPhysScenePostTick);
     }
 
     template <typename Traits>
     void USimCoordinator<Traits>::Destroy() {
+        FPhysScene* PhysScene = GetPhysScene();
+        if (PhysScene == nullptr) { return; }
+
         Chaos::FPhysicsSolver* Solver = GetSolver();
         if (Solver == nullptr) { return; }
 
         FNetworkPhysicsCallback* PhysCallback = GetPhysCallback();
         if (PhysCallback == nullptr) { return; }
 
+        PhysCallback->InjectInputsExternal.Remove(InjectInputsGameThreadDelegate);
         PhysCallback->PreProcessInputsInternal.Remove(PreAdvanceDelegate);
         Solver->RemovePostAdvanceCallback(PostAdvanceDelegate);
+        PhysScene->OnPhysScenePostTick.Remove(PhysScenePostTickDelegate);
     }
 
     template <typename Traits>
-    void USimCoordinator<Traits>::PreAdvance(const int32 PhysicsStep) {
+    void USimCoordinator<Traits>::InjectInputsGameThread(const int32 StartTick, const int32 NumTicks) {
+        if (SimInput == nullptr) { return; }
+
+        for (int32 TickNum = StartTick; TickNum < StartTick + NumTicks; ++TickNum) {
+            FNetTickInfo TickInfo{};
+            if (!BuildTickInfo(TickNum, TickInfo)) {
+                continue;
+            }
+
+            SimInput->InjectInputsGameThread(TickInfo);
+        }
+    }
+
+    template <typename Traits>
+    void USimCoordinator<Traits>::PreAdvance(const int32 TickNum) {
+        if (SimInput == nullptr) { return; }
+
         FNetTickInfo TickInfo{};
-        if (!BuildTickInfo(TickInfo)) { return; }
+        if (!BuildTickInfo(TickNum, TickInfo)) { return; }
+
+        SimInput->PrepareInputPhysicsThread(TickInfo);
     }
 
     template <typename Traits>
     void USimCoordinator<Traits>::PostAdvance(Chaos::FReal Dt) {
+        Chaos::FPhysicsSolver* Solver = GetSolver();
+        if (Solver == nullptr) { return; }
+
         FNetTickInfo TickInfo{};
-        if (!BuildTickInfo(TickInfo)) { return; }
+        if (!BuildTickInfo(Solver->GetCurrentFrame(), TickInfo)) { return; }
     }
 
     template <typename Traits>
-    bool USimCoordinator<Traits>::BuildTickInfo(FNetTickInfo& Info) const {
+    void USimCoordinator<Traits>::OnPhysScenePostTick(FChaosScene* Scene) {
+        if (SimInput == nullptr) { return; }
+        SimInput->EmitInputs();
+    }
+
+    template <typename Traits>
+    bool USimCoordinator<Traits>::BuildTickInfo(int32 TickNum, FNetTickInfo& Info) const {
         Chaos::FPhysicsSolver* Solver = GetSolver();
         if (Solver == nullptr) { return false; }
-
-        Chaos::FRewindData* RewindData = Solver->GetRewindData();
-        if (RewindData == nullptr) { return false; }
 
         Info.bHasNetConnection = bHasNetConnection;
         Info.bIsResim = Solver->GetEvolution()->IsResimming();
@@ -115,17 +153,16 @@ namespace ClientPrediction {
         Info.UpdatedComponent = UpdatedComponent;
         Info.SimRole = SimRole;
 
-        if (SimRole != ROLE_Authority) {
+        if (SimRole != ENetRole::ROLE_Authority) {
             if (APlayerController* PC = GetPlayerController()) {
-                FAsyncPhysicsTimestamp SyncedTimestamp = PC->GetPhysicsTimestamp();
-                Info.LocalTick = SyncedTimestamp.LocalFrame;
-                Info.ServerTick = SyncedTimestamp.ServerFrame;
+                Info.LocalTick = TickNum;
+                Info.ServerTick = TickNum + PC->GetNetworkPhysicsTickOffset();
             }
             else { return false; }
         }
         else {
-            Info.LocalTick = RewindData->CurrentFrame();
-            Info.ServerTick = RewindData->CurrentFrame();
+            Info.LocalTick = TickNum;
+            Info.ServerTick = TickNum;
         }
 
         return true;
