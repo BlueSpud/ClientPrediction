@@ -2,6 +2,7 @@
 
 #include "ClientPredictionSimCoordinator.h"
 #include "ClientPredictionSimInput.h"
+#include "ClientPredictionSimState.h"
 
 #include "ClientPredictionV2Component.generated.h"
 
@@ -31,20 +32,22 @@ private:
     UPROPERTY()
     class UPrimitiveComponent* UpdatedComponent;
 
-    TUniquePtr<ClientPrediction::USimCoordinatorBase> SimCoordinator;
     TSharedPtr<ClientPrediction::USimInputBase> SimInput;
+    TSharedPtr<ClientPrediction::USimStateBase> SimState;
+    TUniquePtr<ClientPrediction::USimCoordinatorBase> SimCoordinator;
 };
 
 template <typename Traits>
 TSharedPtr<ClientPrediction::FSimDelegates<Traits>> UClientPredictionV2Component::CreateSimulation() {
     TSharedPtr<ClientPrediction::USimInput<Traits>> InputImpl = MakeShared<ClientPrediction::USimInput<Traits>>();
-    InputImpl->EmitInputBundleDelegate.BindUFunction(this, TEXT("ServerRecvInput"));
-
-    TUniquePtr<ClientPrediction::USimCoordinator<Traits>> Impl = MakeUnique<ClientPrediction::USimCoordinator<Traits>>(InputImpl);
-
+    TSharedPtr<ClientPrediction::USimState<Traits>> StateImpl = MakeShared<ClientPrediction::USimState<Traits>>();
+    TUniquePtr<ClientPrediction::USimCoordinator<Traits>> Impl = MakeUnique<ClientPrediction::USimCoordinator<Traits>>(InputImpl, StateImpl);
     TSharedPtr<ClientPrediction::FSimDelegates<Traits>> Delegates = Impl->GetSimDelegates();
 
+    InputImpl->EmitInputBundleDelegate.BindUFunction(this, TEXT("ServerRecvInput"));
+
     SimInput = MoveTemp(InputImpl);
+    SimState = MoveTemp(StateImpl);
     SimCoordinator = MoveTemp(Impl);
 
     return Delegates;

@@ -6,6 +6,7 @@
 
 #include "ClientPredictionDelegate.h"
 #include "ClientPredictionSimInput.h"
+#include "ClientPredictionSimState.h"
 #include "ClientPredictionTick.h"
 
 namespace ClientPrediction {
@@ -17,26 +18,35 @@ namespace ClientPrediction {
     };
 
     template <typename Traits>
-    class USimCoordinator : public USimCoordinatorBase {
+    class USimCoordinator : public USimCoordinatorBase, public Chaos::ISimCallbackObject {
     public:
-        explicit USimCoordinator(const TSharedPtr<USimInput<Traits>>& SimInput);
+        explicit USimCoordinator(const TSharedPtr<USimInput<Traits>>& SimInput, const TSharedPtr<USimState<Traits>>& SimState);
         virtual ~USimCoordinator() override = default;
 
     private:
         TSharedPtr<USimInput<Traits>> SimInput;
+        TSharedPtr<USimState<Traits>> SimState;
 
         virtual void Initialize(UPrimitiveComponent* NewUpdatedComponent, bool bNowHasNetConnection, ENetRole NewSimRole) override;
         virtual void Destroy() override;
 
+    public:
+        virtual void FreeOutputData_External(Chaos::FSimCallbackOutput* Output) override {}
+        virtual void FreeInputData_Internal(Chaos::FSimCallbackInput* Input) override {}
+
     private:
-        void InjectInputsGameThread(const int32 StartTick, const int32 NumTicks);
+        virtual Chaos::FSimCallbackInput* AllocateInputData_External() override { return nullptr; }
+        virtual void OnPreSimulate_Internal() override {}
+        virtual int32 TriggerRewindIfNeeded_Internal(int32 LastCompletedStep) override;
+
+        void InjectInputsGT(const int32 StartTick, const int32 NumTicks);
         void PreAdvance(const int32 TickNum);
         void PostAdvance(Chaos::FReal Dt);
         void OnPhysScenePostTick(FChaosScene* Scene);
 
         bool BuildTickInfo(int32 TickNum, FNetTickInfo& Info) const;
 
-        FDelegateHandle InjectInputsGameThreadDelegate;
+        FDelegateHandle InjectInputsGTDelegate;
         FDelegateHandle PreAdvanceDelegate;
         FDelegateHandle PostAdvanceDelegate;
         FDelegateHandle PhysScenePostTickDelegate;
@@ -59,8 +69,10 @@ namespace ClientPrediction {
     };
 
     template <typename Traits>
-    USimCoordinator<Traits>::USimCoordinator(const TSharedPtr<ClientPrediction::USimInput<Traits>>& SimInput) : SimInput(SimInput) {
+    USimCoordinator<Traits>::USimCoordinator(const TSharedPtr<USimInput<Traits>>& SimInput, const TSharedPtr<USimState<Traits>>& SimState) :
+        Chaos::ISimCallbackObject(Chaos::ESimCallbackOptions::Rewind), SimInput(SimInput), SimState(SimState) {
         SimInput->SetSimDelegates(SimDelegates);
+        SimState->SetSimDelegates(SimDelegates);
     }
 
     template <typename Traits>
@@ -72,16 +84,18 @@ namespace ClientPrediction {
         FPhysScene* PhysScene = GetPhysScene();
         if (PhysScene == nullptr) { return; }
 
-        Chaos::FPhysicsSolver* Solver = GetSolver();
-        if (Solver == nullptr) { return; }
+        Chaos::FPhysicsSolver* PhysSolver = GetSolver();
+        if (PhysSolver == nullptr) { return; }
 
         FNetworkPhysicsCallback* PhysCallback = GetPhysCallback();
         if (PhysCallback == nullptr) { return; }
 
-        InjectInputsGameThreadDelegate = PhysCallback->InjectInputsExternal.AddRaw(this, &USimCoordinator::InjectInputsGameThread);
+        InjectInputsGTDelegate = PhysCallback->InjectInputsExternal.AddRaw(this, &USimCoordinator::InjectInputsGT);
         PreAdvanceDelegate = PhysCallback->PreProcessInputsInternal.AddRaw(this, &USimCoordinator::PreAdvance);
-        PostAdvanceDelegate = Solver->AddPostAdvanceCallback(FSolverPostAdvance::FDelegate::CreateRaw(this, &USimCoordinator::PostAdvance));
+        PostAdvanceDelegate = PhysSolver->AddPostAdvanceCallback(FSolverPostAdvance::FDelegate::CreateRaw(this, &USimCoordinator::PostAdvance));
         PhysScenePostTickDelegate = PhysScene->OnPhysScenePostTick.AddRaw(this, &USimCoordinator::OnPhysScenePostTick);
+
+        PhysCallback->RegisterRewindableSimCallback_Internal(this);
     }
 
     template <typename Traits>
@@ -89,20 +103,28 @@ namespace ClientPrediction {
         FPhysScene* PhysScene = GetPhysScene();
         if (PhysScene == nullptr) { return; }
 
-        Chaos::FPhysicsSolver* Solver = GetSolver();
-        if (Solver == nullptr) { return; }
+        Chaos::FPhysicsSolver* PhysSolver = GetSolver();
+        if (PhysSolver == nullptr) { return; }
 
         FNetworkPhysicsCallback* PhysCallback = GetPhysCallback();
         if (PhysCallback == nullptr) { return; }
 
-        PhysCallback->InjectInputsExternal.Remove(InjectInputsGameThreadDelegate);
+        PhysCallback->InjectInputsExternal.Remove(InjectInputsGTDelegate);
         PhysCallback->PreProcessInputsInternal.Remove(PreAdvanceDelegate);
-        Solver->RemovePostAdvanceCallback(PostAdvanceDelegate);
+        PhysSolver->RemovePostAdvanceCallback(PostAdvanceDelegate);
         PhysScene->OnPhysScenePostTick.Remove(PhysScenePostTickDelegate);
+
+        PhysCallback->UnregisterRewindableSimCallback_Internal(this);
     }
 
     template <typename Traits>
-    void USimCoordinator<Traits>::InjectInputsGameThread(const int32 StartTick, const int32 NumTicks) {
+    int32 USimCoordinator<Traits>::TriggerRewindIfNeeded_Internal(int32 LastCompletedStep) {
+        if (SimState == nullptr) { return INDEX_NONE; }
+        return INDEX_NONE;
+    }
+
+    template <typename Traits>
+    void USimCoordinator<Traits>::InjectInputsGT(const int32 StartTick, const int32 NumTicks) {
         if (SimInput == nullptr) { return; }
 
         for (int32 TickNum = StartTick; TickNum < StartTick + NumTicks; ++TickNum) {
@@ -111,7 +133,7 @@ namespace ClientPrediction {
                 continue;
             }
 
-            SimInput->InjectInputsGameThread(TickInfo);
+            SimInput->InjectInputsGT(TickInfo);
         }
     }
 
@@ -123,15 +145,18 @@ namespace ClientPrediction {
         if (!BuildTickInfo(TickNum, TickInfo)) { return; }
 
         SimInput->PrepareInputPhysicsThread(TickInfo);
+        SimState->TickPrePhysics(TickInfo, SimInput->GetCurrentInput());
     }
 
     template <typename Traits>
     void USimCoordinator<Traits>::PostAdvance(Chaos::FReal Dt) {
-        Chaos::FPhysicsSolver* Solver = GetSolver();
-        if (Solver == nullptr) { return; }
+        Chaos::FPhysicsSolver* PhysSolver = GetSolver();
+        if (PhysSolver == nullptr) { return; }
 
         FNetTickInfo TickInfo{};
-        if (!BuildTickInfo(Solver->GetCurrentFrame(), TickInfo)) { return; }
+        if (!BuildTickInfo(PhysSolver->GetCurrentFrame(), TickInfo)) { return; }
+
+        SimState->TickPostPhysics(TickInfo, SimInput->GetCurrentInput());
     }
 
     template <typename Traits>
@@ -142,13 +167,15 @@ namespace ClientPrediction {
 
     template <typename Traits>
     bool USimCoordinator<Traits>::BuildTickInfo(int32 TickNum, FNetTickInfo& Info) const {
-        Chaos::FPhysicsSolver* Solver = GetSolver();
-        if (Solver == nullptr) { return false; }
+        Chaos::FPhysicsSolver* PhysSolver = GetSolver();
+        if (PhysSolver == nullptr) { return false; }
 
         Info.bHasNetConnection = bHasNetConnection;
-        Info.bIsResim = Solver->GetEvolution()->IsResimming();
+        Info.bIsResim = PhysSolver->GetEvolution()->IsResimming();
 
-        Info.Dt = Solver->GetAsyncDeltaTime();
+        Info.Dt = PhysSolver->GetAsyncDeltaTime();
+        Info.StartTime = PhysSolver->GetSolverTime();
+        Info.EndTime = Info.StartTime + Info.Dt;
 
         Info.UpdatedComponent = UpdatedComponent;
         Info.SimRole = SimRole;
@@ -200,12 +227,12 @@ namespace ClientPrediction {
 
     template <typename Traits>
     FNetworkPhysicsCallback* USimCoordinator<Traits>::GetPhysCallback() const {
-        Chaos::FPhysicsSolver* Solver = GetSolver();
-        if (Solver == nullptr) { return nullptr; }
+        Chaos::FPhysicsSolver* PhysSolver = GetSolver();
+        if (PhysSolver == nullptr) { return nullptr; }
 
-        Chaos::IRewindCallback* RewindCallback = Solver->GetRewindCallback();
+        Chaos::IRewindCallback* RewindCallback = PhysSolver->GetRewindCallback();
         if (RewindCallback == nullptr) { return nullptr; }
 
-        return static_cast<FNetworkPhysicsCallback*>(Solver->GetRewindCallback());
+        return static_cast<FNetworkPhysicsCallback*>(PhysSolver->GetRewindCallback());
     }
 }

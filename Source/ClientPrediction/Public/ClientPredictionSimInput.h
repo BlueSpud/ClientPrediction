@@ -96,10 +96,14 @@ namespace ClientPrediction {
 
     public:
         virtual ~USimInput() override = default;
-        virtual void ConsumeInputBundle(const FInputBundle& Bundle) override;
-
         void SetSimDelegates(const TSharedPtr<FSimDelegates<Traits>>& NewSimDelegates);
-        void InjectInputsGameThread(const FNetTickInfo& TickInfo);
+
+    private:
+        TSharedPtr<FSimDelegates<Traits>> SimDelegates;
+
+    public:
+        virtual void ConsumeInputBundle(const FInputBundle& Bundle) override;
+        void InjectInputsGT(const FNetTickInfo& TickInfo);
         void PrepareInputPhysicsThread(const FNetTickInfo& TickInfo);
         void EmitInputs();
 
@@ -107,21 +111,26 @@ namespace ClientPrediction {
         static bool ShouldProduceInput(const FNetTickInfo& TickInfo);
 
     private:
-        TSharedPtr<FSimDelegates<Traits>> SimDelegates;
         TArray<WrappedInput> Inputs;
 
         TArray<WrappedInput> PendingSend; // Inputs that need to be sent at least once
         TArray<WrappedInput> SendWindow; // Inputs that were previously sent (behaves like a sliding window)
 
     public:
-        const InputType& GetCurrentInput() { return CurrentInput; }
+        const InputType& GetCurrentInput() { return CurrentInput.Input; }
 
     private:
         WrappedInput CurrentInput{};
     };
 
     template <typename Traits>
+    void USimInput<Traits>::SetSimDelegates(const TSharedPtr<FSimDelegates<Traits>>& NewSimDelegates) {
+        SimDelegates = NewSimDelegates;
+    }
+
+    template <typename Traits>
     void USimInput<Traits>::ConsumeInputBundle(const FInputBundle& Bundle) {
+        // TODO this should be done with an async command
         TArray<WrappedInput> BundleInputs;
         Bundle.Retrieve(BundleInputs);
 
@@ -139,12 +148,7 @@ namespace ClientPrediction {
     }
 
     template <typename Traits>
-    void USimInput<Traits>::SetSimDelegates(const TSharedPtr<FSimDelegates<Traits>>& NewSimDelegates) {
-        SimDelegates = NewSimDelegates;
-    }
-
-    template <typename Traits>
-    void USimInput<Traits>::InjectInputsGameThread(const FNetTickInfo& TickInfo) {
+    void USimInput<Traits>::InjectInputsGT(const FNetTickInfo& TickInfo) {
         check(!TickInfo.bIsResim);
 
         if (!USimInput::ShouldProduceInput(TickInfo)) {
@@ -156,11 +160,11 @@ namespace ClientPrediction {
         NewInput.ServerTick = TickInfo.ServerTick;
 
         if (SimDelegates != nullptr) {
-            SimDelegates->ProduceInputGameThread.Broadcast(NewInput.Input, TickInfo.Dt, TickInfo.LocalTick);
+            SimDelegates->ProduceInputGTDelegate.Broadcast(NewInput.Input, TickInfo.Dt, TickInfo.LocalTick);
         }
 
         check(Inputs.IsEmpty() || Inputs.Last().ServerTick < TickInfo.ServerTick);
-        Inputs.Add(NewInput);
+        Inputs.Add(MoveTemp(NewInput));
     }
 
     template <typename Traits>

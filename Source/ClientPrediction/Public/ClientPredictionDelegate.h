@@ -5,8 +5,14 @@
 namespace ClientPrediction {
     template <typename Traits>
     struct FSimDelegates {
-        DECLARE_MULTICAST_DELEGATE_ThreeParams(FInputDelegate, typename Traits::InputType& Input, Chaos::FReal Dt, int32 TickNumber);
-        FInputDelegate ProduceInputGameThread; // Called on game thread
-        FInputDelegate ProduceInputPhysicsThread; // Called on physics thread
+        using InputType = typename Traits::InputType;
+        using StateType = typename Traits::StateType;
+
+        DECLARE_MULTICAST_DELEGATE_ThreeParams(FInputDelegate, InputType& Input, Chaos::FReal Dt, int32 TickNumber);
+        FInputDelegate ProduceInputGTDelegate; // Called on game thread
+        FInputDelegate ProduceInputPTDelegate; // Called on physics thread
+
+        DECLARE_MULTICAST_DELEGATE_OneParam(FGenInitialStateDelegate, StateType& State);
+        FGenInitialStateDelegate GenerateInitialStatePTDelegate;
     };
 }
