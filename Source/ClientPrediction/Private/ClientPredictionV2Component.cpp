@@ -45,6 +45,6 @@ void UClientPredictionV2Component::DestroySimulation() {
     }
 }
 
-void UClientPredictionV2Component::ServerRecvInput_Implementation(const FInputBundle& Bundle) {
+void UClientPredictionV2Component::ServerRecvInput_Implementation(const FBundledPackets& Bundle) {
     if (SimInput != nullptr) { SimInput->ConsumeInputBundle(Bundle); }
 }

@@ -1,78 +1,20 @@
 ﻿#pragma once
 
 #include "ClientPredictionDelegate.h"
+#include "ClientPredictionNetSerialization.h"
 #include "ClientPredictionTick.h"
 
-#include "ClientPredictionSimInput.generated.h"
-
 static constexpr int32 kSendWindowSize = 3;
-
-USTRUCT()
-struct FInputBundle {
-    GENERATED_BODY()
-
-    template <typename Packet>
-    void Store(TArray<Packet>& Packets);
-
-    template <typename Packet>
-    bool Retrieve(TArray<Packet>& Packets) const;
-
-    // Don't need NetIdentical because inputs are only sent client -> server, which is done through an RPC
-    bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess);
-
-private:
-    TArray<uint8> SerializedBits;
-    int32 NumberOfBits = -1;
-};
-
-template <typename Packet>
-void FInputBundle::Store(TArray<Packet>& Packets) {
-    check(Packets.Num() < TNumericLimits<uint8>::Max());
-
-    FNetBitWriter Writer(nullptr, TNumericLimits<uint16>::Max());
-    uint8 NumPackets = static_cast<uint8>(Packets.Num());
-    Writer << NumPackets;
-
-    for (Packet& PacketToWrite : Packets) {
-        PacketToWrite.NetSerialize(Writer);
-    }
-
-    SerializedBits = *Writer.GetBuffer();
-    NumberOfBits = Writer.GetNumBits();
-}
-
-template <typename Packet>
-bool FInputBundle::Retrieve(TArray<Packet>& Packets) const {
-    if (NumberOfBits == -1) { return false; }
-
-    FNetBitReader BitReader(nullptr, SerializedBits.GetData(), NumberOfBits);
-    uint8 NumPackets = 0;
-    BitReader << NumPackets;
-
-    for (uint8 PacketIdx = 0; PacketIdx < NumPackets; ++PacketIdx) {
-        Packets.AddDefaulted();
-        Packets.Last().NetSerialize(BitReader);
-    }
-
-    return true;
-}
-
-template <>
-struct TStructOpsTypeTraits<FInputBundle> : public TStructOpsTypeTraitsBase2<FInputBundle> {
-    enum {
-        WithNetSerializer = true
-    };
-};
 
 namespace ClientPrediction {
     class USimInputBase {
     public:
         virtual ~USimInputBase() = default;
 
-        DECLARE_DELEGATE_OneParam(FEmitInputBundleDelegate, const FInputBundle& Bundle)
+        DECLARE_DELEGATE_OneParam(FEmitInputBundleDelegate, const FBundledPackets& Bundle)
         FEmitInputBundleDelegate EmitInputBundleDelegate;
 
-        virtual void ConsumeInputBundle(const FInputBundle& Bundle) = 0;
+        virtual void ConsumeInputBundle(const FBundledPackets& Packets) = 0;
     };
 
     template <typename InputType>
@@ -102,7 +44,7 @@ namespace ClientPrediction {
         TSharedPtr<FSimDelegates<Traits>> SimDelegates;
 
     public:
-        virtual void ConsumeInputBundle(const FInputBundle& Bundle) override;
+        virtual void ConsumeInputBundle(const FBundledPackets& Packets) override;
         void InjectInputsGT(const FNetTickInfo& TickInfo);
         void PrepareInputPhysicsThread(const FNetTickInfo& TickInfo);
         void EmitInputs();
@@ -129,10 +71,10 @@ namespace ClientPrediction {
     }
 
     template <typename Traits>
-    void USimInput<Traits>::ConsumeInputBundle(const FInputBundle& Bundle) {
+    void USimInput<Traits>::ConsumeInputBundle(const FBundledPackets& Packets) {
         // TODO this should be done with an async command
         TArray<WrappedInput> BundleInputs;
-        Bundle.Retrieve(BundleInputs);
+        Packets.Bundle().Retrieve(BundleInputs);
 
         // TODO this can be optimized a bit, but the input buffer is probably not going to get too large so it's fine
         for (WrappedInput& NewInput : BundleInputs) {
@@ -206,10 +148,10 @@ namespace ClientPrediction {
             SendWindow.RemoveAt(0);
         }
 
-        FInputBundle Bundle{};
-        Bundle.Store(SendWindow);
+        FBundledPackets Packets{};
+        Packets.Bundle().Store(SendWindow);
 
-        EmitInputBundleDelegate.ExecuteIfBound(Bundle);
+        EmitInputBundleDelegate.ExecuteIfBound(Packets);
         PendingSend.Reset();
     }
 

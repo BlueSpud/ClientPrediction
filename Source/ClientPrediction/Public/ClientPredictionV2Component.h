@@ -3,6 +3,7 @@
 #include "ClientPredictionSimCoordinator.h"
 #include "ClientPredictionSimInput.h"
 #include "ClientPredictionSimState.h"
+#include "ClientPredictionNetSerialization.h"
 
 #include "ClientPredictionV2Component.generated.h"
 
@@ -27,7 +28,7 @@ private:
     void DestroySimulation();
 
     UFUNCTION(Server, Unreliable)
-    void ServerRecvInput(const FInputBundle& Bundle);
+    void ServerRecvInput(const FBundledPackets& Bundle);
 
     UPROPERTY()
     class UPrimitiveComponent* UpdatedComponent;
