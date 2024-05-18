@@ -47,7 +47,7 @@ namespace ClientPrediction {
         TSharedPtr<FSimDelegates<Traits>> GetSimDelegates() { return SimDelegates; };
 
     private:
-        TSharedPtr<FSimDelegates<Traits>> SimDelegates = MakeShared<TSharedPtr<FSimDelegates<Traits>>>;
+        TSharedPtr<FSimDelegates<Traits>> SimDelegates = MakeShared<FSimDelegates<Traits>>();
 
         class UPrimitiveComponent* UpdatedComponent = nullptr;
         bool bHasNetConnection = false;

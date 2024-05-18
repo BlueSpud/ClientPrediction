@@ -1,10 +1,5 @@
 ﻿#include "ClientPredictionV2Component.h"
 
-#include "Net/UnrealNetwork.h"
-
-#include "PBDRigidsSolver.h"
-#include "Physics/NetworkPhysicsComponent.h"
-
 UClientPredictionV2Component::UClientPredictionV2Component() {
     SetIsReplicatedByDefault(true);
     bWantsInitializeComponent = true;
@@ -50,6 +45,6 @@ void UClientPredictionV2Component::DestroySimulation() {
     }
 }
 
-void UClientPredictionV2Component::ServerRecvInput_Implementation(const ClientPrediction::FInputBundle& Bundle) {
+void UClientPredictionV2Component::ServerRecvInput_Implementation(const FInputBundle& Bundle) {
     if (SimInput != nullptr) { SimInput->ConsumeInputBundle(Bundle); }
 }

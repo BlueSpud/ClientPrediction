@@ -3,7 +3,7 @@
 #include "Serialization/ArchiveLoadCompressedProxy.h"
 #include "Serialization/ArchiveSaveCompressedProxy.h"
 
-bool ClientPrediction::FInputBundle::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess) {
+bool FInputBundle::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess) {
     if (Ar.IsLoading()) {
         TArray<uint8> CompressedBuffer;
         Ar << NumberOfBits;

@@ -20,13 +20,13 @@ public:
     virtual void UninitializeComponent() override;
 
     template <typename Traits>
-    ClientPrediction::FSimDelegates<Traits>& CreateSimulation();
+    TSharedPtr<ClientPrediction::FSimDelegates<Traits>> CreateSimulation();
 
 private:
     void DestroySimulation();
 
     UFUNCTION(Server, Unreliable)
-    void ServerRecvInput(const ClientPrediction::FInputBundle& Bundle);
+    void ServerRecvInput(const FInputBundle& Bundle);
 
     UPROPERTY()
     class UPrimitiveComponent* UpdatedComponent;
@@ -36,7 +36,7 @@ private:
 };
 
 template <typename Traits>
-ClientPrediction::FSimDelegates<Traits>& UClientPredictionV2Component::CreateSimulation() {
+TSharedPtr<ClientPrediction::FSimDelegates<Traits>> UClientPredictionV2Component::CreateSimulation() {
     TSharedPtr<ClientPrediction::USimInput<Traits>> InputImpl = MakeShared<ClientPrediction::USimInput<Traits>>();
     SimInput = InputImpl;
 
