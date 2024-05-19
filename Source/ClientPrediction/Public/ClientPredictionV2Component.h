@@ -30,6 +30,18 @@ private:
     UFUNCTION(Server, Unreliable)
     void ServerRecvInput(const FBundledPackets& Bundle);
 
+    UPROPERTY(ReplicatedUsing=OnRep_SimProxyStates, Transient)
+    FBundledPacketsLow SimProxyStates;
+
+    UPROPERTY(ReplicatedUsing=OnRep_AutoProxyStates, Transient)
+    FBundledPacketsFull AutoProxyStates;
+
+    UFUNCTION()
+    void OnRep_SimProxyStates();
+
+    UFUNCTION()
+    void OnRep_AutoProxyStates();
+
     UPROPERTY()
     class UPrimitiveComponent* UpdatedComponent;
 
@@ -46,6 +58,7 @@ TSharedPtr<ClientPrediction::FSimDelegates<Traits>> UClientPredictionV2Component
     TSharedPtr<ClientPrediction::FSimDelegates<Traits>> Delegates = Impl->GetSimDelegates();
 
     InputImpl->EmitInputBundleDelegate.BindUFunction(this, TEXT("ServerRecvInput"));
+    StateImpl->EmitAutoProxyBundle.BindLambda([&](const FBundledPacketsFull& Packets) { AutoProxyStates.Bundle().Copy(Packets.Bundle()); });
 
     SimInput = MoveTemp(InputImpl);
     SimState = MoveTemp(StateImpl);

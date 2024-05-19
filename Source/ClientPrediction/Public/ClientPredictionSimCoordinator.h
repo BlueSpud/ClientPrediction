@@ -119,8 +119,12 @@ namespace ClientPrediction {
 
     template <typename Traits>
     int32 USimCoordinator<Traits>::TriggerRewindIfNeeded_Internal(int32 LastCompletedTick) {
-        if (SimState == nullptr || SimRole != ROLE_AutonomousProxy) { return INDEX_NONE; }
-        return SimState->GetRewindTick();
+        if (UpdatedComponent == nullptr || SimState == nullptr || SimRole != ROLE_AutonomousProxy) { return INDEX_NONE; }
+
+        Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
+        if (PhysSolver == nullptr) { return false; }
+
+        return SimState->GetRewindTick(PhysSolver, UpdatedComponent->GetPhysicsObjectByName(NAME_None));
     }
 
     template <typename Traits>
@@ -139,7 +143,7 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimCoordinator<Traits>::PreAdvance(const int32 TickNum) {
-        if (SimInput == nullptr) { return; }
+        if (SimInput == nullptr || SimState == nullptr) { return; }
 
         FNetTickInfo TickInfo{};
         if (!BuildTickInfo(TickNum, TickInfo)) { return; }
@@ -150,6 +154,8 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimCoordinator<Traits>::PostAdvance(Chaos::FReal Dt) {
+        if (SimInput == nullptr || SimState == nullptr) { return; }
+
         Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
         if (PhysSolver == nullptr) { return; }
 
@@ -161,8 +167,18 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimCoordinator<Traits>::OnPhysScenePostTick(FChaosScene* Scene) {
-        if (SimInput == nullptr) { return; }
-        SimInput->EmitInputs();
+        if (SimInput == nullptr || SimState == nullptr) { return; }
+
+        Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
+        if (PhysSolver == nullptr) { return; }
+
+        if (SimRole == ENetRole::ROLE_AutonomousProxy) {
+            SimInput->EmitInputs();
+        }
+
+        if (SimRole == ENetRole::ROLE_Authority) {
+            SimState->EmitStates(PhysSolver->GetCurrentFrame());
+        }
     }
 
     template <typename Traits>

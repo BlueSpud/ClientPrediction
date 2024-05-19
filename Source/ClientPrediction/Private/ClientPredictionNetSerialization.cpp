@@ -8,18 +8,18 @@ bool FBundledPackets::Identical(const FBundledPackets* Other, uint32 PortFlags) 
     return Impl.Identical(&Other->Impl, PortFlags);
 }
 
-bool FSimProxyBundledPackets::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess) {
+bool FBundledPacketsLow::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess) {
     return Impl.NetSerialize(Ar, Map, bOutSuccess);
 }
 
-bool FSimProxyBundledPackets::Identical(const FSimProxyBundledPackets* Other, uint32 PortFlags) const {
+bool FBundledPacketsLow::Identical(const FBundledPacketsLow* Other, uint32 PortFlags) const {
     return Impl.Identical(&Other->Impl, PortFlags);
 }
 
-bool FAutoProxyBundledPackets::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess) {
+bool FBundledPacketsFull::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess) {
     return Impl.NetSerialize(Ar, Map, bOutSuccess);
 }
 
-bool FAutoProxyBundledPackets::Identical(const FAutoProxyBundledPackets* Other, uint32 PortFlags) const {
+bool FBundledPacketsFull::Identical(const FBundledPacketsFull* Other, uint32 PortFlags) const {
     return Impl.Identical(&Other->Impl, PortFlags);
 }

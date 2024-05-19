@@ -1,6 +1,9 @@
 ﻿#pragma once
+
 #include "Serialization/ArchiveLoadCompressedProxy.h"
 #include "Serialization/ArchiveSaveCompressedProxy.h"
+
+#include "Data/ClientPredictionDataCompleteness.h"
 
 #include "ClientPredictionNetSerialization.generated.h"
 
@@ -83,8 +86,10 @@ struct TStructOpsTypeTraits<FNetSerializationProxy> : public TStructOpsTypeTrait
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <ENetRole Role>
+template <ClientPrediction::EDataCompleteness Completeness>
 struct FPacketBundle {
+    void Copy(const FPacketBundle& Other);
+
     template <typename Packet>
     void Store(TArray<Packet>& Packets);
 
@@ -105,9 +110,17 @@ private:
     int32 Sequence = 0;
 };
 
-template <ENetRole Role>
+template <ClientPrediction::EDataCompleteness Completeness>
+void FPacketBundle<Completeness>::Copy(const FPacketBundle& Other) {
+    SerializedBits = Other.SerializedBits;
+    NumberOfBits = Other.NumberOfBits;
+
+    Sequence = FMath::Max(Other.Sequence, ++Sequence);
+}
+
+template <ClientPrediction::EDataCompleteness Completeness>
 template <typename Packet>
-void FPacketBundle<Role>::Store(TArray<Packet>& Packets) {
+void FPacketBundle<Completeness>::Store(TArray<Packet>& Packets) {
     check(Packets.Num() < TNumericLimits<uint8>::Max());
 
     FNetBitWriter Writer(nullptr, TNumericLimits<uint16>::Max());
@@ -123,9 +136,9 @@ void FPacketBundle<Role>::Store(TArray<Packet>& Packets) {
     ++Sequence;
 }
 
-template <ENetRole Role>
+template <ClientPrediction::EDataCompleteness Completeness>
 template <typename Packet>
-bool FPacketBundle<Role>::Retrieve(TArray<Packet>& Packets) const {
+bool FPacketBundle<Completeness>::Retrieve(TArray<Packet>& Packets) const {
     if (NumberOfBits == -1) { return false; }
 
     FNetBitReader BitReader(nullptr, SerializedBits.GetData(), NumberOfBits);
@@ -140,26 +153,26 @@ bool FPacketBundle<Role>::Retrieve(TArray<Packet>& Packets) const {
     return true;
 }
 
-template <ENetRole Role>
+template <ClientPrediction::EDataCompleteness Completeness>
 template <typename Packet>
-void FPacketBundle<Role>::NetSerializePacket(Packet& PacketToSerialize, FArchive& Ar) const {
+void FPacketBundle<Completeness>::NetSerializePacket(Packet& PacketToSerialize, FArchive& Ar) const {
     PacketToSerialize.NetSerialize(Ar);
 }
 
 template <>
 template <typename Packet>
-void FPacketBundle<ENetRole::ROLE_AutonomousProxy>::NetSerializePacket(Packet& PacketToSerialize, FArchive& Ar) const {
-    PacketToSerialize.NetSerialize(Ar, ENetRole::ROLE_AutonomousProxy);
+void FPacketBundle<ClientPrediction::EDataCompleteness::kFull>::NetSerializePacket(Packet& PacketToSerialize, FArchive& Ar) const {
+    PacketToSerialize.NetSerialize(Ar, ClientPrediction::EDataCompleteness::kFull);
 }
 
 template <>
 template <typename Packet>
-void FPacketBundle<ENetRole::ROLE_SimulatedProxy>::NetSerializePacket(Packet& PacketToSerialize, FArchive& Ar) const {
-    PacketToSerialize.NetSerialize(Ar, ENetRole::ROLE_SimulatedProxy);
+void FPacketBundle<ClientPrediction::EDataCompleteness::kLow>::NetSerializePacket(Packet& PacketToSerialize, FArchive& Ar) const {
+    PacketToSerialize.NetSerialize(Ar, ClientPrediction::EDataCompleteness::kLow);
 }
 
-template <ENetRole Role>
-bool FPacketBundle<Role>::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess) {
+template <ClientPrediction::EDataCompleteness Completeness>
+bool FPacketBundle<Completeness>::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess) {
     if (Ar.IsLoading()) {
         TArray<uint8> CompressedBuffer;
         Ar << NumberOfBits;
@@ -167,6 +180,8 @@ bool FPacketBundle<Role>::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOu
 
         FArchiveLoadCompressedProxy Decompressor(CompressedBuffer, NAME_Zlib);
         Decompressor << SerializedBits;
+
+        ++Sequence;
     }
     else {
         TArray<uint8> CompressedBuffer;
@@ -182,8 +197,8 @@ bool FPacketBundle<Role>::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOu
     return true;
 }
 
-template <ENetRole Role>
-bool FPacketBundle<Role>::Identical(const FPacketBundle* Other, uint32 PortFlags) const {
+template <ClientPrediction::EDataCompleteness Completeness>
+bool FPacketBundle<Completeness>::Identical(const FPacketBundle* Other, uint32 PortFlags) const {
     return Sequence == Other->Sequence;
 }
 
@@ -193,7 +208,7 @@ USTRUCT()
 struct FBundledPackets {
     GENERATED_BODY()
 
-    using BundleType = FPacketBundle<ENetRole::ROLE_None>;
+    using BundleType = FPacketBundle<ClientPrediction::EDataCompleteness::kCount>;
 
     bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess);
     bool Identical(const FBundledPackets* Other, uint32 PortFlags) const;
@@ -213,13 +228,13 @@ struct TStructOpsTypeTraits<FBundledPackets> : public TStructOpsTypeTraitsBase2<
 };
 
 USTRUCT()
-struct FSimProxyBundledPackets {
+struct FBundledPacketsLow {
     GENERATED_BODY()
 
-    using BundleType = FPacketBundle<ENetRole::ROLE_SimulatedProxy>;
+    using BundleType = FPacketBundle<ClientPrediction::EDataCompleteness::kLow>;
 
     bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess);
-    bool Identical(const FSimProxyBundledPackets* Other, uint32 PortFlags) const;
+    bool Identical(const FBundledPacketsLow* Other, uint32 PortFlags) const;
 
     BundleType& Bundle() const { return Impl; }
 
@@ -228,7 +243,7 @@ private:
 };
 
 template <>
-struct TStructOpsTypeTraits<FSimProxyBundledPackets> : public TStructOpsTypeTraitsBase2<FSimProxyBundledPackets> {
+struct TStructOpsTypeTraits<FBundledPacketsLow> : public TStructOpsTypeTraitsBase2<FBundledPacketsLow> {
     enum {
         WithNetSerializer = true,
         WithIdentical = true
@@ -236,13 +251,13 @@ struct TStructOpsTypeTraits<FSimProxyBundledPackets> : public TStructOpsTypeTrai
 };
 
 USTRUCT()
-struct FAutoProxyBundledPackets {
+struct FBundledPacketsFull {
     GENERATED_BODY()
 
-    using BundleType = FPacketBundle<ENetRole::ROLE_AutonomousProxy>;
+    using BundleType = FPacketBundle<ClientPrediction::EDataCompleteness::kFull>;
 
     bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess);
-    bool Identical(const FAutoProxyBundledPackets* Other, uint32 PortFlags) const;
+    bool Identical(const FBundledPacketsFull* Other, uint32 PortFlags) const;
 
     BundleType& Bundle() const { return Impl; }
 
@@ -251,7 +266,7 @@ private:
 };
 
 template <>
-struct TStructOpsTypeTraits<FAutoProxyBundledPackets> : public TStructOpsTypeTraitsBase2<FAutoProxyBundledPackets> {
+struct TStructOpsTypeTraits<FBundledPacketsFull> : public TStructOpsTypeTraitsBase2<FBundledPacketsFull> {
     enum {
         WithNetSerializer = true,
         WithIdentical = true

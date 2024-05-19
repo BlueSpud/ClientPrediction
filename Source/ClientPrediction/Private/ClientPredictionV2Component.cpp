@@ -1,5 +1,7 @@
 ﻿#include "ClientPredictionV2Component.h"
 
+#include "Net/UnrealNetwork.h"
+
 UClientPredictionV2Component::UClientPredictionV2Component() {
     SetIsReplicatedByDefault(true);
     bWantsInitializeComponent = true;
@@ -9,6 +11,13 @@ UClientPredictionV2Component::UClientPredictionV2Component() {
 }
 
 UClientPredictionV2Component::~UClientPredictionV2Component() {}
+
+void UClientPredictionV2Component::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const {
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+    DOREPLIFETIME_CONDITION(UClientPredictionV2Component, SimProxyStates, COND_SimulatedOnly);
+    DOREPLIFETIME_CONDITION(UClientPredictionV2Component, AutoProxyStates, COND_AutonomousOnly);
+}
 
 void UClientPredictionV2Component::InitializeComponent() {
     Super::InitializeComponent();
@@ -47,4 +56,12 @@ void UClientPredictionV2Component::DestroySimulation() {
 
 void UClientPredictionV2Component::ServerRecvInput_Implementation(const FBundledPackets& Bundle) {
     if (SimInput != nullptr) { SimInput->ConsumeInputBundle(Bundle); }
+}
+
+void UClientPredictionV2Component::OnRep_SimProxyStates() {
+    if (SimState != nullptr) { SimState->ConsumeSimProxyStates(SimProxyStates); }
+}
+
+void UClientPredictionV2Component::OnRep_AutoProxyStates() {
+    if (SimState != nullptr) { SimState->ConsumeAutoProxyStates(AutoProxyStates); }
 }
