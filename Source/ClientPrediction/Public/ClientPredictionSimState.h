@@ -306,9 +306,10 @@ namespace ClientPrediction {
             PhysSolver->GetEvolution()->GetIslandManager().SetParticleResimFrame(ParticleHandle, RewindTick);
         }
 
-        RewindData->SetResimFrame(FMath::Min(RewindTick, RewindData->GetResimFrame()));
+        const int32 SolverResimTick = (RewindData->GetResimFrame() == INDEX_NONE) ? RewindTick : FMath::Min(RewindTick, RewindData->GetResimFrame());
+        RewindData->SetResimFrame(SolverResimTick);
 
-        UE_LOG(LogTemp, Error, TEXT("Queueing correction on %d (Server tick %d)"), RewindTick, LatestAuthorityState.ServerTick);
+        UE_LOG(LogTemp, Warning, TEXT("Queueing correction on %d (Server tick %d)"), RewindTick, LatestAuthorityState.ServerTick);
         return RewindTick;
     }
 
