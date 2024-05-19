@@ -45,6 +45,7 @@ namespace ClientPrediction {
         void OnPhysScenePostTick(FChaosScene* Scene);
 
         bool BuildTickInfo(int32 TickNum, FNetTickInfo& Info) const;
+        int32 CachedTickNumber = INDEX_NONE;
 
         FDelegateHandle InjectInputsGTDelegate;
         FDelegateHandle PreAdvanceDelegate;
@@ -150,17 +151,16 @@ namespace ClientPrediction {
 
         SimInput->PrepareInputPhysicsThread(TickInfo);
         SimState->TickPrePhysics(TickInfo, SimInput->GetCurrentInput());
+
+        CachedTickNumber = TickNum;
     }
 
     template <typename Traits>
     void USimCoordinator<Traits>::PostAdvance(Chaos::FReal Dt) {
         if (SimInput == nullptr || SimState == nullptr) { return; }
 
-        Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
-        if (PhysSolver == nullptr) { return; }
-
         FNetTickInfo TickInfo{};
-        if (!BuildTickInfo(PhysSolver->GetCurrentFrame(), TickInfo)) { return; }
+        if (!BuildTickInfo(CachedTickNumber, TickInfo)) { return; }
 
         SimState->TickPostPhysics(TickInfo, SimInput->GetCurrentInput());
     }

@@ -277,8 +277,10 @@ namespace ClientPrediction {
             return INDEX_NONE;
         }
 
-        // Resimulating frames that were already once resimulated can be disallowed, so we ignore any corrections that would result in no resim
-        const int32 RewindTick = HistoricState->LocalTick;
+        // Resimulating frames that were already once resimulated can be disallowed, so we ignore any corrections that would result in no resim.
+        // We add one to the local tick since states are generated at the end of a tick and corrections are applied at the beginning. So if we didn't
+        // add an offset we would end up simulating one extra tick.
+        const int32 RewindTick = HistoricState->LocalTick + 1;
         const int32 BlockedResimTick = RewindData->GetBlockedResimFrame();
         if (BlockedResimTick != INDEX_NONE && RewindTick <= BlockedResimTick) {
             return INDEX_NONE;
@@ -291,8 +293,8 @@ namespace ClientPrediction {
         HistoricState->State = LatestAuthorityState.State;
 
         Chaos::FReadPhysicsObjectInterface_Internal Interface = Chaos::FPhysicsObjectInternalInterface::GetRead();
-        if (Chaos::FPBDRigidParticleHandle* POHandle = Interface.GetRigidParticle(PhysObject)) {
-            PhysSolver->GetEvolution()->GetIslandManager().SetParticleResimFrame(POHandle, RewindTick);
+        if (Chaos::FPBDRigidParticleHandle* ParticleHandle = Interface.GetRigidParticle(PhysObject)) {
+            PhysSolver->GetEvolution()->GetIslandManager().SetParticleResimFrame(ParticleHandle, RewindTick);
         }
 
         RewindData->SetResimFrame(FMath::Min(RewindTick, RewindData->GetResimFrame()));
@@ -322,6 +324,7 @@ namespace ClientPrediction {
     template <typename Traits>
     void USimState<Traits>::EmitStates(int32 LatestTick) {
         if (StateHistory.IsEmpty() || LatestTick <= LatestEmittedTick) { return; }
+        LatestEmittedTick = StateHistory.Last().ServerTick;
 
         FBundledPacketsFull AutoProxyPackets{};
         TArray<WrappedState> AutoProxyStates = {StateHistory.Last()};
