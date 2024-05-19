@@ -67,6 +67,8 @@ namespace ClientPrediction {
         class UPrimitiveComponent* UpdatedComponent = nullptr;
         bool bHasNetConnection = false;
         ENetRole SimRole = ROLE_None;
+
+        int32 EarliestLocalTick = INDEX_NONE;
     };
 
     template <typename Traits>
@@ -146,6 +148,10 @@ namespace ClientPrediction {
     void USimCoordinator<Traits>::PreAdvance(const int32 TickNum) {
         if (SimInput == nullptr || SimState == nullptr) { return; }
 
+        // Avoid simulating before the object was actually being simulated. This can happen if something rewinds physics before EarliestLocalTick
+        EarliestLocalTick = EarliestLocalTick == INDEX_NONE ? TickNum : EarliestLocalTick;
+        if (TickNum < EarliestLocalTick) { return; }
+
         FNetTickInfo TickInfo{};
         if (!BuildTickInfo(TickNum, TickInfo)) { return; }
 
@@ -158,6 +164,11 @@ namespace ClientPrediction {
     template <typename Traits>
     void USimCoordinator<Traits>::PostAdvance(Chaos::FReal Dt) {
         if (SimInput == nullptr || SimState == nullptr) { return; }
+
+        // Avoid simulating before the object was actually being simulated. This can happen if something rewinds physics before EarliestLocalTick
+        if (CachedTickNumber < EarliestLocalTick) {
+            return;
+        }
 
         FNetTickInfo TickInfo{};
         if (!BuildTickInfo(CachedTickNumber, TickInfo)) { return; }

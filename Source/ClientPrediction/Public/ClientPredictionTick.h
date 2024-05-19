@@ -17,4 +17,13 @@ namespace ClientPrediction {
         class UPrimitiveComponent* UpdatedComponent = nullptr;
         ENetRole SimRole = ROLE_None;
     };
+
+    struct FSimTickInfo {
+        FSimTickInfo(const FNetTickInfo& Info) : LocalTick(Info.LocalTick), Dt(Info.Dt), UpdatedComponent(Info.UpdatedComponent) {}
+
+        int32 LocalTick = INDEX_NONE;
+        Chaos::FReal Dt = 0.0;
+
+        class UPrimitiveComponent* UpdatedComponent = nullptr;
+    };
 }

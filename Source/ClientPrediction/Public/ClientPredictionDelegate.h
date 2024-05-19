@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "ClientPredictionTick.h"
 
 namespace ClientPrediction {
     template <typename Traits>
@@ -14,5 +15,9 @@ namespace ClientPrediction {
 
         DECLARE_MULTICAST_DELEGATE_OneParam(FGenInitialStateDelegate, StateType& State);
         FGenInitialStateDelegate GenerateInitialStatePTDelegate;
+
+        DECLARE_MULTICAST_DELEGATE_FourParams(FSimTickDelegate, const FSimTickInfo& TickInfo, const InputType& Input, const StateType& PrevState, StateType& OutState);
+        FSimTickDelegate SimTickPrePhysics;
+        FSimTickDelegate SimTickPostPhysics;
     };
 }

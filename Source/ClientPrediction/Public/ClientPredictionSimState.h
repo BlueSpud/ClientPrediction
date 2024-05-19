@@ -216,6 +216,8 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimState<Traits>::TickPrePhysics(const FNetTickInfo& TickInfo, const InputType& Input) {
+        if (SimDelegates == nullptr) { return; }
+
         if (!bGeneratedInitialState) {
             GenerateInitialState(TickInfo);
             bGeneratedInitialState = true;
@@ -236,11 +238,14 @@ namespace ClientPrediction {
         }
 
         CurrentState.State = PrevState.State;
+        SimDelegates->SimTickPrePhysics.Broadcast(TickInfo, Input, PrevState.State, CurrentState.State);
     }
 
     template <typename Traits>
     void USimState<Traits>::TickPostPhysics(const FNetTickInfo& TickInfo, const InputType& Input) {
         if (TickInfo.SimRole == ROLE_SimulatedProxy) { return; }
+
+        SimDelegates->SimTickPostPhysics.Broadcast(TickInfo, Input, PrevState.State, CurrentState.State);
 
         USimState::FillStateSimDetails(CurrentState, TickInfo);
         if (StateHistory.IsEmpty() || StateHistory.Last().LocalTick < TickInfo.LocalTick) {
@@ -273,7 +278,11 @@ namespace ClientPrediction {
             }
         }
 
-        if (HistoricState == nullptr || !HistoricState->PhysState.ShouldReconcile(LatestAuthorityState.PhysState)) {
+        if (HistoricState == nullptr) {
+            return INDEX_NONE;
+        }
+
+        if (!HistoricState->PhysState.ShouldReconcile(LatestAuthorityState.PhysState) && !HistoricState->State.ShouldReconcile(LatestAuthorityState.State)) {
             return INDEX_NONE;
         }
 
