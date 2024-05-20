@@ -48,7 +48,7 @@ namespace ClientPrediction {
         void EmitInputs();
 
     private:
-        static bool ShouldProduceInput(const FNetTickInfo& TickInfo);
+        bool ShouldProduceInput(const FNetTickInfo& TickInfo);
 
     private:
         TArray<WrappedInput> Inputs;
@@ -71,7 +71,6 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimInput<Traits>::ConsumeInputBundle(const FBundledPackets& Packets) {
-        // TODO this should be done with an async command
         TArray<WrappedInput> BundleInputs;
         Packets.Bundle().Retrieve(BundleInputs);
 
@@ -100,7 +99,6 @@ namespace ClientPrediction {
         if (TickInfo.SimRole == ENetRole::ROLE_SimulatedProxy) { return; }
 
         if (USimInput::ShouldProduceInput(TickInfo) && SimDelegates != nullptr) {
-            check(Inputs.IsEmpty() || Inputs.Last().ServerTick < TickInfo.ServerTick);
             Inputs.Add(CurrentGTInput);
 
             WrappedInput& NewInput = Inputs.Last();
@@ -110,14 +108,15 @@ namespace ClientPrediction {
             SimDelegates->ModifyInputPTDelegate.Broadcast(NewInput.Input, TickInfo.Dt, TickInfo.LocalTick);
         }
 
+        // We always use the server tick to find the input to use. This way if the server offset changes, the right input will still be picked.
         for (const WrappedInput& Input : Inputs) {
-            if (Input.LocalTick > TickInfo.LocalTick) { break; }
+            if (Input.ServerTick > TickInfo.ServerTick) { break; }
 
             CurrentInput = Input;
-            if (Input.LocalTick == TickInfo.LocalTick) { break; }
+            if (Input.ServerTick == TickInfo.ServerTick) { break; }
         }
 
-        bool bFoundPerfectMatch = CurrentInput.LocalTick == TickInfo.LocalTick;
+        bool bFoundPerfectMatch = CurrentInput.ServerTick == TickInfo.ServerTick;
         check(TickInfo.SimRole != ROLE_AutonomousProxy || bFoundPerfectMatch);
 
         if (TickInfo.SimRole == ROLE_AutonomousProxy) {
@@ -150,7 +149,10 @@ namespace ClientPrediction {
 
     template <typename Traits>
     bool USimInput<Traits>::ShouldProduceInput(const FNetTickInfo& TickInfo) {
-        return (TickInfo.SimRole == ENetRole::ROLE_AutonomousProxy && !TickInfo.bIsResim)
+        const bool bInputNotAlreadySampled = Inputs.IsEmpty() || Inputs.Last().ServerTick < TickInfo.ServerTick;
+        const bool bShouldTakeInput = (TickInfo.SimRole == ENetRole::ROLE_AutonomousProxy && !TickInfo.bIsResim)
             || (TickInfo.SimRole == ENetRole::ROLE_Authority && !TickInfo.bHasNetConnection);
+
+        return bInputNotAlreadySampled && bShouldTakeInput;
     }
 }

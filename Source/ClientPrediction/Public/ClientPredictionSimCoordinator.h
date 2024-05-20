@@ -198,7 +198,9 @@ namespace ClientPrediction {
 
         const Chaos::FReal ResultsTime = PhysSolver->GetPhysicsResultsTime_External();
         const Chaos::FReal Dt = LastResultsTime == -1.0 ? 0.0 : ResultsTime - LastResultsTime;
+
         SimState->InterpolateGameThread(UpdatedComponent, ResultsTime, Dt, SimRole);
+        LastResultsTime = ResultsTime;
     }
 
     template <typename Traits>

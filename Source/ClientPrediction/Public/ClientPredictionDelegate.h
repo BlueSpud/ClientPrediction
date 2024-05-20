@@ -19,7 +19,10 @@ namespace ClientPrediction {
         FGenInitialStateDelegate GenerateInitialStatePTDelegate;
 
         DECLARE_MULTICAST_DELEGATE_FourParams(FSimTickDelegate, const FSimTickInfo& TickInfo, const InputType& Input, const StateType& PrevState, StateType& OutState);
-        FSimTickDelegate SimTickPrePhysics;
-        FSimTickDelegate SimTickPostPhysics;
+        FSimTickDelegate SimTickPrePhysicsDelegate;
+        FSimTickDelegate SimTickPostPhysicsDelegate;
+
+        DECLARE_MULTICAST_DELEGATE_TwoParams(FFinalizeDelegate, const StateType& State, Chaos::FReal Dt)
+        FFinalizeDelegate FinalizeDelegate;
     };
 }

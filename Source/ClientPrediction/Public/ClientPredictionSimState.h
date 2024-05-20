@@ -269,7 +269,7 @@ namespace ClientPrediction {
         }
 
         CurrentState.State = PrevState.State;
-        SimDelegates->SimTickPrePhysics.Broadcast(TickInfo, Input, PrevState.State, CurrentState.State);
+        SimDelegates->SimTickPrePhysicsDelegate.Broadcast(TickInfo, Input, PrevState.State, CurrentState.State);
     }
 
     template <typename Traits>
@@ -279,7 +279,7 @@ namespace ClientPrediction {
             return;
         }
 
-        SimDelegates->SimTickPostPhysics.Broadcast(TickInfo, Input, PrevState.State, CurrentState.State);
+        SimDelegates->SimTickPostPhysicsDelegate.Broadcast(TickInfo, Input, PrevState.State, CurrentState.State);
 
         USimState::FillStateSimDetails(CurrentState, TickInfo);
         if (StateHistory.IsEmpty() || StateHistory.Last().LocalTick < TickInfo.LocalTick) {
@@ -428,6 +428,8 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimState<Traits>::InterpolateGameThread(UPrimitiveComponent* UpdatedComponent, Chaos::FReal ResultsTime, Chaos::FReal Dt, ENetRole SimRole) {
+        if (SimDelegates == nullptr) { return; }
+
         if (SimRole == ROLE_SimulatedProxy) {
             GetInterpolatedStateAtTimeSimProxy(ResultsTime, LastInterpolatedState);
 
@@ -451,6 +453,8 @@ namespace ClientPrediction {
             Handle.SetR(LastInterpolatedState.PhysState.R);
         }
         else { GetInterpolatedStateAtTime(ResultsTime, LastInterpolatedState); }
+
+        SimDelegates->FinalizeDelegate.Broadcast(LastInterpolatedState.State, Dt);
     }
 
     template <typename Traits>
