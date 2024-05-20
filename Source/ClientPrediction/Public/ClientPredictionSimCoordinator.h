@@ -50,7 +50,6 @@ namespace ClientPrediction {
         void OnPhysScenePostTick(FChaosScene* Scene);
 
         bool BuildTickInfo(int32 TickNum, FNetTickInfo& Info) const;
-        int32 CachedTickNumber = INDEX_NONE;
 
         FDelegateHandle InjectInputsGTDelegate;
         FDelegateHandle PreAdvanceDelegate;
@@ -79,7 +78,9 @@ namespace ClientPrediction {
         bool bHasNetConnection = false;
         ENetRole SimRole = ROLE_None;
 
+        int32 CachedTickNumber = INDEX_NONE;
         int32 EarliestLocalTick = INDEX_NONE;
+        Chaos::FReal LastResultsTime = -1.0;
     };
 
     template <typename Traits>
@@ -201,6 +202,10 @@ namespace ClientPrediction {
         if (SimRole == ENetRole::ROLE_Authority) {
             SimState->EmitStates(CachedTickNumber);
         }
+
+        const Chaos::FReal ResultsTime = PhysSolver->GetPhysicsResultsTime_External();
+        const Chaos::FReal Dt = LastResultsTime == -1.0 ? 0.0 : ResultsTime - LastResultsTime;
+        SimState->InterpolateGameThread(UpdatedComponent, ResultsTime, Dt, SimRole);
     }
 
     template <typename Traits>

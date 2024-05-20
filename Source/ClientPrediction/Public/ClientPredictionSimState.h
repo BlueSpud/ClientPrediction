@@ -22,6 +22,7 @@ namespace ClientPrediction {
 
         bool ShouldReconcile(const FPhysState& State) const;
         void NetSerialize(FArchive& Ar, EDataCompleteness Completeness);
+        void Interpolate(const FPhysState& Other, const Chaos::FReal Alpha);
     };
 
     inline bool FPhysState::ShouldReconcile(const FPhysState& State) const {
@@ -32,6 +33,14 @@ namespace ClientPrediction {
         if ((State.W - W).Size() > ClientPredictionAngularVelTolerance) { return true; }
 
         return false;
+    }
+
+    inline void FPhysState::Interpolate(const FPhysState& Other, const Chaos::FReal Alpha) {
+        ObjectState = Other.ObjectState;
+        X = FMath::Lerp(FVector(X), FVector(Other.X), Alpha);
+        V = FMath::Lerp(FVector(V), FVector(Other.V), Alpha);
+        R = FMath::Lerp(FQuat(R), FQuat(Other.R), Alpha);
+        W = FMath::Lerp(FVector(W), FVector(Other.W), Alpha);
     }
 
     inline void FPhysState::NetSerialize(FArchive& Ar, EDataCompleteness Completeness) {
@@ -76,6 +85,7 @@ namespace ClientPrediction {
         Chaos::FReal EndTime = 0.0;
 
         void NetSerialize(FArchive& Ar, EDataCompleteness Completeness);
+        void Interpolate(const FWrappedState& Other, Chaos::FReal Alpha);
     };
 
     template <typename StateType>
@@ -83,6 +93,12 @@ namespace ClientPrediction {
         Ar << ServerTick;
         PhysState.NetSerialize(Ar, Completeness);
         State.NetSerialize(Ar, Completeness);
+    }
+
+    template <typename StateType>
+    void FWrappedState<StateType>::Interpolate(const FWrappedState& Other, Chaos::FReal Alpha) {
+        PhysState.Interpolate(Other.PhysState, Alpha);
+        State.Interpolate(Other.State, Alpha);
     }
 
     class USimStateBase {
@@ -119,8 +135,6 @@ namespace ClientPrediction {
         static void FillStatePhysInfo(WrappedState& State, const FNetTickInfo& TickInfo);
         void GenerateInitialState(const FNetTickInfo& TickInfo);
 
-        static Chaos::FRigidBodyHandle_Internal* GetPhysHandle(const FNetTickInfo& TickInfo);
-
     public:
         void TickPrePhysics(const FNetTickInfo& TickInfo, const InputType& Input);
         void TickPostPhysics(const FNetTickInfo& TickInfo, const InputType& Input);
@@ -133,6 +147,12 @@ namespace ClientPrediction {
         void ApplyCorrectionIfNeeded(const FNetTickInfo& TickInfo);
 
         void EmitStates(int32 LatestTick);
+        void InterpolateGameThread(UPrimitiveComponent* UpdatedComponent, Chaos::FReal ResultsTime, Chaos::FReal Dt, ENetRole SimRole);
+
+    private:
+        void GetInterpolatedStateAtTime(Chaos::FReal ResultsTime, WrappedState& OutState) const;
+        void GetInterpolatedStateAtTimeSimProxy(Chaos::FReal ResultsTime, WrappedState& OutState) const;
+        static Chaos::FRigidBodyHandle_Internal* GetPhysHandle(const FNetTickInfo& TickInfo);
 
     private:
         bool bGeneratedInitialState = false;
@@ -140,10 +160,12 @@ namespace ClientPrediction {
 
         WrappedState PrevState{};
         WrappedState CurrentState{};
+        WrappedState LastInterpolatedState{};
 
         // Relevant only for sim proxies
         int32 SimProxyOffsetFromServer = INDEX_NONE;
         TArray<WrappedState> PendingSimProxyStates;
+        ECollisionEnabled::Type CachedCollisionMode = ECollisionEnabled::NoCollision;
 
         // Relevant only for auto proxies
         WrappedState LatestAuthorityState{};
@@ -217,19 +239,10 @@ namespace ClientPrediction {
         if (SimDelegates == nullptr) { return; }
 
         // We can leave the frame indexes and times as invalid because this is just a starting off point until we get the first valid frame
-        WrappedState NewState{};
-        USimState::FillStatePhysInfo(NewState, TickInfo);
+        USimState::FillStatePhysInfo(LastInterpolatedState, TickInfo);
+        SimDelegates->GenerateInitialStatePTDelegate.Broadcast(LastInterpolatedState.State);
 
-        SimDelegates->GenerateInitialStatePTDelegate.Broadcast(NewState.State);
-        StateHistory.Add(MoveTemp(NewState));
-    }
-
-    template <typename Traits>
-    Chaos::FRigidBodyHandle_Internal* USimState<Traits>::GetPhysHandle(const FNetTickInfo& TickInfo) {
-        FBodyInstance* BodyInstance = TickInfo.UpdatedComponent->GetBodyInstance();
-        if (BodyInstance == nullptr) { return nullptr; }
-
-        return BodyInstance->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
+        StateHistory.Add(LastInterpolatedState);
     }
 
     template <typename Traits>
@@ -290,6 +303,12 @@ namespace ClientPrediction {
             State.StartTime = static_cast<Chaos::FReal>(State.LocalTick + 1) * Info.Dt;
             State.EndTime = State.StartTime + Info.Dt;
         };
+
+        Chaos::FReal StartTime = -100000.0;
+        for (WrappedState& State : StateHistory) {
+            check(State.StartTime > StartTime);
+            StartTime = State.StartTime;
+        }
 
         if (OffsetFromServer != SimProxyOffsetFromServer) {
             for (WrappedState& State : StateHistory) { UpdateState(State); }
@@ -405,5 +424,99 @@ namespace ClientPrediction {
         EmitSimProxyBundle.ExecuteIfBound(SimProxyPackets);
 
         LatestEmittedTick = LatestTick;
+    }
+
+    template <typename Traits>
+    void USimState<Traits>::InterpolateGameThread(UPrimitiveComponent* UpdatedComponent, Chaos::FReal ResultsTime, Chaos::FReal Dt, ENetRole SimRole) {
+        if (SimRole == ROLE_SimulatedProxy) {
+            GetInterpolatedStateAtTimeSimProxy(ResultsTime, LastInterpolatedState);
+
+            FBodyInstance* BodyInstance = UpdatedComponent->GetBodyInstance();
+            if (BodyInstance == nullptr) { return; }
+
+            Chaos::FRigidBodyHandle_External& Handle = BodyInstance->GetPhysicsActorHandle()->GetGameThreadAPI();
+            Handle.SetObjectState(Chaos::EObjectStateType::Kinematic);
+
+            // TODO pull in the settings and make this conditional right
+            if (true) {
+                const ECollisionEnabled::Type CurrentCollisionMode = UpdatedComponent->GetCollisionEnabled();
+                if (CurrentCollisionMode != ECollisionEnabled::QueryAndProbe) {
+                    CachedCollisionMode = CurrentCollisionMode;
+                }
+
+                UpdatedComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndProbe);
+            }
+
+            Handle.SetX(LastInterpolatedState.PhysState.X);
+            Handle.SetR(LastInterpolatedState.PhysState.R);
+        }
+        else { GetInterpolatedStateAtTime(ResultsTime, LastInterpolatedState); }
+    }
+
+    template <typename Traits>
+    void USimState<Traits>::GetInterpolatedStateAtTime(Chaos::FReal ResultsTime, WrappedState& OutState) const {
+        if (StateHistory.IsEmpty()) {
+            OutState = LastInterpolatedState;
+            return;
+        }
+
+        for (int StateIndex = 0; StateIndex < StateHistory.Num(); StateIndex++) {
+            if (StateHistory[StateIndex].EndTime < ResultsTime) { continue; }
+
+            if (StateIndex == 0) {
+                OutState = StateHistory[0];
+                return;
+            }
+
+            const WrappedState& Start = StateHistory[StateIndex - 1];
+            const WrappedState& End = StateHistory[StateIndex];
+            OutState = Start;
+
+            const Chaos::FReal Denominator = End.EndTime - End.StartTime;
+            const Chaos::FReal Alpha = Denominator > 0.0 ? FMath::Min(1.0, (ResultsTime - End.StartTime) / Denominator) : 1.0;
+            OutState.Interpolate(End, Alpha);
+
+            return;
+        }
+
+        OutState = StateHistory.Last();
+    }
+
+    template <typename Traits>
+    void USimState<Traits>::GetInterpolatedStateAtTimeSimProxy(Chaos::FReal ResultsTime, WrappedState& OutState) const {
+        // The algorithm used by Chaos for interpolating states (mirrored in GetInterpolatedStateAtTime()) assumes that the previous state is the tick right before
+        // the current tick. For simulated proxies this might not be the case, so we use a slightly different interpolation algorithm.
+        if (StateHistory.IsEmpty()) {
+            OutState = LastInterpolatedState;
+            return;
+        }
+
+        for (int32 i = 0; i < StateHistory.Num() - 1; i++) {
+            if (ResultsTime < StateHistory[i].StartTime || ResultsTime > StateHistory[i + 1].StartTime) { continue; }
+            const WrappedState& Start = StateHistory[i];
+            const WrappedState& End = StateHistory[i + 1];
+
+            OutState = Start;
+
+            const Chaos::FReal TimeFromStart = ResultsTime - Start.StartTime;
+            const Chaos::FReal TotalTime = End.StartTime - Start.StartTime;
+
+            if (TotalTime > 0.0) {
+                const Chaos::FReal Alpha = FMath::Clamp(TimeFromStart / TotalTime, 0.0, 1.0);
+                OutState.Interpolate(End, Alpha);
+            }
+
+            return;
+        }
+
+        OutState = StateHistory.Last();
+    }
+
+    template <typename Traits>
+    Chaos::FRigidBodyHandle_Internal* USimState<Traits>::GetPhysHandle(const FNetTickInfo& TickInfo) {
+        FBodyInstance* BodyInstance = TickInfo.UpdatedComponent->GetBodyInstance();
+        if (BodyInstance == nullptr) { return nullptr; }
+
+        return BodyInstance->GetPhysicsActorHandle()->GetPhysicsThreadAPI();
     }
 }

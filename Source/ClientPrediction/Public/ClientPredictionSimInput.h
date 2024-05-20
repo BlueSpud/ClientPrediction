@@ -89,8 +89,6 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimInput<Traits>::InjectInputsGT(const FNetTickInfo& TickInfo) {
-        check(!TickInfo.bIsResim);
-
         if (!USimInput::ShouldProduceInput(TickInfo)) {
             return;
         }
