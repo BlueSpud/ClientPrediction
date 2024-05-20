@@ -9,9 +9,11 @@ namespace ClientPrediction {
         using InputType = typename Traits::InputType;
         using StateType = typename Traits::StateType;
 
-        DECLARE_MULTICAST_DELEGATE_ThreeParams(FInputDelegate, InputType& Input, Chaos::FReal Dt, int32 TickNumber);
-        FInputDelegate ProduceInputGTDelegate; // Called on game thread
-        FInputDelegate ProduceInputPTDelegate; // Called on physics thread
+        DECLARE_MULTICAST_DELEGATE_OneParam(FInputGTDelegate, InputType& Input);
+        FInputGTDelegate ProduceInputGTDelegate; // Called on game thread
+
+        DECLARE_MULTICAST_DELEGATE_ThreeParams(FInputPtDelegate, InputType& Input, Chaos::FReal Dt, int32 TickNumber);
+        FInputPtDelegate ModifyInputPTDelegate;
 
         DECLARE_MULTICAST_DELEGATE_OneParam(FGenInitialStateDelegate, StateType& State);
         FGenInitialStateDelegate GenerateInitialStatePTDelegate;

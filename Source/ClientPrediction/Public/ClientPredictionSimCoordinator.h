@@ -144,15 +144,8 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimCoordinator<Traits>::InjectInputsGT(const int32 StartTick, const int32 NumTicks) {
-        if (SimInput == nullptr) { return; }
-
-        for (int32 TickNum = StartTick; TickNum < StartTick + NumTicks; ++TickNum) {
-            FNetTickInfo TickInfo{};
-            if (!BuildTickInfo(TickNum, TickInfo)) {
-                continue;
-            }
-
-            SimInput->InjectInputsGT(TickInfo);
+        if (SimInput != nullptr) {
+            SimInput->InjectInputsGT();
         }
     }
 

@@ -43,7 +43,7 @@ namespace ClientPrediction {
 
     public:
         void ConsumeInputBundle(const FBundledPackets& Packets);
-        void InjectInputsGT(const FNetTickInfo& TickInfo);
+        void InjectInputsGT();
         void PrepareInputPhysicsThread(const FNetTickInfo& TickInfo);
         void EmitInputs();
 
@@ -61,6 +61,7 @@ namespace ClientPrediction {
 
     private:
         WrappedInput CurrentInput{};
+        WrappedInput CurrentGTInput{};
     };
 
     template <typename Traits>
@@ -88,26 +89,26 @@ namespace ClientPrediction {
     }
 
     template <typename Traits>
-    void USimInput<Traits>::InjectInputsGT(const FNetTickInfo& TickInfo) {
-        if (!USimInput::ShouldProduceInput(TickInfo)) {
-            return;
-        }
-
-        WrappedInput NewInput;
-        NewInput.LocalTick = TickInfo.LocalTick;
-        NewInput.ServerTick = TickInfo.ServerTick;
-
+    void USimInput<Traits>::InjectInputsGT() {
         if (SimDelegates != nullptr) {
-            SimDelegates->ProduceInputGTDelegate.Broadcast(NewInput.Input, TickInfo.Dt, TickInfo.LocalTick);
+            SimDelegates->ProduceInputGTDelegate.Broadcast(CurrentGTInput.Input);
         }
-
-        check(Inputs.IsEmpty() || Inputs.Last().ServerTick < TickInfo.ServerTick);
-        Inputs.Add(MoveTemp(NewInput));
     }
 
     template <typename Traits>
     void USimInput<Traits>::PrepareInputPhysicsThread(const FNetTickInfo& TickInfo) {
         if (TickInfo.SimRole == ENetRole::ROLE_SimulatedProxy) { return; }
+
+        if (USimInput::ShouldProduceInput(TickInfo) && SimDelegates != nullptr) {
+            check(Inputs.IsEmpty() || Inputs.Last().ServerTick < TickInfo.ServerTick);
+            Inputs.Add(CurrentGTInput);
+
+            WrappedInput& NewInput = Inputs.Last();
+            NewInput.LocalTick = TickInfo.LocalTick;
+            NewInput.ServerTick = TickInfo.ServerTick;
+
+            SimDelegates->ModifyInputPTDelegate.Broadcast(NewInput.Input, TickInfo.Dt, TickInfo.LocalTick);
+        }
 
         for (const WrappedInput& Input : Inputs) {
             if (Input.LocalTick > TickInfo.LocalTick) { break; }
@@ -118,10 +119,6 @@ namespace ClientPrediction {
 
         bool bFoundPerfectMatch = CurrentInput.LocalTick == TickInfo.LocalTick;
         check(TickInfo.SimRole != ROLE_AutonomousProxy || bFoundPerfectMatch);
-
-        if (USimInput::ShouldProduceInput(TickInfo)) {
-            // TODO modify the input using the current state
-        }
 
         if (TickInfo.SimRole == ROLE_AutonomousProxy) {
             PendingSend.Add(CurrentInput);
