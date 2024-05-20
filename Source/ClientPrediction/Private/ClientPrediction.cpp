@@ -5,6 +5,7 @@
 #endif
 
 #include "ClientPredictionSettings.h"
+#include "ClientPredictionSimProxy.h"
 #include "GameFramework/GameModeBase.h"
 #include "World/ClientPredictionWorldManager.h"
 
@@ -47,10 +48,12 @@ void FClientPredictionModule::ShutdownModule() {
 
 void FClientPredictionModule::OnPostWorldInitialize(UWorld* InWorld, const UWorld::InitializationValues) {
 	ClientPrediction::FWorldManager::InitializeWorld(InWorld);
+	ClientPrediction::FSimProxyWorldManager::InitializeWorld(InWorld);
 }
 
 void FClientPredictionModule::OnWorldCleanup(UWorld* InWorld, bool bSessionEnded, bool bCleanupResources) {
 	ClientPrediction::FWorldManager::CleanupWorld(InWorld);
+	ClientPrediction::FSimProxyWorldManager::CleanupWorld(InWorld);
 }
 
 void FClientPredictionModule::OnPlayerLogin(AGameModeBase* /* Gamemode */, APlayerController* PlayerController) {

@@ -13,8 +13,6 @@ namespace ClientPrediction {
 
         DECLARE_DELEGATE_OneParam(FEmitInputBundleDelegate, const FBundledPackets& Bundle)
         FEmitInputBundleDelegate EmitInputBundleDelegate;
-
-        virtual void ConsumeInputBundle(const FBundledPackets& Packets) = 0;
     };
 
     template <typename InputType>
@@ -44,7 +42,7 @@ namespace ClientPrediction {
         TSharedPtr<FSimDelegates<Traits>> SimDelegates;
 
     public:
-        virtual void ConsumeInputBundle(const FBundledPackets& Packets) override;
+        void ConsumeInputBundle(const FBundledPackets& Packets);
         void InjectInputsGT(const FNetTickInfo& TickInfo);
         void PrepareInputPhysicsThread(const FNetTickInfo& TickInfo);
         void EmitInputs();

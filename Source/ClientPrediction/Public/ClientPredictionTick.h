@@ -15,6 +15,7 @@ namespace ClientPrediction {
         Chaos::FReal EndTime = 0.0;
 
         class UPrimitiveComponent* UpdatedComponent = nullptr;
+        struct FSimProxyWorldManager* SimProxyWorldManager = nullptr;
         ENetRole SimRole = ROLE_None;
     };
 

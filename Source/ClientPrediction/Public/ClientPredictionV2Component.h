@@ -58,6 +58,7 @@ TSharedPtr<ClientPrediction::FSimDelegates<Traits>> UClientPredictionV2Component
     TSharedPtr<ClientPrediction::FSimDelegates<Traits>> Delegates = Impl->GetSimDelegates();
 
     InputImpl->EmitInputBundleDelegate.BindUFunction(this, TEXT("ServerRecvInput"));
+    StateImpl->EmitSimProxyBundle.BindLambda([&](const FBundledPacketsLow& Packets) { SimProxyStates.Bundle().Copy(Packets.Bundle()); });
     StateImpl->EmitAutoProxyBundle.BindLambda([&](const FBundledPacketsFull& Packets) { AutoProxyStates.Bundle().Copy(Packets.Bundle()); });
 
     SimInput = MoveTemp(InputImpl);

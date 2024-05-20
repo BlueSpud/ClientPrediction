@@ -6,6 +6,7 @@
 
 #include "ClientPredictionDelegate.h"
 #include "ClientPredictionSimInput.h"
+#include "ClientPredictionSimProxy.h"
 #include "ClientPredictionSimState.h"
 #include "ClientPredictionTick.h"
 
@@ -15,6 +16,10 @@ namespace ClientPrediction {
         virtual ~USimCoordinatorBase() = default;
         virtual void Initialize(UPrimitiveComponent* NewUpdatedComponent, bool bNowHasNetConnection, ENetRole NewSimRole) = 0;
         virtual void Destroy() = 0;
+
+        virtual void ConsumeInputBundle(FBundledPackets Packets) = 0;
+        virtual void ConsumeSimProxyStates(FBundledPacketsLow Packets) = 0;
+        virtual void ConsumeAutoProxyStates(FBundledPacketsFull Packets) = 0;
     };
 
     template <typename Traits>
@@ -52,6 +57,12 @@ namespace ClientPrediction {
         FDelegateHandle PostAdvanceDelegate;
         FDelegateHandle PhysScenePostTickDelegate;
 
+    public:
+        virtual void ConsumeInputBundle(FBundledPackets Packets) override;
+        virtual void ConsumeSimProxyStates(FBundledPacketsLow Packets) override;
+        virtual void ConsumeAutoProxyStates(FBundledPacketsFull Packets) override;
+
+    private:
         UWorld* GetWorld() const;
         APlayerController* GetPlayerController() const;
         FPhysScene* GetPhysScene() const;
@@ -188,12 +199,14 @@ namespace ClientPrediction {
         }
 
         if (SimRole == ENetRole::ROLE_Authority) {
-            SimState->EmitStates(PhysSolver->GetCurrentFrame());
+            SimState->EmitStates(CachedTickNumber);
         }
     }
 
     template <typename Traits>
     bool USimCoordinator<Traits>::BuildTickInfo(int32 TickNum, FNetTickInfo& Info) const {
+        if (UpdatedComponent == nullptr) { return false; }
+
         Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
         if (PhysSolver == nullptr) { return false; }
 
@@ -205,6 +218,7 @@ namespace ClientPrediction {
         Info.EndTime = Info.StartTime + Info.Dt;
 
         Info.UpdatedComponent = UpdatedComponent;
+        Info.SimProxyWorldManager = FSimProxyWorldManager::ManagerForWorld(UpdatedComponent->GetWorld());
         Info.SimRole = SimRole;
 
         if (SimRole != ENetRole::ROLE_Authority) {
@@ -220,6 +234,45 @@ namespace ClientPrediction {
         }
 
         return true;
+    }
+
+    template <typename Traits>
+    void USimCoordinator<Traits>::ConsumeInputBundle(FBundledPackets Packets) {
+        if (UpdatedComponent == nullptr || SimInput == nullptr) { return; }
+
+        FPhysScene* PhysScene = GetPhysScene();
+        if (PhysScene == nullptr) { return; }
+
+        PhysScene->EnqueueAsyncPhysicsCommand(0, UpdatedComponent, [this, Packets = MoveTemp(Packets)]() {
+            SimInput->ConsumeInputBundle(Packets);
+        });
+    }
+
+    template <typename Traits>
+    void USimCoordinator<Traits>::ConsumeSimProxyStates(FBundledPacketsLow Packets) {
+        if (UpdatedComponent == nullptr || SimState == nullptr) { return; }
+
+        FPhysScene* PhysScene = GetPhysScene();
+        if (PhysScene == nullptr) { return; }
+
+        PhysScene->EnqueueAsyncPhysicsCommand(0, UpdatedComponent, [this, Packets = MoveTemp(Packets)]() {
+            int32 LatestReceivedServerTick = SimState->ConsumeSimProxyStates(Packets);
+
+            FSimProxyWorldManager* WorldManager = FSimProxyWorldManager::ManagerForWorld(UpdatedComponent->GetWorld());
+            if (WorldManager != nullptr) { WorldManager->RecievedSimProxyStates(LatestReceivedServerTick); }
+        });
+    }
+
+    template <typename Traits>
+    void USimCoordinator<Traits>::ConsumeAutoProxyStates(FBundledPacketsFull Packets) {
+        if (UpdatedComponent == nullptr || SimState == nullptr) { return; }
+
+        FPhysScene* PhysScene = GetPhysScene();
+        if (PhysScene == nullptr) { return; }
+
+        PhysScene->EnqueueAsyncPhysicsCommand(0, UpdatedComponent, [this, Packets = MoveTemp(Packets)]() {
+            SimState->ConsumeAutoProxyStates(Packets);
+        });
     }
 
     template <typename Traits>

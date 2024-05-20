@@ -55,13 +55,13 @@ void UClientPredictionV2Component::DestroySimulation() {
 }
 
 void UClientPredictionV2Component::ServerRecvInput_Implementation(const FBundledPackets& Bundle) {
-    if (SimInput != nullptr) { SimInput->ConsumeInputBundle(Bundle); }
+    if (SimCoordinator != nullptr) { SimCoordinator->ConsumeInputBundle(Bundle); }
 }
 
 void UClientPredictionV2Component::OnRep_SimProxyStates() {
-    if (SimState != nullptr) { SimState->ConsumeSimProxyStates(SimProxyStates); }
+    if (SimCoordinator != nullptr) { SimCoordinator->ConsumeSimProxyStates(SimProxyStates); }
 }
 
 void UClientPredictionV2Component::OnRep_AutoProxyStates() {
-    if (SimState != nullptr) { SimState->ConsumeAutoProxyStates(AutoProxyStates); }
+    if (SimCoordinator != nullptr) { SimCoordinator->ConsumeAutoProxyStates(AutoProxyStates); }
 }

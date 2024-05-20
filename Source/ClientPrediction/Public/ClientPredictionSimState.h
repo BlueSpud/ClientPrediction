@@ -94,9 +94,6 @@ namespace ClientPrediction {
 
         DECLARE_DELEGATE_OneParam(FEmitAutoProxyStateBundleDelegate, const FBundledPacketsFull& Bundle)
         FEmitAutoProxyStateBundleDelegate EmitAutoProxyBundle;
-
-        virtual void ConsumeSimProxyStates(const FBundledPacketsLow& Packets) = 0;
-        virtual void ConsumeAutoProxyStates(const FBundledPacketsFull& Packets) = 0;
     };
 
     template <typename Traits>
@@ -114,8 +111,8 @@ namespace ClientPrediction {
         TSharedPtr<FSimDelegates<Traits>> SimDelegates;
 
     public:
-        virtual void ConsumeSimProxyStates(const FBundledPacketsLow& Packets) override;
-        virtual void ConsumeAutoProxyStates(const FBundledPacketsFull& Packets) override;
+        int32 ConsumeSimProxyStates(const FBundledPacketsLow& Packets);
+        void ConsumeAutoProxyStates(const FBundledPacketsFull& Packets);
 
     private:
         static void FillStateSimDetails(WrappedState& State, const FNetTickInfo& TickInfo);
@@ -128,6 +125,10 @@ namespace ClientPrediction {
         void TickPrePhysics(const FNetTickInfo& TickInfo, const InputType& Input);
         void TickPostPhysics(const FNetTickInfo& TickInfo, const InputType& Input);
 
+    private:
+        void SimProxyAdjustStateTimeline(const FNetTickInfo& Info);
+
+    public:
         int32 GetRewindTick(Chaos::FPhysicsSolver* PhysSolver, Chaos::FPhysicsObjectHandle PhysObject);
         void ApplyCorrectionIfNeeded(const FNetTickInfo& TickInfo);
 
@@ -139,6 +140,10 @@ namespace ClientPrediction {
 
         WrappedState PrevState{};
         WrappedState CurrentState{};
+
+        // Relevant only for sim proxies
+        int32 SimProxyOffsetFromServer = INDEX_NONE;
+        TArray<WrappedState> PendingSimProxyStates;
 
         // Relevant only for auto proxies
         WrappedState LatestAuthorityState{};
@@ -155,7 +160,20 @@ namespace ClientPrediction {
     }
 
     template <typename Traits>
-    void USimState<Traits>::ConsumeSimProxyStates(const FBundledPacketsLow& Packets) {}
+    int32 USimState<Traits>::ConsumeSimProxyStates(const FBundledPacketsLow& Packets) {
+        TArray<WrappedState> AuthorityStates;
+        Packets.Bundle().Retrieve(AuthorityStates);
+
+        // We add the states to a queue so that we can update these states as well as the existing ones in SimProxyAdjustStateTimeline(). We can't do all that
+        // logic in this function since the sim proxy offset might change in between recieves.
+        int32 NewestState = INDEX_NONE;
+        for (WrappedState& NewState : AuthorityStates) {
+            NewestState = FMath::Max(NewestState, NewState.ServerTick);
+            PendingSimProxyStates.Emplace(MoveTemp(NewState));
+        }
+
+        return NewestState;
+    }
 
     template <typename Traits>
     void USimState<Traits>::ConsumeAutoProxyStates(const FBundledPacketsFull& Packets) {
@@ -243,7 +261,10 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimState<Traits>::TickPostPhysics(const FNetTickInfo& TickInfo, const InputType& Input) {
-        if (TickInfo.SimRole == ROLE_SimulatedProxy) { return; }
+        if (TickInfo.SimRole == ROLE_SimulatedProxy) {
+            SimProxyAdjustStateTimeline(TickInfo);
+            return;
+        }
 
         SimDelegates->SimTickPostPhysics.Broadcast(TickInfo, Input, PrevState.State, CurrentState.State);
 
@@ -259,6 +280,37 @@ namespace ClientPrediction {
                 return;
             }
         }
+    }
+
+    template <typename Traits>
+    void USimState<Traits>::SimProxyAdjustStateTimeline(const FNetTickInfo& Info) {
+        const int32 OffsetFromServer = Info.SimProxyWorldManager->GetOffsetFromServer();
+        auto UpdateState = [&](WrappedState& State) {
+            State.LocalTick = State.ServerTick + OffsetFromServer;
+            State.StartTime = static_cast<Chaos::FReal>(State.LocalTick + 1) * Info.Dt;
+            State.EndTime = State.StartTime + Info.Dt;
+        };
+
+        if (OffsetFromServer != SimProxyOffsetFromServer) {
+            for (WrappedState& State : StateHistory) { UpdateState(State); }
+        }
+
+        if (PendingSimProxyStates.IsEmpty()) {
+            return;
+        }
+
+        // TODO This can probably be optimized a bit
+        for (WrappedState& NewState : PendingSimProxyStates) {
+            if (StateHistory.ContainsByPredicate([&](const WrappedState& Other) { return Other.ServerTick == NewState.ServerTick; })) {
+                continue;
+            }
+
+            UpdateState(NewState);
+            StateHistory.Add(MoveTemp(NewState));
+        }
+
+        StateHistory.Sort([](const WrappedState& A, const WrappedState& B) { return A.ServerTick < B.ServerTick; });
+        PendingSimProxyStates.Reset();
     }
 
     template <typename Traits>
@@ -334,12 +386,24 @@ namespace ClientPrediction {
     template <typename Traits>
     void USimState<Traits>::EmitStates(int32 LatestTick) {
         if (StateHistory.IsEmpty() || LatestTick <= LatestEmittedTick) { return; }
-        LatestEmittedTick = StateHistory.Last().ServerTick;
 
         FBundledPacketsFull AutoProxyPackets{};
         TArray<WrappedState> AutoProxyStates = {StateHistory.Last()};
-        AutoProxyPackets.Bundle().Store(AutoProxyStates);
 
+        AutoProxyPackets.Bundle().Store(AutoProxyStates);
         EmitAutoProxyBundle.ExecuteIfBound(AutoProxyPackets);
+
+        TArray<WrappedState> SimProxyStates;
+        for (const WrappedState& State : StateHistory) {
+            if (State.ServerTick > LatestEmittedTick && State.ServerTick <= LatestTick) {
+                SimProxyStates.Add(State);
+            }
+        }
+
+        FBundledPacketsLow SimProxyPackets{};
+        SimProxyPackets.Bundle().Store(SimProxyStates);
+        EmitSimProxyBundle.ExecuteIfBound(SimProxyPackets);
+
+        LatestEmittedTick = LatestTick;
     }
 }
