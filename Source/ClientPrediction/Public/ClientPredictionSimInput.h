@@ -3,6 +3,7 @@
 #include "ClientPredictionDelegate.h"
 #include "ClientPredictionNetSerialization.h"
 #include "ClientPredictionTick.h"
+#include "ClientPredictionPhysState.h"
 
 static constexpr int32 kSendWindowSize = 3;
 
@@ -31,6 +32,7 @@ namespace ClientPrediction {
     class USimInput : public USimInputBase {
     private:
         using InputType = typename Traits::InputType;
+        using StateType = typename Traits::StateType;
         using WrappedInput = FWrappedInput<InputType>;
 
     public:
@@ -45,7 +47,7 @@ namespace ClientPrediction {
         void DequeueRecievedInputs();
 
         void InjectInputsGT();
-        void PrepareInputPhysicsThread(const FNetTickInfo& TickInfo);
+        void PreparePrePhysics(const FNetTickInfo& TickInfo, const StateType& PrevState, const FPhysState& PrevPhysState);
         void EmitInputs();
 
     private:
@@ -115,7 +117,7 @@ namespace ClientPrediction {
     }
 
     template <typename Traits>
-    void USimInput<Traits>::PrepareInputPhysicsThread(const FNetTickInfo& TickInfo) {
+    void USimInput<Traits>::PreparePrePhysics(const FNetTickInfo& TickInfo, const StateType& PrevState, const FPhysState& PrevPhysState) {
         if (TickInfo.SimRole == ENetRole::ROLE_SimulatedProxy) { return; }
 
         if (USimInput::ShouldProduceInput(TickInfo) && SimDelegates != nullptr) {
@@ -124,7 +126,7 @@ namespace ClientPrediction {
             WrappedInput& NewInput = Inputs.Last();
             NewInput.ServerTick = TickInfo.ServerTick;
 
-            SimDelegates->ModifyInputPTDelegate.Broadcast(NewInput.Input, TickInfo.Dt);
+            SimDelegates->ModifyInputPTDelegate.Broadcast(NewInput.Input, PrevState, PrevPhysState, TickInfo.Dt);
         }
         else if (TickInfo.SimRole == ROLE_Authority) {
             DequeueRecievedInputs();

@@ -167,7 +167,10 @@ namespace ClientPrediction {
         FNetTickInfo TickInfo{};
         if (!BuildTickInfo(TickInfo)) { return; }
 
-        SimInput->PrepareInputPhysicsThread(TickInfo);
+        // State needs to come before the input because the input depends on the current state
+        SimState->PreparePrePhysics(TickInfo);
+        SimInput->PreparePrePhysics(TickInfo, SimState->GetPrevState(), SimState->GetPrevPhysState());
+
         SimState->TickPrePhysics(TickInfo, SimInput->GetCurrentInput());
     }
 
@@ -198,7 +201,7 @@ namespace ClientPrediction {
         }
 
         if (SimRole == ENetRole::ROLE_Authority) {
-            SimState->EmitStates(CachedTickNumber);
+            SimState->EmitStates();
         }
 
         const Chaos::FReal ResultsTime = PhysSolver->GetPhysicsResultsTime_External();
