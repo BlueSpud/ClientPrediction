@@ -49,7 +49,7 @@ namespace ClientPrediction {
         void PostAdvance(Chaos::FReal Dt);
         void OnPhysScenePostTick(FChaosScene* Scene);
 
-        bool BuildTickInfo(int32 TickNum, FNetTickInfo& Info) const;
+        bool BuildTickInfo(FNetTickInfo& Info) const;
 
         FDelegateHandle InjectInputsGTDelegate;
         FDelegateHandle PreAdvanceDelegate;
@@ -78,6 +78,7 @@ namespace ClientPrediction {
         bool bHasNetConnection = false;
         ENetRole SimRole = ROLE_None;
 
+        Chaos::FReal CachedSolverTime = -1.0;
         int32 CachedTickNumber = INDEX_NONE;
         int32 EarliestLocalTick = INDEX_NONE;
         Chaos::FReal LastResultsTime = -1.0;
@@ -153,17 +154,21 @@ namespace ClientPrediction {
     void USimCoordinator<Traits>::PreAdvance(const int32 TickNum) {
         if (SimInput == nullptr || SimState == nullptr) { return; }
 
+        Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
+        if (PhysSolver == nullptr) { return; }
+
         // Avoid simulating before the object was actually being simulated. This can happen if something rewinds physics before EarliestLocalTick
         EarliestLocalTick = EarliestLocalTick == INDEX_NONE ? TickNum : EarliestLocalTick;
         if (TickNum < EarliestLocalTick) { return; }
 
+        CachedTickNumber = TickNum;
+        CachedSolverTime = PhysSolver->GetSolverTime();
+
         FNetTickInfo TickInfo{};
-        if (!BuildTickInfo(TickNum, TickInfo)) { return; }
+        if (!BuildTickInfo(TickInfo)) { return; }
 
         SimInput->PrepareInputPhysicsThread(TickInfo);
         SimState->TickPrePhysics(TickInfo, SimInput->GetCurrentInput());
-
-        CachedTickNumber = TickNum;
     }
 
     template <typename Traits>
@@ -176,7 +181,7 @@ namespace ClientPrediction {
         }
 
         FNetTickInfo TickInfo{};
-        if (!BuildTickInfo(CachedTickNumber, TickInfo)) { return; }
+        if (!BuildTickInfo(TickInfo)) { return; }
 
         SimState->TickPostPhysics(TickInfo, SimInput->GetCurrentInput());
     }
@@ -204,7 +209,7 @@ namespace ClientPrediction {
     }
 
     template <typename Traits>
-    bool USimCoordinator<Traits>::BuildTickInfo(int32 TickNum, FNetTickInfo& Info) const {
+    bool USimCoordinator<Traits>::BuildTickInfo(FNetTickInfo& Info) const {
         if (UpdatedComponent == nullptr) { return false; }
 
         Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
@@ -214,7 +219,7 @@ namespace ClientPrediction {
         Info.bIsResim = PhysSolver->GetEvolution()->IsResimming();
 
         Info.Dt = PhysSolver->GetAsyncDeltaTime();
-        Info.StartTime = PhysSolver->GetSolverTime();
+        Info.StartTime = CachedSolverTime;
         Info.EndTime = Info.StartTime + Info.Dt;
 
         Info.UpdatedComponent = UpdatedComponent;
@@ -223,14 +228,14 @@ namespace ClientPrediction {
 
         if (SimRole != ENetRole::ROLE_Authority) {
             if (APlayerController* PC = GetPlayerController()) {
-                Info.LocalTick = TickNum;
-                Info.ServerTick = TickNum + PC->GetNetworkPhysicsTickOffset();
+                Info.LocalTick = CachedTickNumber;
+                Info.ServerTick = CachedTickNumber + PC->GetNetworkPhysicsTickOffset();
             }
             else { return false; }
         }
         else {
-            Info.LocalTick = TickNum;
-            Info.ServerTick = TickNum;
+            Info.LocalTick = CachedTickNumber;
+            Info.ServerTick = CachedTickNumber;
         }
 
         return true;
