@@ -413,6 +413,7 @@ namespace ClientPrediction {
         PendingCorrection.Reset();
     }
 
+    // TODO we don't need the latest emitted tick here, we can use the state history itself. 
     template <typename Traits>
     void USimState<Traits>::EmitStates(int32 LatestTick) {
         if (StateHistory.IsEmpty() || LatestTick <= LatestEmittedTick) { return; }

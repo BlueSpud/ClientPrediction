@@ -17,7 +17,6 @@ namespace ClientPrediction {
 
     template <typename InputType>
     struct FWrappedInput {
-        int32 LocalTick = INDEX_NONE;
         int32 ServerTick = INDEX_NONE;
 
         InputType Input;
@@ -43,6 +42,8 @@ namespace ClientPrediction {
 
     public:
         void ConsumeInputBundle(const FBundledPackets& Packets);
+        void DequeueRecievedInputs();
+
         void InjectInputsGT();
         void PrepareInputPhysicsThread(const FNetTickInfo& TickInfo);
         void EmitInputs();
@@ -51,8 +52,11 @@ namespace ClientPrediction {
         bool ShouldProduceInput(const FNetTickInfo& TickInfo);
 
     private:
+        FCriticalSection RecvMutex;
         TArray<WrappedInput> Inputs;
+        TQueue<WrappedInput> QueuedInputs;
 
+        FCriticalSection SendMutex;
         TArray<WrappedInput> PendingSend; // Inputs that need to be sent at least once
         TArray<WrappedInput> SendWindow; // Inputs that were previously sent (behaves like a sliding window)
 
@@ -60,8 +64,9 @@ namespace ClientPrediction {
         const InputType& GetCurrentInput() { return CurrentInput.Input; }
 
     private:
-        WrappedInput CurrentInput{};
+        FCriticalSection GTInputMutex;
         WrappedInput CurrentGTInput{};
+        WrappedInput CurrentInput{};
     };
 
     template <typename Traits>
@@ -74,13 +79,27 @@ namespace ClientPrediction {
         TArray<WrappedInput> BundleInputs;
         Packets.Bundle().Retrieve(BundleInputs);
 
-        // TODO this can be optimized a bit, but the input buffer is probably not going to get too large so it's fine
+        FScopeLock RecvLock(&RecvMutex);
         for (WrappedInput& NewInput : BundleInputs) {
+            QueuedInputs.Enqueue(MoveTemp(NewInput));
+        }
+    }
+
+    template <typename Traits>
+    void USimInput<Traits>::DequeueRecievedInputs() {
+        FScopeLock RecvLock(&RecvMutex);
+
+        WrappedInput NewInput{};
+        if (QueuedInputs.IsEmpty()) {
+            return;
+        }
+
+        // TODO this can be optimized a bit, but the input buffer is probably not going to get too large so it's fine
+        while (QueuedInputs.Dequeue(NewInput)) {
             if (Inputs.ContainsByPredicate([&](const WrappedInput& Other) { return Other.ServerTick == NewInput.ServerTick; })) {
                 continue;
             }
 
-            NewInput.LocalTick = NewInput.ServerTick;
             Inputs.Add(MoveTemp(NewInput));
         }
 
@@ -90,6 +109,7 @@ namespace ClientPrediction {
     template <typename Traits>
     void USimInput<Traits>::InjectInputsGT() {
         if (SimDelegates != nullptr) {
+            FScopeLock GTInputLock(&GTInputMutex);
             SimDelegates->ProduceInputGTDelegate.Broadcast(CurrentGTInput.Input);
         }
     }
@@ -102,10 +122,12 @@ namespace ClientPrediction {
             Inputs.Add(CurrentGTInput);
 
             WrappedInput& NewInput = Inputs.Last();
-            NewInput.LocalTick = TickInfo.LocalTick;
             NewInput.ServerTick = TickInfo.ServerTick;
 
             SimDelegates->ModifyInputPTDelegate.Broadcast(NewInput.Input, TickInfo.Dt);
+        }
+        else if (TickInfo.SimRole == ROLE_Authority) {
+            DequeueRecievedInputs();
         }
 
         // We always use the server tick to find the input to use. This way if the server offset changes, the right input will still be picked.
@@ -120,18 +142,19 @@ namespace ClientPrediction {
         check(TickInfo.SimRole != ROLE_AutonomousProxy || bFoundPerfectMatch);
 
         if (TickInfo.SimRole == ROLE_AutonomousProxy) {
+            FScopeLock SendLock(&SendMutex);
             PendingSend.Add(CurrentInput);
         }
 
         // TODO Make this message a bit better
         if (!bFoundPerfectMatch) {
-            UE_LOG(LogTemp, Warning, TEXT("Input fault"));
+            UE_LOG(LogTemp, Warning, TEXT("Input fault looking for %d, but best found was %d"), TickInfo.ServerTick, CurrentInput.ServerTick);
         }
     }
 
     template <typename Traits>
     void USimInput<Traits>::EmitInputs() {
-        if (PendingSend.IsEmpty()) { return; }
+        FScopeLock SendLock(&SendMutex);
 
         int32 SendWindowMaxSize = FMath::Max(PendingSend.Num(), kSendWindowSize);
         SendWindow.Append(PendingSend);

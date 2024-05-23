@@ -176,7 +176,7 @@ namespace ClientPrediction {
         if (SimInput == nullptr || SimState == nullptr) { return; }
 
         // Avoid simulating before the object was actually being simulated. This can happen if something rewinds physics before EarliestLocalTick
-        if (CachedTickNumber < EarliestLocalTick) {
+        if (EarliestLocalTick == INDEX_NONE || CachedTickNumber < EarliestLocalTick) {
             return;
         }
 
@@ -188,7 +188,7 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimCoordinator<Traits>::OnPhysScenePostTick(FChaosScene* Scene) {
-        if (SimInput == nullptr || SimState == nullptr) { return; }
+        if (SimInput == nullptr || SimState == nullptr || EarliestLocalTick == INDEX_NONE) { return; }
 
         Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
         if (PhysSolver == nullptr) { return; }
@@ -248,9 +248,7 @@ namespace ClientPrediction {
         FPhysScene* PhysScene = GetPhysScene();
         if (PhysScene == nullptr) { return; }
 
-        PhysScene->EnqueueAsyncPhysicsCommand(0, UpdatedComponent, [this, Packets = MoveTemp(Packets)]() {
-            SimInput->ConsumeInputBundle(Packets);
-        });
+        SimInput->ConsumeInputBundle(Packets);
     }
 
     template <typename Traits>
