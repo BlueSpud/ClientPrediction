@@ -7,6 +7,7 @@
 #include "ClientPredictionDelegate.h"
 #include "ClientPredictionModelTypes.h"
 #include "ClientPredictionNetSerialization.h"
+#include "ClientPredictionSimEvents.h"
 #include "ClientPredictionTick.h"
 
 namespace ClientPrediction {
@@ -122,9 +123,11 @@ namespace ClientPrediction {
     public:
         virtual ~USimState() override = default;
         void SetSimDelegates(const TSharedPtr<FSimDelegates<Traits>>& NewSimDelegates);
+        void SetSimEvents(const TSharedPtr<FSimEvents<Traits>>& NewSimEvents);
 
     private:
         TSharedPtr<FSimDelegates<Traits>> SimDelegates;
+        TSharedPtr<FSimEvents<Traits>> SimEvents;
 
     public:
         int32 ConsumeSimProxyStates(const FBundledPacketsLow& Packets);
@@ -179,6 +182,11 @@ namespace ClientPrediction {
     template <typename Traits>
     void USimState<Traits>::SetSimDelegates(const TSharedPtr<FSimDelegates<Traits>>& NewSimDelegates) {
         SimDelegates = NewSimDelegates;
+    }
+
+    template <typename Traits>
+    void USimState<Traits>::SetSimEvents(const TSharedPtr<FSimEvents<Traits>>& NewSimEvents) {
+        SimEvents = NewSimEvents;
     }
 
     template <typename Traits>
@@ -269,7 +277,9 @@ namespace ClientPrediction {
         }
 
         CurrentState.State = PrevState.State;
-        SimDelegates->SimTickPrePhysicsDelegate.Broadcast(TickInfo, Input, PrevState.State, CurrentState.State);
+
+        FTickOutput Output(CurrentState.State, SimEvents);
+        SimDelegates->SimTickPrePhysicsDelegate.Broadcast(TickInfo, Input, PrevState.State, Output);
     }
 
     template <typename Traits>
@@ -279,7 +289,8 @@ namespace ClientPrediction {
             return;
         }
 
-        SimDelegates->SimTickPostPhysicsDelegate.Broadcast(TickInfo, Input, PrevState.State, CurrentState.State);
+        FTickOutput Output(CurrentState.State, SimEvents);
+        SimDelegates->SimTickPostPhysicsDelegate.Broadcast(TickInfo, Input, PrevState.State, Output);
 
         USimState::FillStateSimDetails(CurrentState, TickInfo);
         if (StateHistory.IsEmpty() || StateHistory.Last().LocalTick < TickInfo.LocalTick) {
@@ -477,7 +488,7 @@ namespace ClientPrediction {
             OutState = Start;
 
             const Chaos::FReal Denominator = End.EndTime - End.StartTime;
-            const Chaos::FReal Alpha = Denominator > 0.0 ? FMath::Min(1.0, (ResultsTime - End.StartTime) / Denominator) : 1.0;
+            const Chaos::FReal Alpha = Denominator != 0.0 ? FMath::Min(1.0, (ResultsTime - End.StartTime) / Denominator) : 1.0;
             OutState.Interpolate(End, Alpha);
 
             return;

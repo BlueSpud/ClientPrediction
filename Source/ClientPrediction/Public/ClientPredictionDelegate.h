@@ -1,24 +1,50 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "ClientPredictionSimEvents.h"
 #include "ClientPredictionTick.h"
 
 namespace ClientPrediction {
     template <typename Traits>
+    struct FTickOutput {
+        using StateType = typename Traits::StateType;
+
+        FTickOutput(StateType& State, const TSharedPtr<FSimEvents<Traits>>& SimEvents);
+        typename Traits::StateType& State;
+
+        template <typename Event>
+        void DispatchEvent(const Event& NewEvent);
+
+    private:
+        TSharedPtr<FSimEvents<Traits>> SimEvents;
+    };
+
+    template <typename Traits>
+    FTickOutput<Traits>::FTickOutput(StateType& State, const TSharedPtr<FSimEvents<Traits>>& SimEvents) : State(State), SimEvents(SimEvents) {}
+
+    template <typename Traits>
+    template <typename Event>
+    void FTickOutput<Traits>::DispatchEvent(const Event& NewEvent) {
+        if (SimEvents == nullptr) { return; }
+    }
+
+
+    template <typename Traits>
     struct FSimDelegates {
         using InputType = typename Traits::InputType;
         using StateType = typename Traits::StateType;
+        using TickOutput = FTickOutput<Traits>;
 
         DECLARE_MULTICAST_DELEGATE_OneParam(FInputGTDelegate, InputType& Input);
         FInputGTDelegate ProduceInputGTDelegate; // Called on game thread
 
-        DECLARE_MULTICAST_DELEGATE_ThreeParams(FInputPtDelegate, InputType& Input, Chaos::FReal Dt, int32 TickNumber);
+        DECLARE_MULTICAST_DELEGATE_TwoParams(FInputPtDelegate, InputType& Input, Chaos::FReal Dt);
         FInputPtDelegate ModifyInputPTDelegate;
 
         DECLARE_MULTICAST_DELEGATE_OneParam(FGenInitialStateDelegate, StateType& State);
         FGenInitialStateDelegate GenerateInitialStatePTDelegate;
 
-        DECLARE_MULTICAST_DELEGATE_FourParams(FSimTickDelegate, const FSimTickInfo& TickInfo, const InputType& Input, const StateType& PrevState, StateType& OutState);
+        DECLARE_MULTICAST_DELEGATE_FourParams(FSimTickDelegate, const FSimTickInfo& TickInfo, const InputType& Input, const StateType& PrevState, TickOutput& Output);
         FSimTickDelegate SimTickPrePhysicsDelegate;
         FSimTickDelegate SimTickPostPhysicsDelegate;
 

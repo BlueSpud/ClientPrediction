@@ -105,7 +105,7 @@ namespace ClientPrediction {
             NewInput.LocalTick = TickInfo.LocalTick;
             NewInput.ServerTick = TickInfo.ServerTick;
 
-            SimDelegates->ModifyInputPTDelegate.Broadcast(NewInput.Input, TickInfo.Dt, TickInfo.LocalTick);
+            SimDelegates->ModifyInputPTDelegate.Broadcast(NewInput.Input, TickInfo.Dt);
         }
 
         // We always use the server tick to find the input to use. This way if the server offset changes, the right input will still be picked.
