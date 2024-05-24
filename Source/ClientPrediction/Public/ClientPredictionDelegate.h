@@ -39,7 +39,8 @@ namespace ClientPrediction {
         DECLARE_MULTICAST_DELEGATE_OneParam(FInputGTDelegate, InputType& Input);
         FInputGTDelegate ProduceInputGTDelegate; // Called on game thread
 
-        DECLARE_MULTICAST_DELEGATE_FourParams(FInputPtDelegate, InputType& Input, const StateType& PrevState, const FPhysState& PrevPhysState, Chaos::FReal Dt);
+        // TODO The phys state can be removed so long as this is called after corrections are applied
+        DECLARE_MULTICAST_DELEGATE_ThreeParams(FInputPtDelegate, InputType& Input, const StateType& PrevState, Chaos::FReal Dt);
         FInputPtDelegate ModifyInputPTDelegate;
 
         DECLARE_MULTICAST_DELEGATE_OneParam(FGenInitialStateDelegate, StateType& State);

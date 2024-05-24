@@ -79,7 +79,6 @@ namespace ClientPrediction {
 
     public:
         const StateType& GetPrevState() { return PrevState.State; }
-        const FPhysState& GetPrevPhysState() { return PrevState.PhysState; }
 
     private:
         bool bGeneratedInitialState = false;

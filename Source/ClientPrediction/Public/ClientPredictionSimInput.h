@@ -47,7 +47,7 @@ namespace ClientPrediction {
         void DequeueRecievedInputs();
 
         void InjectInputsGT();
-        void PreparePrePhysics(const FNetTickInfo& TickInfo, const StateType& PrevState, const FPhysState& PrevPhysState);
+        void PreparePrePhysics(const FNetTickInfo& TickInfo, const StateType& PrevState);
         void EmitInputs();
 
     private:
@@ -117,7 +117,7 @@ namespace ClientPrediction {
     }
 
     template <typename Traits>
-    void USimInput<Traits>::PreparePrePhysics(const FNetTickInfo& TickInfo, const StateType& PrevState, const FPhysState& PrevPhysState) {
+    void USimInput<Traits>::PreparePrePhysics(const FNetTickInfo& TickInfo, const StateType& PrevState) {
         if (TickInfo.SimRole == ENetRole::ROLE_SimulatedProxy) { return; }
 
         if (USimInput::ShouldProduceInput(TickInfo) && SimDelegates != nullptr) {
@@ -126,7 +126,7 @@ namespace ClientPrediction {
             WrappedInput& NewInput = Inputs.Last();
             NewInput.ServerTick = TickInfo.ServerTick;
 
-            SimDelegates->ModifyInputPTDelegate.Broadcast(NewInput.Input, PrevState, PrevPhysState, TickInfo.Dt);
+            SimDelegates->ModifyInputPTDelegate.Broadcast(NewInput.Input, PrevState, TickInfo.Dt);
         }
         else if (TickInfo.SimRole == ROLE_Authority) {
             DequeueRecievedInputs();

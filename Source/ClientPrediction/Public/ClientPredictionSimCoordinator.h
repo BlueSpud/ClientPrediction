@@ -169,7 +169,7 @@ namespace ClientPrediction {
 
         // State needs to come before the input because the input depends on the current state
         SimState->PreparePrePhysics(TickInfo);
-        SimInput->PreparePrePhysics(TickInfo, SimState->GetPrevState(), SimState->GetPrevPhysState());
+        SimInput->PreparePrePhysics(TickInfo, SimState->GetPrevState());
 
         SimState->TickPrePhysics(TickInfo, SimInput->GetCurrentInput());
     }
