@@ -65,3 +65,7 @@ void UClientPredictionV2Component::OnRep_SimProxyStates() {
 void UClientPredictionV2Component::OnRep_AutoProxyStates() {
     if (SimCoordinator != nullptr) { SimCoordinator->ConsumeAutoProxyStates(AutoProxyStates); }
 }
+
+void UClientPredictionV2Component::ClientRecvEvents_Implementation(const FBundledPackets& Bundle) {
+    if (SimCoordinator != nullptr) { SimCoordinator->ConsumeEvents(Bundle); }
+}

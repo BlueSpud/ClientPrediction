@@ -13,7 +13,7 @@
 
 namespace ClientPrediction {
     template <typename StateType>
-    void FWrappedState<StateType>::NetSerialize(FArchive& Ar, EDataCompleteness Completeness) {
+    void FWrappedState<StateType>::NetSerialize(FArchive& Ar, EDataCompleteness Completeness, void* Userdata) {
         Ar << ServerTick;
         PhysState.NetSerialize(Ar, Completeness);
         State.NetSerialize(Ar, Completeness);
@@ -113,7 +113,7 @@ namespace ClientPrediction {
     template <typename Traits>
     int32 USimState<Traits>::ConsumeSimProxyStates(const FBundledPacketsLow& Packets, Chaos::FReal SimDt) {
         TArray<WrappedState> AuthorityStates;
-        Packets.Bundle().Retrieve(AuthorityStates);
+        Packets.Bundle().Retrieve(AuthorityStates, this);
 
         // We add the states to a queue so that we can update these states as well as the existing ones in SimProxyAdjustStateTimeline(). We can't do all that
         // logic in this function since the sim proxy offset might change in between recieves.
@@ -138,7 +138,7 @@ namespace ClientPrediction {
     template <typename Traits>
     void USimState<Traits>::ConsumeAutoProxyStates(const FBundledPacketsFull& Packets) {
         TArray<WrappedState> AuthorityStates;
-        Packets.Bundle().Retrieve(AuthorityStates);
+        Packets.Bundle().Retrieve(AuthorityStates, this);
 
         if (AuthorityStates.IsEmpty()) { return; }
         LatestAuthorityState = AuthorityStates.Last();
@@ -315,7 +315,7 @@ namespace ClientPrediction {
         FBundledPacketsFull AutoProxyPackets{};
         TArray<WrappedState> AutoProxyStates = {StateHistory.Last()};
 
-        AutoProxyPackets.Bundle().Store(AutoProxyStates);
+        AutoProxyPackets.Bundle().Store(AutoProxyStates, this);
         EmitAutoProxyBundle.ExecuteIfBound(AutoProxyPackets);
 
         TArray<WrappedState> SimProxyStates;
@@ -326,7 +326,7 @@ namespace ClientPrediction {
         }
 
         FBundledPacketsLow SimProxyPackets{};
-        SimProxyPackets.Bundle().Store(SimProxyStates);
+        SimProxyPackets.Bundle().Store(SimProxyStates, this);
         EmitSimProxyBundle.ExecuteIfBound(SimProxyPackets);
 
         LatestEmittedTick = StateHistory.Last().ServerTick;

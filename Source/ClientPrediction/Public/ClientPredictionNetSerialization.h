@@ -90,15 +90,15 @@ template <ClientPrediction::EDataCompleteness Completeness>
 struct FPacketBundle {
     void Copy(const FPacketBundle& Other);
 
-    template <typename Packet>
-    void Store(TArray<Packet>& Packets);
+    template <typename Packet, typename UserdataType>
+    void Store(TArray<Packet>& Packets, UserdataType Userdata);
 
-    template <typename Packet>
-    bool Retrieve(TArray<Packet>& Packets) const;
+    template <typename Packet, typename UserdataType>
+    bool Retrieve(TArray<Packet>& Packets, UserdataType Userdata) const;
 
 private:
-    template <typename Packet>
-    void NetSerializePacket(Packet& PacketToSerialize, FArchive& Ar) const;
+    template <typename Packet, typename UserdataType>
+    void NetSerializePacket(Packet& PacketToSerialize, UserdataType Userdata, FArchive& Ar) const;
 
 public:
     bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess);
@@ -119,8 +119,8 @@ void FPacketBundle<Completeness>::Copy(const FPacketBundle& Other) {
 }
 
 template <ClientPrediction::EDataCompleteness Completeness>
-template <typename Packet>
-void FPacketBundle<Completeness>::Store(TArray<Packet>& Packets) {
+template <typename Packet, typename UserdataType>
+void FPacketBundle<Completeness>::Store(TArray<Packet>& Packets, UserdataType Userdata) {
     check(Packets.Num() < TNumericLimits<uint8>::Max());
 
     FNetBitWriter Writer(nullptr, TNumericLimits<uint16>::Max());
@@ -128,7 +128,7 @@ void FPacketBundle<Completeness>::Store(TArray<Packet>& Packets) {
     Writer << NumPackets;
 
     for (Packet& PacketToWrite : Packets) {
-        NetSerializePacket(PacketToWrite, Writer);
+        NetSerializePacket(PacketToWrite, Userdata, Writer);
     }
 
     SerializedBits = *Writer.GetBuffer();
@@ -137,8 +137,8 @@ void FPacketBundle<Completeness>::Store(TArray<Packet>& Packets) {
 }
 
 template <ClientPrediction::EDataCompleteness Completeness>
-template <typename Packet>
-bool FPacketBundle<Completeness>::Retrieve(TArray<Packet>& Packets) const {
+template <typename Packet, typename UserdataType>
+bool FPacketBundle<Completeness>::Retrieve(TArray<Packet>& Packets, UserdataType Userdata) const {
     if (NumberOfBits == -1) { return false; }
 
     FNetBitReader BitReader(nullptr, SerializedBits.GetData(), NumberOfBits);
@@ -147,28 +147,28 @@ bool FPacketBundle<Completeness>::Retrieve(TArray<Packet>& Packets) const {
 
     for (uint8 PacketIdx = 0; PacketIdx < NumPackets; ++PacketIdx) {
         Packets.AddDefaulted();
-        NetSerializePacket(Packets.Last(), BitReader);
+        NetSerializePacket(Packets.Last(), Userdata, BitReader);
     }
 
     return true;
 }
 
 template <ClientPrediction::EDataCompleteness Completeness>
-template <typename Packet>
-void FPacketBundle<Completeness>::NetSerializePacket(Packet& PacketToSerialize, FArchive& Ar) const {
-    PacketToSerialize.NetSerialize(Ar);
+template <typename Packet, typename UserdataType>
+void FPacketBundle<Completeness>::NetSerializePacket(Packet& PacketToSerialize, UserdataType Userdata, FArchive& Ar) const {
+    PacketToSerialize.NetSerialize(Ar, Userdata);
 }
 
 template <>
-template <typename Packet>
-void FPacketBundle<ClientPrediction::EDataCompleteness::kFull>::NetSerializePacket(Packet& PacketToSerialize, FArchive& Ar) const {
-    PacketToSerialize.NetSerialize(Ar, ClientPrediction::EDataCompleteness::kFull);
+template <typename Packet, typename UserdataType>
+void FPacketBundle<ClientPrediction::EDataCompleteness::kFull>::NetSerializePacket(Packet& PacketToSerialize, UserdataType Userdata, FArchive& Ar) const {
+    PacketToSerialize.NetSerialize(Ar, ClientPrediction::EDataCompleteness::kFull, Userdata);
 }
 
 template <>
-template <typename Packet>
-void FPacketBundle<ClientPrediction::EDataCompleteness::kLow>::NetSerializePacket(Packet& PacketToSerialize, FArchive& Ar) const {
-    PacketToSerialize.NetSerialize(Ar, ClientPrediction::EDataCompleteness::kLow);
+template <typename Packet, typename UserdataType>
+void FPacketBundle<ClientPrediction::EDataCompleteness::kLow>::NetSerializePacket(Packet& PacketToSerialize, UserdataType Userdata, FArchive& Ar) const {
+    PacketToSerialize.NetSerialize(Ar, ClientPrediction::EDataCompleteness::kLow, Userdata);
 }
 
 template <ClientPrediction::EDataCompleteness Completeness>

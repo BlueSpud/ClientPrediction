@@ -20,6 +20,7 @@ namespace ClientPrediction {
         virtual void ConsumeInputBundle(FBundledPackets Packets) = 0;
         virtual void ConsumeSimProxyStates(FBundledPacketsLow Packets) = 0;
         virtual void ConsumeAutoProxyStates(FBundledPacketsFull Packets) = 0;
+        virtual void ConsumeEvents(FBundledPackets Packets) = 0;
     };
 
     template <typename Traits>
@@ -63,6 +64,7 @@ namespace ClientPrediction {
         virtual void ConsumeInputBundle(FBundledPackets Packets) override;
         virtual void ConsumeSimProxyStates(FBundledPacketsLow Packets) override;
         virtual void ConsumeAutoProxyStates(FBundledPacketsFull Packets) override;
+        virtual void ConsumeEvents(FBundledPackets Packets) override;
 
     private:
         UWorld* GetWorld() const;
@@ -141,12 +143,17 @@ namespace ClientPrediction {
 
     template <typename Traits>
     int32 USimCoordinator<Traits>::TriggerRewindIfNeeded_Internal(int32 LastCompletedTick) {
-        if (UpdatedComponent == nullptr || SimState == nullptr || SimRole != ROLE_AutonomousProxy) { return INDEX_NONE; }
+        if (UpdatedComponent == nullptr || SimState == nullptr || SimEvents == nullptr || SimRole != ROLE_AutonomousProxy) { return INDEX_NONE; }
 
         Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
         if (PhysSolver == nullptr) { return false; }
 
-        return SimState->GetRewindTick(PhysSolver, UpdatedComponent->GetPhysicsObjectByName(NAME_None));
+        const int32 RewindTick = SimState->GetRewindTick(PhysSolver, UpdatedComponent->GetPhysicsObjectByName(NAME_None));
+        if (RewindTick != INDEX_NONE) {
+            SimEvents->Rewind(RewindTick);
+        }
+
+        return RewindTick;
     }
 
     template <typename Traits>
@@ -197,7 +204,7 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimCoordinator<Traits>::OnPhysScenePostTick(FChaosScene* Scene) {
-        if (SimInput == nullptr || SimState == nullptr || EarliestLocalTick == INDEX_NONE) { return; }
+        if (SimInput == nullptr || SimState == nullptr || SimEvents == nullptr || EarliestLocalTick == INDEX_NONE) { return; }
 
         Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
         if (PhysSolver == nullptr) { return; }
@@ -211,6 +218,7 @@ namespace ClientPrediction {
 
         if (SimRole == ENetRole::ROLE_Authority) {
             SimState->EmitStates();
+            SimEvents->EmitEvents();
         }
 
         const Chaos::FReal ResultsTime = PhysSolver->GetPhysicsResultsTime_External();
@@ -293,6 +301,21 @@ namespace ClientPrediction {
 
         PhysScene->EnqueueAsyncPhysicsCommand(0, UpdatedComponent, [this, Packets = MoveTemp(Packets)]() {
             SimState->ConsumeAutoProxyStates(Packets);
+        });
+    }
+
+    template <typename Traits>
+    void USimCoordinator<Traits>::ConsumeEvents(FBundledPackets Packets) {
+        if (UpdatedComponent == nullptr || SimEvents == nullptr || SimRole != ROLE_SimulatedProxy) { return; }
+
+        FPhysScene* PhysScene = GetPhysScene();
+        if (PhysScene == nullptr) { return; }
+
+        PhysScene->EnqueueAsyncPhysicsCommand(0, UpdatedComponent, [this, Packets = MoveTemp(Packets)]() {
+            Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
+            if (PhysSolver == nullptr) { return; }
+
+            SimEvents->ConsumeEvents(Packets, PhysSolver->GetAsyncDeltaTime());
         });
     }
 

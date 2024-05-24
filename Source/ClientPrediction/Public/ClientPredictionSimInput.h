@@ -22,7 +22,7 @@ namespace ClientPrediction {
 
         InputType Input;
 
-        void NetSerialize(FArchive& Ar) {
+        void NetSerialize(FArchive& Ar, void* Userdata) {
             Ar << ServerTick;
             Input.NetSerialize(Ar);
         }
@@ -79,7 +79,7 @@ namespace ClientPrediction {
     template <typename Traits>
     void USimInput<Traits>::ConsumeInputBundle(const FBundledPackets& Packets) {
         TArray<WrappedInput> BundleInputs;
-        Packets.Bundle().Retrieve(BundleInputs);
+        Packets.Bundle().Retrieve<>(BundleInputs, this);
 
         FScopeLock RecvLock(&RecvMutex);
         for (WrappedInput& NewInput : BundleInputs) {
@@ -164,7 +164,7 @@ namespace ClientPrediction {
         }
 
         FBundledPackets Packets{};
-        Packets.Bundle().Store(SendWindow);
+        Packets.Bundle().Store(SendWindow, this);
 
         EmitInputBundleDelegate.ExecuteIfBound(Packets);
         PendingSend.Reset();

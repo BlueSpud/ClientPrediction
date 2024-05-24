@@ -47,7 +47,7 @@ namespace ClientPrediction {
         if (PhysSolver == nullptr) { return; }
 
         const int32 LocalTick = PhysSolver->GetCurrentFrame();
-        const int32 NewOffset = LocalTick - LatestReceivedServerTick + kSimProxyBufferTicks;
+        const int32 NewOffset = LatestReceivedServerTick - LocalTick - kSimProxyBufferTicks;
 
         if (OffsetFromServer == INDEX_NONE || FMath::Abs(OffsetFromServer - NewOffset) >= kSimProxyBufferCorrectionThreshold) {
             UE_LOG(LogTemp, Log, TEXT("Updating sim proxy offset to %d"), NewOffset);

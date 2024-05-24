@@ -80,7 +80,7 @@ namespace ClientPrediction {
         Chaos::FReal StartTime = 0.0;
         Chaos::FReal EndTime = 0.0;
 
-        void NetSerialize(FArchive& Ar, EDataCompleteness Completeness);
+        void NetSerialize(FArchive& Ar, EDataCompleteness Completeness, void* Userdata);
         void Interpolate(const FWrappedState& Other, Chaos::FReal Alpha);
     };
 }

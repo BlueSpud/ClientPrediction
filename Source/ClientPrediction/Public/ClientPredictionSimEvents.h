@@ -1,7 +1,11 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "ClientPredictionNetSerialization.h"
 #include "ClientPredictionTick.h"
+
+// For now events are ONLY predicted on auto proxies and replicated on sim proxies. In the future we might need to change this
+// so that the server can inform an auto proxy has executed event it mispredicted. It might also make sense to be able to rewind events as well.
 
 namespace ClientPrediction {
     using EventId = uint8;
@@ -18,11 +22,12 @@ namespace ClientPrediction {
     };
 
     template <typename Traits>
-    uint8 FEventIds<Traits>::kNextEventId = 0;
+    EventId FEventIds<Traits>::kNextEventId = 0;
 
     struct FEventWrapperBase {
         virtual ~FEventWrapperBase() = default;
 
+        EventId EventId = INDEX_NONE;
         int32 LocalTick = INDEX_NONE;
         int32 ServerTick = INDEX_NONE;
 
@@ -57,26 +62,34 @@ namespace ClientPrediction {
 
     template <typename EventType>
     void FEventWrapper<EventType>::NetSerialize(FArchive& Ar) {
+        // EventId is not serialized here because when deserializing it from the authority a factory needs to create this object first.
         Ar << ServerTick;
+
         Event.NetSerialize(Ar);
     }
 
     struct FEventFactoryBase {
         virtual ~FEventFactoryBase() = default;
         virtual TUniquePtr<FEventWrapperBase> CreateEvent(const FNetTickInfo& TickInfo, const void* Data) = 0;
+        virtual TUniquePtr<FEventWrapperBase> CreateEvent(FArchive& Ar, Chaos::FReal SimDt) = 0;
     };
 
     template <typename EventType>
     struct FEventFactory : public FEventFactoryBase {
         using WrappedEvent = FEventWrapper<EventType>;
+
+        FEventFactory(int32 EventId) : EventId(EventId) {}
         virtual TUniquePtr<FEventWrapperBase> CreateEvent(const FNetTickInfo& TickInfo, const void* Data) override;
+        virtual TUniquePtr<FEventWrapperBase> CreateEvent(FArchive& Ar, Chaos::FReal SimDt) override;
 
         TMulticastDelegate<void(const EventType&)> Delegate;
+        int32 EventId = INDEX_NONE;
     };
 
     template <typename EventType>
     TUniquePtr<FEventWrapperBase> FEventFactory<EventType>::CreateEvent(const FNetTickInfo& TickInfo, const void* Data) {
         TUniquePtr<WrappedEvent> NewEvent = MakeUnique<WrappedEvent>();
+        NewEvent->EventId = EventId;
         NewEvent->LocalTick = TickInfo.LocalTick;
         NewEvent->ServerTick = TickInfo.ServerTick;
 
@@ -89,9 +102,60 @@ namespace ClientPrediction {
         return NewEvent;
     }
 
+    template <typename EventType>
+    TUniquePtr<FEventWrapperBase> FEventFactory<EventType>::CreateEvent(FArchive& Ar, Chaos::FReal SimDt) {
+        TUniquePtr<WrappedEvent> NewEvent = MakeUnique<WrappedEvent>();
+        NewEvent->EventId = EventId;
+        NewEvent->Delegate = &Delegate;
+
+        NewEvent->NetSerialize(Ar);
+
+        NewEvent->ExecutionTime = static_cast<Chaos::FReal>(NewEvent->ServerTick) * SimDt;
+        NewEvent->bHasBeenExecuted = false;
+
+        return NewEvent;
+    }
+
+    struct FEventSaver {
+        FEventSaver(const TUniquePtr<FEventWrapperBase>& Event) : Event(Event) {}
+
+        void NetSerialize(FArchive& Ar, void* Userdata) {
+            check(Ar.IsSaving());
+
+            Ar << Event->EventId;
+            Event->NetSerialize(Ar);
+        }
+
+    private:
+        const TUniquePtr<FEventWrapperBase>& Event;
+    };
+
+    struct FEventLoaderUserdata {
+        const TMap<EventId, TUniquePtr<FEventFactoryBase>>& Factories;
+        Chaos::FReal SimDt;
+    };
+
+    struct FEventLoader {
+        void NetSerialize(FArchive& Ar, const FEventLoaderUserdata& Userdata);
+        TUniquePtr<FEventWrapperBase> Event;
+    };
+
+    inline void FEventLoader::NetSerialize(FArchive& Ar, const FEventLoaderUserdata& Userdata) {
+        check(Ar.IsLoading());
+
+        EventId EventId;
+        Ar << EventId;
+
+        check(Userdata.Factories.Contains(EventId));
+        Event = Userdata.Factories[EventId]->CreateEvent(Ar, Userdata.SimDt);
+    }
+
     class USimEventsBase {
     public:
         virtual ~USimEventsBase() = default;
+
+        DECLARE_DELEGATE_OneParam(FEmitEventBundleDelegate, const FBundledPackets& Bundle)
+        FEmitEventBundleDelegate EmitEventBundle;
     };
 
     template <typename Traits>
@@ -99,26 +163,37 @@ namespace ClientPrediction {
     public:
         virtual ~USimEvents() override = default;
 
+
         template <typename EventType>
         TMulticastDelegate<void(const EventType&)>& RegisterEvent();
 
         template <typename Event>
         void DispatchEvent(const FNetTickInfo& TickInfo, const Event& NewEvent);
+
+        void ConsumeEvents(const FBundledPackets& Packets, Chaos::FReal SimDt);
         void ExecuteEvents(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole);
+        void Rewind(int32 LocalRewindTick);
+
+        void EmitEvents();
 
     private:
-        TMap<EventId, TUniquePtr<FEventFactoryBase>> Handlers;
+        TMap<EventId, TUniquePtr<FEventFactoryBase>> Factories;
+
+        FCriticalSection EventMutex;
         TArray<TUniquePtr<FEventWrapperBase>> Events;
+
+        // Relevant only for the authorities
+        int32 LatestEmittedTick = INDEX_NONE;
     };
 
     template <typename Traits>
     template <typename EventType>
     TMulticastDelegate<void(const EventType&)>& USimEvents<Traits>::RegisterEvent() {
         const EventId EventId = FEventIds<Traits>::template GetId<EventType>();
-        TUniquePtr<FEventFactory<EventType>> Handler = MakeUnique<FEventFactory<EventType>>();
+        TUniquePtr<FEventFactory<EventType>> Handler = MakeUnique<FEventFactory<EventType>>(EventId);
 
         TMulticastDelegate<void(const EventType&)>& Delegate = Handler->Delegate;
-        Handlers.Add(EventId, MoveTemp(Handler));
+        Factories.Add(EventId, MoveTemp(Handler));
 
         return Delegate;
     }
@@ -127,15 +202,58 @@ namespace ClientPrediction {
     template <typename EventType>
     void USimEvents<Traits>::DispatchEvent(const FNetTickInfo& TickInfo, const EventType& NewEvent) {
         const EventId EventId = FEventIds<Traits>::template GetId<EventType>();
-        if (!Handlers.Contains(EventId)) { return; }
+        if (!Factories.Contains(EventId)) { return; }
 
-        Events.Emplace(Handlers[EventId]->CreateEvent(TickInfo, &NewEvent));
+        Events.Emplace(Factories[EventId]->CreateEvent(TickInfo, &NewEvent));
+    }
+
+    template <typename Traits>
+    void USimEvents<Traits>::ConsumeEvents(const FBundledPackets& Packets, Chaos::FReal SimDt) {
+        TArray<FEventLoader> AuthorityEvents;
+        Packets.Bundle().Retrieve(AuthorityEvents, FEventLoaderUserdata{Factories, SimDt});
+
+        for (FEventLoader& Loader : AuthorityEvents) {
+            Events.Add(MoveTemp(Loader.Event));
+        }
     }
 
     template <typename Traits>
     void USimEvents<Traits>::ExecuteEvents(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole) {
+        FScopeLock EventLock(&EventMutex);
         for (const TUniquePtr<FEventWrapperBase>& Event : Events) {
             Event->ExecuteIfNeeded(ResultsTime, SimProxyOffset, SimRole);
         }
+    }
+
+    template <typename Traits>
+    void USimEvents<Traits>::Rewind(int32 LocalRewindTick) {
+        FScopeLock EventLock(&EventMutex);
+        for (size_t EventIdx = 0; EventIdx < Events.Num();) {
+            if (Events[EventIdx]->LocalTick >= LocalRewindTick) {
+                Events.RemoveAt(EventIdx);
+            }
+            else { ++EventIdx; }
+        }
+    }
+
+    template <typename Traits>
+    void USimEvents<Traits>::EmitEvents() {
+        FScopeLock EventLock(&EventMutex);
+        if (Events.IsEmpty() || Events.Last()->ServerTick <= LatestEmittedTick) {
+            return;
+        }
+
+        TArray<FEventSaver> Serializers;
+        for (const TUniquePtr<FEventWrapperBase>& Event : Events) {
+            if (Event->ServerTick > LatestEmittedTick) {
+                Serializers.Add(FEventSaver(Event));
+            }
+        }
+
+        FBundledPackets EventPackets{};
+        EventPackets.Bundle().Store(Serializers, this);
+        EmitEventBundle.ExecuteIfBound(EventPackets);
+
+        LatestEmittedTick = Events.Last()->ServerTick;
     }
 }
