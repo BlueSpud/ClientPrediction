@@ -25,12 +25,15 @@ namespace ClientPrediction {
     template <typename Traits>
     class USimCoordinator : public USimCoordinatorBase, public Chaos::ISimCallbackObject {
     public:
-        explicit USimCoordinator(const TSharedPtr<USimInput<Traits>>& SimInput, const TSharedPtr<USimState<Traits>>& SimState);
+        explicit USimCoordinator(const TSharedPtr<USimInput<Traits>>& SimInput, const TSharedPtr<USimState<Traits>>& SimState,
+                                 const TSharedPtr<USimEvents<Traits>>& SimEvents);
+
         virtual ~USimCoordinator() override = default;
 
     private:
         TSharedPtr<USimInput<Traits>> SimInput;
         TSharedPtr<USimState<Traits>> SimState;
+        TSharedPtr<USimEvents<Traits>> SimEvents;
 
         virtual void Initialize(UPrimitiveComponent* NewUpdatedComponent, bool bNowHasNetConnection, ENetRole NewSimRole) override;
         virtual void Destroy() override;
@@ -72,7 +75,7 @@ namespace ClientPrediction {
         TSharedPtr<FSimDelegates<Traits>> GetSimDelegates() { return SimDelegates; };
 
     private:
-        TSharedPtr<FSimDelegates<Traits>> SimDelegates = MakeShared<FSimDelegates<Traits>>();
+        TSharedPtr<FSimDelegates<Traits>> SimDelegates;
 
         class UPrimitiveComponent* UpdatedComponent = nullptr;
         bool bHasNetConnection = false;
@@ -85,10 +88,13 @@ namespace ClientPrediction {
     };
 
     template <typename Traits>
-    USimCoordinator<Traits>::USimCoordinator(const TSharedPtr<USimInput<Traits>>& SimInput, const TSharedPtr<USimState<Traits>>& SimState) :
-        Chaos::ISimCallbackObject(Chaos::ESimCallbackOptions::Rewind), SimInput(SimInput), SimState(SimState) {
+    USimCoordinator<Traits>::USimCoordinator(const TSharedPtr<USimInput<Traits>>& SimInput, const TSharedPtr<USimState<Traits>>& SimState,
+                                             const TSharedPtr<USimEvents<Traits>>& SimEvents) :
+        Chaos::ISimCallbackObject(Chaos::ESimCallbackOptions::Rewind), SimInput(SimInput), SimState(SimState), SimEvents(SimEvents),
+        SimDelegates(MakeShared<FSimDelegates<Traits>>(SimEvents)) {
         SimInput->SetSimDelegates(SimDelegates);
         SimState->SetSimDelegates(SimDelegates);
+        SimState->SetSimEvents(SimEvents);
     }
 
     template <typename Traits>
@@ -212,6 +218,8 @@ namespace ClientPrediction {
         const Chaos::FReal Dt = LastResultsTime == -1.0 ? 0.0 : ResultsTime - LastResultsTime;
 
         SimState->InterpolateGameThread(UpdatedComponent, ResultsTime, SimProxyOffset, Dt, SimRole);
+        SimEvents->ExecuteEvents(ResultsTime, SimProxyOffset, SimRole);
+
         LastResultsTime = ResultsTime;
     }
 

@@ -46,11 +46,11 @@ namespace ClientPrediction {
     public:
         virtual ~USimState() override = default;
         void SetSimDelegates(const TSharedPtr<FSimDelegates<Traits>>& NewSimDelegates);
-        void SetSimEvents(const TSharedPtr<FSimEvents<Traits>>& NewSimEvents);
+        void SetSimEvents(const TSharedPtr<USimEvents<Traits>>& NewSimEvents);
 
     private:
         TSharedPtr<FSimDelegates<Traits>> SimDelegates;
-        TSharedPtr<FSimEvents<Traits>> SimEvents;
+        TSharedPtr<USimEvents<Traits>> SimEvents;
 
     public:
         int32 ConsumeSimProxyStates(const FBundledPacketsLow& Packets, Chaos::FReal SimDt);
@@ -106,7 +106,7 @@ namespace ClientPrediction {
     }
 
     template <typename Traits>
-    void USimState<Traits>::SetSimEvents(const TSharedPtr<FSimEvents<Traits>>& NewSimEvents) {
+    void USimState<Traits>::SetSimEvents(const TSharedPtr<USimEvents<Traits>>& NewSimEvents) {
         SimEvents = NewSimEvents;
     }
 
@@ -212,7 +212,7 @@ namespace ClientPrediction {
         if (SimDelegates == nullptr || TickInfo.SimRole == ROLE_SimulatedProxy) { return; }
         CurrentState.State = PrevState.State;
 
-        FTickOutput Output(CurrentState.State, SimEvents);
+        FTickOutput Output(CurrentState.State, TickInfo, SimEvents);
         SimDelegates->SimTickPrePhysicsDelegate.Broadcast(TickInfo, Input, PrevState.State, Output);
     }
 
@@ -220,7 +220,7 @@ namespace ClientPrediction {
     void USimState<Traits>::TickPostPhysics(const FNetTickInfo& TickInfo, const InputType& Input) {
         if (TickInfo.SimRole == ROLE_SimulatedProxy) { return; }
 
-        FTickOutput Output(CurrentState.State, SimEvents);
+        FTickOutput Output(CurrentState.State, TickInfo, SimEvents);
         SimDelegates->SimTickPostPhysicsDelegate.Broadcast(TickInfo, Input, PrevState.State, Output);
 
         USimState::FillStateSimDetails(CurrentState, TickInfo);

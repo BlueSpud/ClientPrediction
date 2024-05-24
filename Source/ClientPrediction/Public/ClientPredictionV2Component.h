@@ -47,6 +47,7 @@ private:
 
     TSharedPtr<ClientPrediction::USimInputBase> SimInput;
     TSharedPtr<ClientPrediction::USimStateBase> SimState;
+    TSharedPtr<ClientPrediction::USimEventsBase> SimEvents;
     TUniquePtr<ClientPrediction::USimCoordinatorBase> SimCoordinator;
 };
 
@@ -54,7 +55,9 @@ template <typename Traits>
 TSharedPtr<ClientPrediction::FSimDelegates<Traits>> UClientPredictionV2Component::CreateSimulation() {
     TSharedPtr<ClientPrediction::USimInput<Traits>> InputImpl = MakeShared<ClientPrediction::USimInput<Traits>>();
     TSharedPtr<ClientPrediction::USimState<Traits>> StateImpl = MakeShared<ClientPrediction::USimState<Traits>>();
-    TUniquePtr<ClientPrediction::USimCoordinator<Traits>> Impl = MakeUnique<ClientPrediction::USimCoordinator<Traits>>(InputImpl, StateImpl);
+    TSharedPtr<ClientPrediction::USimEvents<Traits>> EventsImpl = MakeShared<ClientPrediction::USimEvents<Traits>>();
+
+    TUniquePtr<ClientPrediction::USimCoordinator<Traits>> Impl = MakeUnique<ClientPrediction::USimCoordinator<Traits>>(InputImpl, StateImpl, EventsImpl);
     TSharedPtr<ClientPrediction::FSimDelegates<Traits>> Delegates = Impl->GetSimDelegates();
 
     InputImpl->EmitInputBundleDelegate.BindUFunction(this, TEXT("ServerRecvInput"));
