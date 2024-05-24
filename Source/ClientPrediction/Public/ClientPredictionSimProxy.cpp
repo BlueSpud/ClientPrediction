@@ -36,7 +36,7 @@ namespace ClientPrediction {
 
     FSimProxyWorldManager::FSimProxyWorldManager(UWorld* World) : World(World) {}
 
-    void FSimProxyWorldManager::RecievedSimProxyStates(const int32 LatestReceivedServerTick) {
+    void FSimProxyWorldManager::ReceivedSimProxyStates(const int32 LatestReceivedServerTick) {
         if (LatestReceivedServerTick == INDEX_NONE) { return; }
         check(World != nullptr);
 

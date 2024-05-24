@@ -18,8 +18,8 @@ namespace ClientPrediction {
         explicit FSimProxyWorldManager(class UWorld* World);
 
     public:
-        void RecievedSimProxyStates(const int32 LatestReceivedServerTick);
-        int32 GetOffsetFromServer() const { return OffsetFromServer; }
+        void ReceivedSimProxyStates(const int32 LatestReceivedServerTick);
+        int32 GetTickOffsetFromServer() const { return OffsetFromServer; }
 
     private:
         UWorld* World = nullptr;

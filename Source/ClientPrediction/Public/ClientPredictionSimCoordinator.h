@@ -196,6 +196,9 @@ namespace ClientPrediction {
         Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
         if (PhysSolver == nullptr) { return; }
 
+        FSimProxyWorldManager* SimProxyWorldManager = FSimProxyWorldManager::ManagerForWorld(UpdatedComponent->GetWorld());
+        if (SimProxyWorldManager == nullptr) { return; }
+
         if (SimRole == ENetRole::ROLE_AutonomousProxy) {
             SimInput->EmitInputs();
         }
@@ -205,9 +208,10 @@ namespace ClientPrediction {
         }
 
         const Chaos::FReal ResultsTime = PhysSolver->GetPhysicsResultsTime_External();
+        const Chaos::FReal SimProxyOffset = SimProxyWorldManager->GetTickOffsetFromServer() * PhysSolver->GetAsyncDeltaTime();
         const Chaos::FReal Dt = LastResultsTime == -1.0 ? 0.0 : ResultsTime - LastResultsTime;
 
-        SimState->InterpolateGameThread(UpdatedComponent, ResultsTime, Dt, SimRole);
+        SimState->InterpolateGameThread(UpdatedComponent, ResultsTime, SimProxyOffset, Dt, SimRole);
         LastResultsTime = ResultsTime;
     }
 
@@ -262,10 +266,13 @@ namespace ClientPrediction {
         if (PhysScene == nullptr) { return; }
 
         PhysScene->EnqueueAsyncPhysicsCommand(0, UpdatedComponent, [this, Packets = MoveTemp(Packets)]() {
-            int32 LatestReceivedServerTick = SimState->ConsumeSimProxyStates(Packets);
+            Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
+            if (PhysSolver == nullptr) { return; }
+
+            int32 LatestReceivedServerTick = SimState->ConsumeSimProxyStates(Packets, PhysSolver->GetAsyncDeltaTime());
 
             FSimProxyWorldManager* WorldManager = FSimProxyWorldManager::ManagerForWorld(UpdatedComponent->GetWorld());
-            if (WorldManager != nullptr) { WorldManager->RecievedSimProxyStates(LatestReceivedServerTick); }
+            if (WorldManager != nullptr) { WorldManager->ReceivedSimProxyStates(LatestReceivedServerTick); }
         });
     }
 

@@ -140,16 +140,14 @@ namespace ClientPrediction {
             if (Input.ServerTick == TickInfo.ServerTick) { break; }
         }
 
-        bool bFoundPerfectMatch = CurrentInput.ServerTick == TickInfo.ServerTick;
-        check(TickInfo.SimRole != ROLE_AutonomousProxy || bFoundPerfectMatch);
-
         if (TickInfo.SimRole == ROLE_AutonomousProxy) {
             FScopeLock SendLock(&SendMutex);
             PendingSend.Add(CurrentInput);
         }
 
         // TODO Make this message a bit better
-        if (!bFoundPerfectMatch) {
+        // There might be input faults even on auto proxies since the server offset can change
+        if (!CurrentInput.ServerTick == TickInfo.ServerTick) {
             UE_LOG(LogTemp, Warning, TEXT("Input fault looking for %d, but best found was %d"), TickInfo.ServerTick, CurrentInput.ServerTick);
         }
     }

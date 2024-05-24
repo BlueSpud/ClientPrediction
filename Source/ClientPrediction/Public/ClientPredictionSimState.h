@@ -53,7 +53,7 @@ namespace ClientPrediction {
         TSharedPtr<FSimEvents<Traits>> SimEvents;
 
     public:
-        int32 ConsumeSimProxyStates(const FBundledPacketsLow& Packets);
+        int32 ConsumeSimProxyStates(const FBundledPacketsLow& Packets, Chaos::FReal SimDt);
         void ConsumeAutoProxyStates(const FBundledPacketsFull& Packets);
 
     private:
@@ -66,19 +66,15 @@ namespace ClientPrediction {
         void TickPrePhysics(const FNetTickInfo& TickInfo, const InputType& Input);
         void TickPostPhysics(const FNetTickInfo& TickInfo, const InputType& Input);
 
-    private:
-        void SimProxyAdjustStateTimeline(const FNetTickInfo& Info);
-
     public:
         int32 GetRewindTick(Chaos::FPhysicsSolver* PhysSolver, Chaos::FPhysicsObjectHandle PhysObject);
         void ApplyCorrectionIfNeeded(const FNetTickInfo& TickInfo);
 
         void EmitStates();
-        void InterpolateGameThread(UPrimitiveComponent* UpdatedComponent, Chaos::FReal ResultsTime, Chaos::FReal Dt, ENetRole SimRole);
+        void InterpolateGameThread(UPrimitiveComponent* UpdatedComponent, Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, Chaos::FReal Dt, ENetRole SimRole);
 
     private:
         void GetInterpolatedStateAtTime(Chaos::FReal ResultsTime, WrappedState& OutState) const;
-        void GetInterpolatedStateAtTimeSimProxy(Chaos::FReal ResultsTime, WrappedState& OutState) const;
         static Chaos::FRigidBodyHandle_Internal* GetPhysHandle(const FNetTickInfo& TickInfo);
 
     public:
@@ -94,8 +90,6 @@ namespace ClientPrediction {
         WrappedState LastInterpolatedState{};
 
         // Relevant only for sim proxies
-        int32 SimProxyOffsetFromServer = INDEX_NONE;
-        TArray<WrappedState> PendingSimProxyStates;
         ECollisionEnabled::Type CachedCollisionMode = ECollisionEnabled::NoCollision;
 
         // Relevant only for auto proxies
@@ -118,7 +112,7 @@ namespace ClientPrediction {
     }
 
     template <typename Traits>
-    int32 USimState<Traits>::ConsumeSimProxyStates(const FBundledPacketsLow& Packets) {
+    int32 USimState<Traits>::ConsumeSimProxyStates(const FBundledPacketsLow& Packets, Chaos::FReal SimDt) {
         TArray<WrappedState> AuthorityStates;
         Packets.Bundle().Retrieve(AuthorityStates);
 
@@ -127,7 +121,16 @@ namespace ClientPrediction {
         int32 NewestState = INDEX_NONE;
         for (WrappedState& NewState : AuthorityStates) {
             NewestState = FMath::Max(NewestState, NewState.ServerTick);
-            PendingSimProxyStates.Emplace(MoveTemp(NewState));
+
+            if (StateHistory.ContainsByPredicate([&](const WrappedState& Other) { return Other.ServerTick == NewState.ServerTick; })) {
+                continue;
+            }
+
+            // By keeping the times in server time we avoid needing maintenance on the buffer if the offset changes.  
+            NewState.StartTime = static_cast<Chaos::FReal>(NewState.ServerTick) * SimDt;
+            NewState.EndTime = NewState.StartTime + SimDt;
+
+            StateHistory.Add(MoveTemp(NewState));
         }
 
         return NewestState;
@@ -216,10 +219,7 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimState<Traits>::TickPostPhysics(const FNetTickInfo& TickInfo, const InputType& Input) {
-        if (TickInfo.SimRole == ROLE_SimulatedProxy) {
-            SimProxyAdjustStateTimeline(TickInfo);
-            return;
-        }
+        if (TickInfo.SimRole == ROLE_SimulatedProxy) { return; }
 
         FTickOutput Output(CurrentState.State, SimEvents);
         SimDelegates->SimTickPostPhysicsDelegate.Broadcast(TickInfo, Input, PrevState.State, Output);
@@ -236,43 +236,6 @@ namespace ClientPrediction {
                 return;
             }
         }
-    }
-
-    template <typename Traits>
-    void USimState<Traits>::SimProxyAdjustStateTimeline(const FNetTickInfo& Info) {
-        const int32 OffsetFromServer = Info.SimProxyWorldManager->GetOffsetFromServer();
-        auto UpdateState = [&](WrappedState& State) {
-            State.LocalTick = State.ServerTick + OffsetFromServer;
-            State.StartTime = static_cast<Chaos::FReal>(State.LocalTick + 1) * Info.Dt;
-            State.EndTime = State.StartTime + Info.Dt;
-        };
-
-        Chaos::FReal StartTime = -100000.0;
-        for (WrappedState& State : StateHistory) {
-            check(State.StartTime > StartTime);
-            StartTime = State.StartTime;
-        }
-
-        if (OffsetFromServer != SimProxyOffsetFromServer) {
-            for (WrappedState& State : StateHistory) { UpdateState(State); }
-        }
-
-        if (PendingSimProxyStates.IsEmpty()) {
-            return;
-        }
-
-        // TODO This can probably be optimized a bit
-        for (WrappedState& NewState : PendingSimProxyStates) {
-            if (StateHistory.ContainsByPredicate([&](const WrappedState& Other) { return Other.ServerTick == NewState.ServerTick; })) {
-                continue;
-            }
-
-            UpdateState(NewState);
-            StateHistory.Add(MoveTemp(NewState));
-        }
-
-        StateHistory.Sort([](const WrappedState& A, const WrappedState& B) { return A.ServerTick < B.ServerTick; });
-        PendingSimProxyStates.Reset();
     }
 
     template <typename Traits>
@@ -371,12 +334,15 @@ namespace ClientPrediction {
     }
 
     template <typename Traits>
-    void USimState<Traits>::InterpolateGameThread(UPrimitiveComponent* UpdatedComponent, Chaos::FReal ResultsTime, Chaos::FReal Dt, ENetRole SimRole) {
+    void USimState<Traits>::InterpolateGameThread(UPrimitiveComponent* UpdatedComponent, Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, Chaos::FReal Dt,
+                                                  ENetRole SimRole) {
         if (SimDelegates == nullptr) { return; }
 
-        if (SimRole == ROLE_SimulatedProxy) {
-            GetInterpolatedStateAtTimeSimProxy(ResultsTime, LastInterpolatedState);
+        Chaos::FReal AdjustedResultsTime = SimRole != ROLE_SimulatedProxy ? ResultsTime : ResultsTime + SimProxyOffset;
+        GetInterpolatedStateAtTime(AdjustedResultsTime, LastInterpolatedState);
 
+        // Sim proxies have custom logic since they aren't really simulated.
+        if (SimRole == ROLE_SimulatedProxy) {
             FBodyInstance* BodyInstance = UpdatedComponent->GetBodyInstance();
             if (BodyInstance == nullptr) { return; }
 
@@ -396,7 +362,6 @@ namespace ClientPrediction {
             Handle.SetX(LastInterpolatedState.PhysState.X);
             Handle.SetR(LastInterpolatedState.PhysState.R);
         }
-        else { GetInterpolatedStateAtTime(ResultsTime, LastInterpolatedState); }
 
         SimDelegates->FinalizeDelegate.Broadcast(LastInterpolatedState.State, Dt);
     }
@@ -420,39 +385,11 @@ namespace ClientPrediction {
             const WrappedState& End = StateHistory[StateIndex];
             OutState = Start;
 
-            const Chaos::FReal Denominator = End.EndTime - End.StartTime;
-            const Chaos::FReal Alpha = Denominator != 0.0 ? FMath::Min(1.0, (ResultsTime - End.StartTime) / Denominator) : 1.0;
+            // This mostly mirrors the Chaos interpolation algorithm except we use the end time of the start state, rather than the end time of the end state.
+            // This is because for sim proxies the state buffer might not have every tick in it and this will handle it more gracefully.
+            const Chaos::FReal Denominator = End.EndTime - Start.EndTime;
+            const Chaos::FReal Alpha = Denominator != 0.0 ? FMath::Min(1.0, (ResultsTime - Start.EndTime) / Denominator) : 1.0;
             OutState.Interpolate(End, Alpha);
-
-            return;
-        }
-
-        OutState = StateHistory.Last();
-    }
-
-    template <typename Traits>
-    void USimState<Traits>::GetInterpolatedStateAtTimeSimProxy(Chaos::FReal ResultsTime, WrappedState& OutState) const {
-        // The algorithm used by Chaos for interpolating states (mirrored in GetInterpolatedStateAtTime()) assumes that the previous state is the tick right before
-        // the current tick. For simulated proxies this might not be the case, so we use a slightly different interpolation algorithm.
-        if (StateHistory.IsEmpty()) {
-            OutState = LastInterpolatedState;
-            return;
-        }
-
-        for (int32 i = 0; i < StateHistory.Num() - 1; i++) {
-            if (ResultsTime < StateHistory[i].StartTime || ResultsTime > StateHistory[i + 1].StartTime) { continue; }
-            const WrappedState& Start = StateHistory[i];
-            const WrappedState& End = StateHistory[i + 1];
-
-            OutState = Start;
-
-            const Chaos::FReal TimeFromStart = ResultsTime - Start.StartTime;
-            const Chaos::FReal TotalTime = End.StartTime - Start.StartTime;
-
-            if (TotalTime > 0.0) {
-                const Chaos::FReal Alpha = FMath::Clamp(TimeFromStart / TotalTime, 0.0, 1.0);
-                OutState.Interpolate(End, Alpha);
-            }
 
             return;
         }
