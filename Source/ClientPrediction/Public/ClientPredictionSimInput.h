@@ -56,7 +56,7 @@ namespace ClientPrediction {
     private:
         FCriticalSection RecvMutex;
         TArray<WrappedInput> Inputs;
-        TQueue<WrappedInput> QueuedInputs;
+        TQueue<WrappedInput> RecvQueue;
 
         FCriticalSection SendMutex;
         TArray<WrappedInput> PendingSend; // Inputs that need to be sent at least once
@@ -83,7 +83,7 @@ namespace ClientPrediction {
 
         FScopeLock RecvLock(&RecvMutex);
         for (WrappedInput& NewInput : BundleInputs) {
-            QueuedInputs.Enqueue(MoveTemp(NewInput));
+            RecvQueue.Enqueue(MoveTemp(NewInput));
         }
     }
 
@@ -92,12 +92,12 @@ namespace ClientPrediction {
         FScopeLock RecvLock(&RecvMutex);
 
         WrappedInput NewInput{};
-        if (QueuedInputs.IsEmpty()) {
+        if (RecvQueue.IsEmpty()) {
             return;
         }
 
         // TODO this can be optimized a bit, but the input buffer is probably not going to get too large so it's fine
-        while (QueuedInputs.Dequeue(NewInput)) {
+        while (RecvQueue.Dequeue(NewInput)) {
             if (Inputs.ContainsByPredicate([&](const WrappedInput& Other) { return Other.ServerTick == NewInput.ServerTick; })) {
                 continue;
             }

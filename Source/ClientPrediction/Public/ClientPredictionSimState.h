@@ -74,19 +74,20 @@ namespace ClientPrediction {
         void InterpolateGameThread(UPrimitiveComponent* UpdatedComponent, Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, Chaos::FReal Dt, ENetRole SimRole);
 
     private:
-        void GetInterpolatedStateAtTime(Chaos::FReal ResultsTime, WrappedState& OutState) const;
+        void GetInterpolatedStateAtTime(Chaos::FReal ResultsTime, WrappedState& OutState);
         static Chaos::FRigidBodyHandle_Internal* GetPhysHandle(const FNetTickInfo& TickInfo);
 
     public:
         const StateType& GetPrevState() { return PrevState.State; }
 
     private:
-        bool bGeneratedInitialState = false;
+        FCriticalSection StateMutex;
         TArray<WrappedState> StateHistory;
 
         WrappedState PrevState{};
         WrappedState CurrentState{};
         WrappedState LastInterpolatedState{};
+        bool bGeneratedInitialState = false;
 
         // Relevant only for sim proxies
         ECollisionEnabled::Type CachedCollisionMode = ECollisionEnabled::NoCollision;
@@ -112,6 +113,8 @@ namespace ClientPrediction {
 
     template <typename Traits>
     int32 USimState<Traits>::ConsumeSimProxyStates(const FBundledPacketsLow& Packets, Chaos::FReal SimDt) {
+        FScopeLock StateLock(&StateMutex);
+
         TArray<WrappedState> AuthorityStates;
         Packets.Bundle().Retrieve(AuthorityStates, this);
 
@@ -177,23 +180,24 @@ namespace ClientPrediction {
         if (SimDelegates == nullptr) { return; }
 
         // We can leave the frame indexes and times as invalid because this is just a starting off point until we get the first valid frame
-        USimState::FillStatePhysInfo(LastInterpolatedState, TickInfo);
-        SimDelegates->GenerateInitialStatePTDelegate.Broadcast(LastInterpolatedState.State);
+        USimState::FillStatePhysInfo(CurrentState, TickInfo);
+        SimDelegates->GenerateInitialStatePTDelegate.Broadcast(CurrentState.State);
 
-        StateHistory.Add(LastInterpolatedState);
+        StateHistory.Add(CurrentState);
     }
 
     template <typename Traits>
     void USimState<Traits>::PreparePrePhysics(const FNetTickInfo& TickInfo) {
         if (SimDelegates == nullptr) { return; }
 
+        if (TickInfo.SimRole == ROLE_SimulatedProxy) {
+            return;
+        }
+
+        FScopeLock StateLock(&StateMutex);
         if (!bGeneratedInitialState) {
             GenerateInitialState(TickInfo);
             bGeneratedInitialState = true;
-        }
-
-        if (TickInfo.SimRole == ROLE_SimulatedProxy) {
-            return;
         }
 
         ApplyCorrectionIfNeeded(TickInfo);
@@ -224,6 +228,8 @@ namespace ClientPrediction {
         SimDelegates->SimTickPostPhysicsDelegate.Broadcast(TickInfo, Input, PrevState.State, Output);
 
         USimState::FillStateSimDetails(CurrentState, TickInfo);
+
+        FScopeLock StateLock(&StateMutex);
         if (StateHistory.IsEmpty() || StateHistory.Last().LocalTick < TickInfo.LocalTick) {
             StateHistory.Add(MoveTemp(CurrentState));
             return;
@@ -245,7 +251,9 @@ namespace ClientPrediction {
         Chaos::FRewindData* RewindData = PhysSolver->GetRewindData();
         if (RewindData == nullptr) { return INDEX_NONE; }
 
+        FScopeLock StateLock(&StateMutex);
         WrappedState* HistoricState = nullptr;
+
         for (WrappedState& State : StateHistory) {
             if (State.ServerTick == LatestAuthorityState.ServerTick) {
                 HistoricState = &State;
@@ -309,8 +317,10 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimState<Traits>::EmitStates() {
-        // TODO add a send queue
-        if (StateHistory.IsEmpty() || StateHistory.Last().ServerTick <= LatestEmittedTick) { return; }
+        FScopeLock StateLock(&StateMutex);
+        if (StateHistory.IsEmpty() || StateHistory.Last().ServerTick <= LatestEmittedTick) {
+            return;
+        }
 
         FBundledPacketsFull AutoProxyPackets{};
         TArray<WrappedState> AutoProxyStates = {StateHistory.Last()};
@@ -366,7 +376,9 @@ namespace ClientPrediction {
     }
 
     template <typename Traits>
-    void USimState<Traits>::GetInterpolatedStateAtTime(Chaos::FReal ResultsTime, WrappedState& OutState) const {
+    void USimState<Traits>::GetInterpolatedStateAtTime(Chaos::FReal ResultsTime, WrappedState& OutState) {
+        FScopeLock StateLock(&StateMutex);
+
         if (StateHistory.IsEmpty()) {
             OutState = LastInterpolatedState;
             return;

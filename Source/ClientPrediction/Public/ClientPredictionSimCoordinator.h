@@ -101,6 +101,8 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimCoordinator<Traits>::Initialize(UPrimitiveComponent* NewUpdatedComponent, bool bNowHasNetConnection, ENetRole NewSimRole) {
+        if (SimInput == nullptr || SimState == nullptr) { return; }
+
         UpdatedComponent = NewUpdatedComponent;
         bHasNetConnection = bNowHasNetConnection;
         SimRole = NewSimRole;
@@ -110,6 +112,9 @@ namespace ClientPrediction {
 
         Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
         if (PhysSolver == nullptr) { return; }
+
+        Chaos::FRewindData* RewindData = PhysSolver->GetRewindData();
+        if (RewindData == nullptr) { return; }
 
         FNetworkPhysicsCallback* PhysCallback = GetPhysCallback();
         if (PhysCallback == nullptr) { return; }
