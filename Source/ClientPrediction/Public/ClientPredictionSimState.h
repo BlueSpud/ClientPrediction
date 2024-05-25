@@ -47,6 +47,7 @@ namespace ClientPrediction {
         virtual ~USimState() override = default;
         void SetSimDelegates(const TSharedPtr<FSimDelegates<Traits>>& NewSimDelegates);
         void SetSimEvents(const TSharedPtr<USimEvents<Traits>>& NewSimEvents);
+        void SetBufferSize(int32 BufferSize);
 
     private:
         TSharedPtr<FSimDelegates<Traits>> SimDelegates;
@@ -63,6 +64,11 @@ namespace ClientPrediction {
 
     public:
         void PreparePrePhysics(const FNetTickInfo& TickInfo);
+
+    private:
+        void TrimStateBuffer();
+
+    public:
         void TickPrePhysics(const FNetTickInfo& TickInfo, const InputType& Input);
         void TickPostPhysics(const FNetTickInfo& TickInfo, const InputType& Input);
 
@@ -83,6 +89,7 @@ namespace ClientPrediction {
     private:
         FCriticalSection StateMutex;
         TArray<WrappedState> StateHistory;
+        int32 StateHistoryCapacity = INDEX_NONE;
 
         WrappedState PrevState{};
         WrappedState CurrentState{};
@@ -109,6 +116,11 @@ namespace ClientPrediction {
     template <typename Traits>
     void USimState<Traits>::SetSimEvents(const TSharedPtr<USimEvents<Traits>>& NewSimEvents) {
         SimEvents = NewSimEvents;
+    }
+
+    template <typename Traits>
+    void USimState<Traits>::SetBufferSize(int32 BufferSize) {
+        StateHistoryCapacity = BufferSize;
     }
 
     template <typename Traits>
@@ -195,6 +207,8 @@ namespace ClientPrediction {
         }
 
         FScopeLock StateLock(&StateMutex);
+        TrimStateBuffer();
+
         if (!bGeneratedInitialState) {
             GenerateInitialState(TickInfo);
             bGeneratedInitialState = true;
@@ -208,6 +222,15 @@ namespace ClientPrediction {
 
             PrevState = State;
             if (State.LocalTick == PrevTickNumber) { break; }
+        }
+    }
+
+    template <typename Traits>
+    void USimState<Traits>::TrimStateBuffer() {
+        if (StateHistoryCapacity == INDEX_NONE) { return; }
+
+        while (StateHistory.Num() > StateHistoryCapacity) {
+            StateHistory.RemoveAt(0, EAllowShrinking::No);
         }
     }
 
