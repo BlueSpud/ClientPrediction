@@ -19,7 +19,6 @@ namespace ClientPrediction {
     template <typename InputType>
     struct FWrappedInput {
         int32 ServerTick = INDEX_NONE;
-
         InputType Input;
 
         void NetSerialize(FArchive& Ar, void* Userdata) {

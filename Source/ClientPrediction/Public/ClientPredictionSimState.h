@@ -249,7 +249,6 @@ namespace ClientPrediction {
 
         FTickOutput Output(CurrentState.State, TickInfo, SimEvents);
         SimDelegates->SimTickPostPhysicsDelegate.Broadcast(TickInfo, Input, PrevState.State, Output);
-
         USimState::FillStateSimDetails(CurrentState, TickInfo);
 
         FScopeLock StateLock(&StateMutex);

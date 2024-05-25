@@ -69,3 +69,7 @@ void UClientPredictionV2Component::OnRep_AutoProxyStates() {
 void UClientPredictionV2Component::ClientRecvEvents_Implementation(const FBundledPackets& Bundle) {
     if (SimCoordinator != nullptr) { SimCoordinator->ConsumeEvents(Bundle); }
 }
+
+void UClientPredictionV2Component::ServerRecvRemoteSimProxyOffset_Implementation(const FRemoteSimProxyOffset& Offset) {
+    if (SimCoordinator != nullptr) { SimCoordinator->ConsumeRemoteSimProxyOffset(Offset); }
+}

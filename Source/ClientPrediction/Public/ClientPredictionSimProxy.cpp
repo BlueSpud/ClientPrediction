@@ -36,23 +36,19 @@ namespace ClientPrediction {
 
     FSimProxyWorldManager::FSimProxyWorldManager(UWorld* World) : World(World) {}
 
-    void FSimProxyWorldManager::ReceivedSimProxyStates(const int32 LatestReceivedServerTick) {
-        if (LatestReceivedServerTick == INDEX_NONE) { return; }
-        check(World != nullptr);
+    void FSimProxyWorldManager::ReceivedSimProxyStates(const FNetTickInfo& TickInfo, const int32 LatestReceivedServerTick) {
+        if (LatestReceivedServerTick == INDEX_NONE || TickInfo.bIsResim) { return; }
 
-        FPhysScene* PhysScene = World->GetPhysicsScene();
-        if (PhysScene == nullptr) { return; }
+        const int32 NewLocalOffset = LatestReceivedServerTick - TickInfo.LocalTick - kSimProxyBufferTicks;
+        if (LocalToServerOffset == INDEX_NONE || FMath::Abs(LocalToServerOffset - NewLocalOffset) >= kSimProxyBufferCorrectionThreshold) {
+            UE_LOG(LogTemp, Log, TEXT("Updating sim proxy offset to %d"), NewLocalOffset);
+            LocalToServerOffset = NewLocalOffset;
 
-        Chaos::FPhysicsSolver* PhysSolver = PhysScene->GetSolver();
-        if (PhysSolver == nullptr) { return; }
+            // This offset can be added to a server tick on the authority to get the tick for sim proxies that is being displayed
+            const int32 AuthorityServerOffset = LatestReceivedServerTick - kSimProxyBufferTicks - TickInfo.ServerTick;
+            RemoteSimProxyOffset = {TickInfo.ServerTick, AuthorityServerOffset};
 
-        const int32 LocalTick = PhysSolver->GetCurrentFrame();
-        const int32 NewOffset = LatestReceivedServerTick - LocalTick - kSimProxyBufferTicks;
-
-        if (OffsetFromServer == INDEX_NONE || FMath::Abs(OffsetFromServer - NewOffset) >= kSimProxyBufferCorrectionThreshold) {
-            UE_LOG(LogTemp, Log, TEXT("Updating sim proxy offset to %d"), NewOffset);
-
-            OffsetFromServer = NewOffset;
+            RemoteSimProxyOffsetChangedDelegate.Broadcast(RemoteSimProxyOffset);
         }
     }
 }

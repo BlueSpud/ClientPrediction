@@ -4,6 +4,7 @@
 #include "ClientPredictionSimEvents.h"
 #include "ClientPredictionTick.h"
 #include "ClientPredictionPhysState.h"
+#include "ClientPredictionSimProxy.h"
 
 namespace ClientPrediction {
     template <typename Traits>

@@ -45,6 +45,9 @@ private:
     UFUNCTION(NetMulticast, Reliable)
     void ClientRecvEvents(const FBundledPackets& Bundle);
 
+    UFUNCTION(Server, Reliable)
+    void ServerRecvRemoteSimProxyOffset(const FRemoteSimProxyOffset& Offset);
+
     UPROPERTY()
     class UPrimitiveComponent* UpdatedComponent;
 
@@ -67,6 +70,8 @@ TSharedPtr<ClientPrediction::FSimDelegates<Traits>> UClientPredictionV2Component
     StateImpl->EmitSimProxyBundle.BindLambda([&](const FBundledPacketsLow& Packets) { SimProxyStates.Bundle().Copy(Packets.Bundle()); });
     StateImpl->EmitAutoProxyBundle.BindLambda([&](const FBundledPacketsFull& Packets) { AutoProxyStates.Bundle().Copy(Packets.Bundle()); });
     EventsImpl->EmitEventBundle.BindUFunction(this, TEXT("ClientRecvEvents"));
+
+    Impl->RemoteSimProxyOffsetChangedDelegate.BindUFunction(this, TEXT("ServerRecvRemoteSimProxyOffset"));
 
     SimInput = MoveTemp(InputImpl);
     SimState = MoveTemp(StateImpl);

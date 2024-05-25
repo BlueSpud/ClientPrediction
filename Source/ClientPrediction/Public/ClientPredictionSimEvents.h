@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "ClientPredictionNetSerialization.h"
+#include "ClientPredictionSimProxy.h"
 #include "ClientPredictionTick.h"
 
 // For now events are ONLY predicted on auto proxies and replicated on sim proxies. In the future we might need to change this
@@ -32,6 +33,7 @@ namespace ClientPrediction {
         int32 ServerTick = INDEX_NONE;
 
         Chaos::FReal ExecutionTime = 0.0;
+        Chaos::FReal TimeSincePredictedExecution = 0.0;
 
         virtual bool ExecuteIfNeeded(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole) = 0;
         virtual void NetSerialize(FArchive& Ar) = 0;
@@ -69,7 +71,7 @@ namespace ClientPrediction {
 
     struct FEventFactoryBase {
         virtual ~FEventFactoryBase() = default;
-        virtual TUniquePtr<FEventWrapperBase> CreateEvent(const FNetTickInfo& TickInfo, const void* Data) = 0;
+        virtual TUniquePtr<FEventWrapperBase> CreateEvent(const FNetTickInfo& TickInfo, int32 RemoteSimProxyOffset, const void* Data) = 0;
         virtual TUniquePtr<FEventWrapperBase> CreateEvent(FArchive& Ar, Chaos::FReal SimDt) = 0;
     };
 
@@ -78,7 +80,7 @@ namespace ClientPrediction {
         using WrappedEvent = FEventWrapper<EventType>;
 
         FEventFactory(int32 EventId) : EventId(EventId) {}
-        virtual TUniquePtr<FEventWrapperBase> CreateEvent(const FNetTickInfo& TickInfo, const void* Data) override;
+        virtual TUniquePtr<FEventWrapperBase> CreateEvent(const FNetTickInfo& TickInfo, int32 RemoteSimProxyOffset, const void* Data) override;
         virtual TUniquePtr<FEventWrapperBase> CreateEvent(FArchive& Ar, Chaos::FReal SimDt) override;
 
         TMulticastDelegate<void(const EventType&)> Delegate;
@@ -86,13 +88,14 @@ namespace ClientPrediction {
     };
 
     template <typename EventType>
-    TUniquePtr<FEventWrapperBase> FEventFactory<EventType>::CreateEvent(const FNetTickInfo& TickInfo, const void* Data) {
+    TUniquePtr<FEventWrapperBase> FEventFactory<EventType>::CreateEvent(const FNetTickInfo& TickInfo, int32 RemoteSimProxyOffset, const void* Data) {
         TUniquePtr<WrappedEvent> NewEvent = MakeUnique<WrappedEvent>();
         NewEvent->EventId = EventId;
         NewEvent->LocalTick = TickInfo.LocalTick;
         NewEvent->ServerTick = TickInfo.ServerTick;
 
         NewEvent->ExecutionTime = TickInfo.StartTime;
+        NewEvent->TimeSincePredictedExecution = static_cast<Chaos::FReal>(FMath::Min(RemoteSimProxyOffset, 0)) * TickInfo.Dt;
 
         NewEvent->Delegate = &Delegate;
         NewEvent->Event = *static_cast<const EventType*>(Data);
@@ -168,6 +171,9 @@ namespace ClientPrediction {
         void DispatchEvent(const FNetTickInfo& TickInfo, const Event& NewEvent);
 
         void ConsumeEvents(const FBundledPackets& Packets, Chaos::FReal SimDt);
+        void ConsumeRemoteSimProxyOffset(const FRemoteSimProxyOffset& Offset);
+
+        void PreparePrePhysics(const FNetTickInfo& TickInfo);
         void ExecuteEvents(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole);
         void Rewind(int32 LocalRewindTick);
 
@@ -181,6 +187,8 @@ namespace ClientPrediction {
 
         // Relevant only for the authorities
         int32 LatestEmittedTick = INDEX_NONE;
+        TQueue<FRemoteSimProxyOffset> QueuedRemoteSimProxyOffsets;
+        int32 RemoteSimProxyOffset = 0;
     };
 
     template <typename Traits>
@@ -198,10 +206,12 @@ namespace ClientPrediction {
     template <typename Traits>
     template <typename EventType>
     void USimEvents<Traits>::DispatchEvent(const FNetTickInfo& TickInfo, const EventType& NewEvent) {
+        FScopeLock EventLock(&EventMutex);
+
         const EventId EventId = FEventIds<Traits>::template GetId<EventType>();
         if (!Factories.Contains(EventId)) { return; }
 
-        Events.Emplace(Factories[EventId]->CreateEvent(TickInfo, &NewEvent));
+        Events.Emplace(Factories[EventId]->CreateEvent(TickInfo, RemoteSimProxyOffset, &NewEvent));
     }
 
     template <typename Traits>
@@ -211,6 +221,23 @@ namespace ClientPrediction {
 
         for (FEventLoader& Loader : AuthorityEvents) {
             Events.Add(MoveTemp(Loader.Event));
+        }
+    }
+
+    template <typename Traits>
+    void USimEvents<Traits>::ConsumeRemoteSimProxyOffset(const FRemoteSimProxyOffset& Offset) {
+        QueuedRemoteSimProxyOffsets.Enqueue(Offset);
+    }
+
+    template <typename Traits>
+    void USimEvents<Traits>::PreparePrePhysics(const FNetTickInfo& TickInfo) {
+        // These are emitted over a reliable RPC, so the order is guaranteed. No need to keep track of which offset has been acked.
+        FRemoteSimProxyOffset NewRemoteSimProxyOffset{};
+        while (QueuedRemoteSimProxyOffsets.Peek(NewRemoteSimProxyOffset)) {
+            if (NewRemoteSimProxyOffset.ExpectedAppliedServerTick <= TickInfo.ServerTick) {
+                RemoteSimProxyOffset = NewRemoteSimProxyOffset.ServerTickOffset;
+                QueuedRemoteSimProxyOffsets.Pop();
+            }
         }
     }
 

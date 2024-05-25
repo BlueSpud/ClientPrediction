@@ -21,6 +21,10 @@ namespace ClientPrediction {
         virtual void ConsumeSimProxyStates(FBundledPacketsLow Packets) = 0;
         virtual void ConsumeAutoProxyStates(FBundledPacketsFull Packets) = 0;
         virtual void ConsumeEvents(FBundledPackets Packets) = 0;
+        virtual void ConsumeRemoteSimProxyOffset(FRemoteSimProxyOffset Offset) = 0;
+
+        DECLARE_DELEGATE_OneParam(FRemoteSimProxyOffsetChangedDelegate, const FRemoteSimProxyOffset& Offset)
+        FRemoteSimProxyOffsetChangedDelegate RemoteSimProxyOffsetChangedDelegate;
     };
 
     template <typename Traits>
@@ -36,10 +40,10 @@ namespace ClientPrediction {
         TSharedPtr<USimState<Traits>> SimState;
         TSharedPtr<USimEvents<Traits>> SimEvents;
 
+    public:
         virtual void Initialize(UPrimitiveComponent* NewUpdatedComponent, bool bNowHasNetConnection, ENetRole NewSimRole) override;
         virtual void Destroy() override;
 
-    public:
         virtual void FreeOutputData_External(Chaos::FSimCallbackOutput* Output) override {}
         virtual void FreeInputData_Internal(Chaos::FSimCallbackInput* Input) override {}
 
@@ -55,16 +59,18 @@ namespace ClientPrediction {
 
         bool BuildTickInfo(FNetTickInfo& Info) const;
 
-        FDelegateHandle InjectInputsGTDelegate;
-        FDelegateHandle PreAdvanceDelegate;
-        FDelegateHandle PostAdvanceDelegate;
-        FDelegateHandle PhysScenePostTickDelegate;
+        FDelegateHandle InjectInputsGTDelegateHandle;
+        FDelegateHandle PreAdvanceDelegateHandle;
+        FDelegateHandle PostAdvanceDelegateHandle;
+        FDelegateHandle PhysScenePostTickDelegateHandle;
+        FDelegateHandle RemoteSimProxyOffsetChangedDelegateHandle;
 
     public:
         virtual void ConsumeInputBundle(FBundledPackets Packets) override;
         virtual void ConsumeSimProxyStates(FBundledPacketsLow Packets) override;
         virtual void ConsumeAutoProxyStates(FBundledPacketsFull Packets) override;
         virtual void ConsumeEvents(FBundledPackets Packets) override;
+        virtual void ConsumeRemoteSimProxyOffset(FRemoteSimProxyOffset Offset) override;
 
     private:
         UWorld* GetWorld() const;
@@ -119,15 +125,26 @@ namespace ClientPrediction {
         FNetworkPhysicsCallback* PhysCallback = GetPhysCallback();
         if (PhysCallback == nullptr) { return; }
 
+        FSimProxyWorldManager* SimProxyWorldManager = FSimProxyWorldManager::ManagerForWorld(UpdatedComponent->GetWorld());
+        if (SimProxyWorldManager == nullptr) { return; }
+
         SimInput->SetBufferSize(RewindData->Capacity());
         SimState->SetBufferSize(RewindData->Capacity());
 
-        InjectInputsGTDelegate = PhysCallback->InjectInputsExternal.AddRaw(this, &USimCoordinator::InjectInputsGT);
-        PreAdvanceDelegate = PhysCallback->PreProcessInputsInternal.AddRaw(this, &USimCoordinator::PreAdvance);
-        PostAdvanceDelegate = PhysSolver->AddPostAdvanceCallback(FSolverPostAdvance::FDelegate::CreateRaw(this, &USimCoordinator::PostAdvance));
-        PhysScenePostTickDelegate = PhysScene->OnPhysScenePostTick.AddRaw(this, &USimCoordinator::OnPhysScenePostTick);
+        InjectInputsGTDelegateHandle = PhysCallback->InjectInputsExternal.AddRaw(this, &USimCoordinator::InjectInputsGT);
+        PreAdvanceDelegateHandle = PhysCallback->PreProcessInputsInternal.AddRaw(this, &USimCoordinator::PreAdvance);
+        PostAdvanceDelegateHandle = PhysSolver->AddPostAdvanceCallback(FSolverPostAdvance::FDelegate::CreateRaw(this, &USimCoordinator::PostAdvance));
+        PhysScenePostTickDelegateHandle = PhysScene->OnPhysScenePostTick.AddRaw(this, &USimCoordinator::OnPhysScenePostTick);
+        RemoteSimProxyOffsetChangedDelegateHandle = SimProxyWorldManager->RemoteSimProxyOffsetChangedDelegate.AddLambda([this](const auto& Offset) {
+            if (Offset.IsSet() && SimRole == ROLE_AutonomousProxy) { RemoteSimProxyOffsetChangedDelegate.ExecuteIfBound(Offset.GetValue()); }
+        });
 
         PhysCallback->RegisterRewindableSimCallback_Internal(this);
+
+        const TOptional<FRemoteSimProxyOffset>& RemoteSimProxyOffset = SimProxyWorldManager->GetRemoteSimProxyOffset();
+        if (SimRole == ENetRole::ROLE_AutonomousProxy && RemoteSimProxyOffset.IsSet()) {
+            RemoteSimProxyOffsetChangedDelegate.ExecuteIfBound(RemoteSimProxyOffset.GetValue());
+        }
     }
 
     template <typename Traits>
@@ -141,10 +158,14 @@ namespace ClientPrediction {
         FNetworkPhysicsCallback* PhysCallback = GetPhysCallback();
         if (PhysCallback == nullptr) { return; }
 
-        PhysCallback->InjectInputsExternal.Remove(InjectInputsGTDelegate);
-        PhysCallback->PreProcessInputsInternal.Remove(PreAdvanceDelegate);
-        PhysSolver->RemovePostAdvanceCallback(PostAdvanceDelegate);
-        PhysScene->OnPhysScenePostTick.Remove(PhysScenePostTickDelegate);
+        FSimProxyWorldManager* SimProxyWorldManager = FSimProxyWorldManager::ManagerForWorld(UpdatedComponent->GetWorld());
+        if (SimProxyWorldManager == nullptr) { return; }
+
+        PhysCallback->InjectInputsExternal.Remove(InjectInputsGTDelegateHandle);
+        PhysCallback->PreProcessInputsInternal.Remove(PreAdvanceDelegateHandle);
+        PhysSolver->RemovePostAdvanceCallback(PostAdvanceDelegateHandle);
+        PhysScene->OnPhysScenePostTick.Remove(PhysScenePostTickDelegateHandle);
+        SimProxyWorldManager->RemoteSimProxyOffsetChangedDelegate.Remove(RemoteSimProxyOffsetChangedDelegateHandle);
 
         PhysCallback->UnregisterRewindableSimCallback_Internal(this);
     }
@@ -173,7 +194,7 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimCoordinator<Traits>::PreAdvance(const int32 TickNum) {
-        if (SimInput == nullptr || SimState == nullptr) { return; }
+        if (SimInput == nullptr || SimState == nullptr || SimEvents == nullptr) { return; }
 
         Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
         if (PhysSolver == nullptr) { return; }
@@ -191,6 +212,7 @@ namespace ClientPrediction {
         // State needs to come before the input because the input depends on the current state
         SimState->PreparePrePhysics(TickInfo);
         SimInput->PreparePrePhysics(TickInfo, SimState->GetPrevState());
+        SimEvents->PreparePrePhysics(TickInfo);
 
         SimState->TickPrePhysics(TickInfo, SimInput->GetCurrentInput());
     }
@@ -230,7 +252,7 @@ namespace ClientPrediction {
         }
 
         const Chaos::FReal ResultsTime = PhysSolver->GetPhysicsResultsTime_External();
-        const Chaos::FReal SimProxyOffset = SimProxyWorldManager->GetTickOffsetFromServer() * PhysSolver->GetAsyncDeltaTime();
+        const Chaos::FReal SimProxyOffset = SimProxyWorldManager->GetLocalToServerOffset() * PhysSolver->GetAsyncDeltaTime();
         const Chaos::FReal Dt = LastResultsTime == -1.0 ? 0.0 : ResultsTime - LastResultsTime;
 
         SimState->InterpolateGameThread(UpdatedComponent, ResultsTime, SimProxyOffset, Dt, SimRole);
@@ -258,11 +280,13 @@ namespace ClientPrediction {
         Info.SimRole = SimRole;
 
         if (SimRole != ENetRole::ROLE_Authority) {
-            if (APlayerController* PC = GetPlayerController()) {
-                Info.LocalTick = CachedTickNumber;
-                Info.ServerTick = CachedTickNumber + PC->GetNetworkPhysicsTickOffset();
+            APlayerController* PlayerController = GetPlayerController();
+            if (PlayerController == nullptr || !PlayerController->GetNetworkPhysicsTickOffsetAssigned()) {
+                return false;
             }
-            else { return false; }
+
+            Info.LocalTick = CachedTickNumber;
+            Info.ServerTick = CachedTickNumber + PlayerController->GetNetworkPhysicsTickOffset();
         }
         else {
             Info.LocalTick = CachedTickNumber;
@@ -284,7 +308,7 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimCoordinator<Traits>::ConsumeSimProxyStates(FBundledPacketsLow Packets) {
-        if (UpdatedComponent == nullptr || SimState == nullptr) { return; }
+        if (UpdatedComponent == nullptr || SimState == nullptr || SimRole != ROLE_SimulatedProxy) { return; }
 
         FPhysScene* PhysScene = GetPhysScene();
         if (PhysScene == nullptr) { return; }
@@ -295,14 +319,18 @@ namespace ClientPrediction {
 
             int32 LatestReceivedServerTick = SimState->ConsumeSimProxyStates(Packets, PhysSolver->GetAsyncDeltaTime());
 
+            FNetTickInfo TickInfo{};
             FSimProxyWorldManager* WorldManager = FSimProxyWorldManager::ManagerForWorld(UpdatedComponent->GetWorld());
-            if (WorldManager != nullptr) { WorldManager->ReceivedSimProxyStates(LatestReceivedServerTick); }
+
+            if (WorldManager != nullptr && BuildTickInfo(TickInfo)) {
+                WorldManager->ReceivedSimProxyStates(TickInfo, LatestReceivedServerTick);
+            }
         });
     }
 
     template <typename Traits>
     void USimCoordinator<Traits>::ConsumeAutoProxyStates(FBundledPacketsFull Packets) {
-        if (UpdatedComponent == nullptr || SimState == nullptr) { return; }
+        if (UpdatedComponent == nullptr || SimState == nullptr || SimRole != ROLE_AutonomousProxy) { return; }
 
         FPhysScene* PhysScene = GetPhysScene();
         if (PhysScene == nullptr) { return; }
@@ -324,6 +352,16 @@ namespace ClientPrediction {
             if (PhysSolver == nullptr) { return; }
 
             SimEvents->ConsumeEvents(Packets, PhysSolver->GetAsyncDeltaTime());
+        });
+    }
+
+    template <typename Traits>
+    void USimCoordinator<Traits>::ConsumeRemoteSimProxyOffset(FRemoteSimProxyOffset Offset) {
+        FPhysScene* PhysScene = GetPhysScene();
+        if (PhysScene == nullptr) { return; }
+
+        PhysScene->EnqueueAsyncPhysicsCommand(0, UpdatedComponent, [this, Offset = MoveTemp(Offset)]() {
+            SimEvents->ConsumeRemoteSimProxyOffset(Offset);
         });
     }
 
