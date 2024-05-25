@@ -38,9 +38,12 @@ namespace ClientPrediction {
     public:
         virtual ~USimInput() override = default;
         void SetSimDelegates(const TSharedPtr<FSimDelegates<Traits>>& NewSimDelegates);
+        void SetBufferSize(int32 BufferSize);
 
     private:
         TSharedPtr<FSimDelegates<Traits>> SimDelegates;
+
+        int32 BufferIndex(int32 ServerTick);
 
     public:
         void ConsumeInputBundle(const FBundledPackets& Packets);
@@ -67,13 +70,29 @@ namespace ClientPrediction {
 
     private:
         FCriticalSection GTInputMutex;
-        WrappedInput CurrentGTInput{};
         WrappedInput CurrentInput{};
+        InputType CurrentGTInput{};
+
+        int32 LatestProducedInput = INDEX_NONE;
     };
 
     template <typename Traits>
     void USimInput<Traits>::SetSimDelegates(const TSharedPtr<FSimDelegates<Traits>>& NewSimDelegates) {
         SimDelegates = NewSimDelegates;
+    }
+
+    template <typename Traits>
+    void USimInput<Traits>::SetBufferSize(int32 BufferSize) {
+        while (Inputs.Num() < BufferSize) {
+            Inputs.AddDefaulted();
+            Inputs.Last().ServerTick = TNumericLimits<int32>::Min();
+        }
+    }
+
+    template <typename Traits>
+    int32 USimInput<Traits>::BufferIndex(int32 ServerTick) {
+        const int32 BufferSize = Inputs.Num();
+        return (ServerTick % BufferSize + BufferSize) % BufferSize;
     }
 
     template <typename Traits>
@@ -98,21 +117,18 @@ namespace ClientPrediction {
 
         // TODO this can be optimized a bit, but the input buffer is probably not going to get too large so it's fine
         while (RecvQueue.Dequeue(NewInput)) {
-            if (Inputs.ContainsByPredicate([&](const WrappedInput& Other) { return Other.ServerTick == NewInput.ServerTick; })) {
-                continue;
+            const int32 NewBufferIndex = BufferIndex(NewInput.ServerTick);
+            if (Inputs[NewBufferIndex].ServerTick < NewInput.ServerTick) {
+                Inputs[NewBufferIndex] = NewInput;
             }
-
-            Inputs.Add(MoveTemp(NewInput));
         }
-
-        Inputs.Sort([](const WrappedInput& A, const WrappedInput& B) { return A.ServerTick < B.ServerTick; });
     }
 
     template <typename Traits>
     void USimInput<Traits>::InjectInputsGT() {
         if (SimDelegates != nullptr) {
             FScopeLock GTInputLock(&GTInputMutex);
-            SimDelegates->ProduceInputGTDelegate.Broadcast(CurrentGTInput.Input);
+            SimDelegates->ProduceInputGTDelegate.Broadcast(CurrentGTInput);
         }
     }
 
@@ -121,23 +137,37 @@ namespace ClientPrediction {
         if (TickInfo.SimRole == ENetRole::ROLE_SimulatedProxy) { return; }
 
         if (USimInput::ShouldProduceInput(TickInfo) && SimDelegates != nullptr) {
-            Inputs.Add(CurrentGTInput);
-
-            WrappedInput& NewInput = Inputs.Last();
+            WrappedInput& NewInput = Inputs[BufferIndex(TickInfo.ServerTick)];
             NewInput.ServerTick = TickInfo.ServerTick;
 
+            FScopeLock GTInputLock(&GTInputMutex);
+            NewInput.Input = CurrentGTInput;
+
             SimDelegates->ModifyInputPTDelegate.Broadcast(NewInput.Input, PrevState, TickInfo.Dt);
+            LatestProducedInput = FMath::Max(TickInfo.ServerTick, LatestProducedInput);
         }
         else if (TickInfo.SimRole == ROLE_Authority) {
             DequeueRecievedInputs();
         }
 
         // We always use the server tick to find the input to use. This way if the server offset changes, the right input will still be picked.
-        for (const WrappedInput& Input : Inputs) {
-            if (Input.ServerTick > TickInfo.ServerTick) { break; }
+        int32 BestInputIndex = INDEX_NONE;
+        for (int32 Index = 0; Index < Inputs.Num(); ++Index) {
+            const WrappedInput& Input = Inputs[Index];
+            if (Input.ServerTick > TickInfo.ServerTick) { continue; }
 
-            CurrentInput = Input;
-            if (Input.ServerTick == TickInfo.ServerTick) { break; }
+            if (Input.ServerTick == TickInfo.ServerTick) {
+                BestInputIndex = Index;
+                break;
+            }
+
+            if (BestInputIndex == INDEX_NONE || Inputs[BestInputIndex].ServerTick < Input.ServerTick) {
+                BestInputIndex = Index;
+            }
+        }
+
+        if (BestInputIndex != INDEX_NONE) {
+            CurrentInput = Inputs[BestInputIndex];
         }
 
         if (TickInfo.SimRole == ROLE_AutonomousProxy) {
@@ -172,10 +202,10 @@ namespace ClientPrediction {
 
     template <typename Traits>
     bool USimInput<Traits>::ShouldProduceInput(const FNetTickInfo& TickInfo) {
-        const bool bInputNotAlreadySampled = Inputs.IsEmpty() || Inputs.Last().ServerTick < TickInfo.ServerTick;
-        const bool bShouldTakeInput = (TickInfo.SimRole == ENetRole::ROLE_AutonomousProxy && !TickInfo.bIsResim)
-            || (TickInfo.SimRole == ENetRole::ROLE_Authority && !TickInfo.bHasNetConnection);
+        const bool bShouldTakeInput =
+            (TickInfo.SimRole == ENetRole::ROLE_AutonomousProxy && !TickInfo.bIsResim) ||
+            (TickInfo.SimRole == ENetRole::ROLE_Authority && !TickInfo.bHasNetConnection);
 
-        return bInputNotAlreadySampled && bShouldTakeInput;
+        return (LatestProducedInput < TickInfo.ServerTick) && bShouldTakeInput;
     }
 }
