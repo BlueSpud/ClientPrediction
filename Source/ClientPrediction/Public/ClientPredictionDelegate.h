@@ -42,7 +42,7 @@ namespace ClientPrediction {
         FSimDelegates(const TSharedPtr<USimEvents<Traits>>& SimEvents);
 
         template <typename EventType>
-        TMulticastDelegate<void(const EventType&)>& RegisterEvent();
+        TMulticastDelegate<void(const EventType&, Chaos::FReal)>& RegisterEvent();
 
         DECLARE_MULTICAST_DELEGATE_OneParam(FGenInitialStateDelegate, StateType& State);
         FGenInitialStateDelegate GenerateInitialStatePTDelegate;
@@ -70,7 +70,7 @@ namespace ClientPrediction {
 
     template <typename Traits>
     template <typename EventType>
-    TMulticastDelegate<void(const EventType&)>& FSimDelegates<Traits>::RegisterEvent() {
+    TMulticastDelegate<void(const EventType&, Chaos::FReal)>& FSimDelegates<Traits>::RegisterEvent() {
         check(SimEvents != nullptr);
         return SimEvents->template RegisterEvent<EventType>();
     }

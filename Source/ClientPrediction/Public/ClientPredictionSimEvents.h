@@ -33,7 +33,7 @@ namespace ClientPrediction {
         int32 ServerTick = INDEX_NONE;
 
         Chaos::FReal ExecutionTime = 0.0;
-        Chaos::FReal TimeSincePredictedExecution = 0.0;
+        Chaos::FReal TimeSincePredicted = 0.0;
 
         virtual bool ExecuteIfNeeded(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole) = 0;
         virtual void NetSerialize(FArchive& Ar) = 0;
@@ -41,7 +41,7 @@ namespace ClientPrediction {
 
     template <typename EventType>
     struct FEventWrapper : public FEventWrapperBase {
-        TMulticastDelegate<void(const EventType&)>* Delegate = nullptr;
+        TMulticastDelegate<void(const EventType&, Chaos::FReal)>* Delegate = nullptr;
         EventType Event{};
 
         virtual bool ExecuteIfNeeded(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole) override;
@@ -57,7 +57,7 @@ namespace ClientPrediction {
             return false;
         }
 
-        Delegate->Broadcast(Event);
+        Delegate->Broadcast(Event, TimeSincePredicted);
         return true;
     }
 
@@ -83,7 +83,7 @@ namespace ClientPrediction {
         virtual TUniquePtr<FEventWrapperBase> CreateEvent(const FNetTickInfo& TickInfo, int32 RemoteSimProxyOffset, const void* Data) override;
         virtual TUniquePtr<FEventWrapperBase> CreateEvent(FArchive& Ar, Chaos::FReal SimDt) override;
 
-        TMulticastDelegate<void(const EventType&)> Delegate;
+        TMulticastDelegate<void(const EventType&, Chaos::FReal)> Delegate;
         int32 EventId = INDEX_NONE;
     };
 
@@ -95,7 +95,7 @@ namespace ClientPrediction {
         NewEvent->ServerTick = TickInfo.ServerTick;
 
         NewEvent->ExecutionTime = TickInfo.StartTime;
-        NewEvent->TimeSincePredictedExecution = static_cast<Chaos::FReal>(FMath::Min(RemoteSimProxyOffset, 0)) * TickInfo.Dt;
+        NewEvent->TimeSincePredicted = FMath::Abs(static_cast<Chaos::FReal>(FMath::Min(RemoteSimProxyOffset, 0)) * TickInfo.Dt);
 
         NewEvent->Delegate = &Delegate;
         NewEvent->Event = *static_cast<const EventType*>(Data);
@@ -165,7 +165,7 @@ namespace ClientPrediction {
 
 
         template <typename EventType>
-        TMulticastDelegate<void(const EventType&)>& RegisterEvent();
+        TMulticastDelegate<void(const EventType&, Chaos::FReal)>& RegisterEvent();
 
         template <typename Event>
         void DispatchEvent(const FNetTickInfo& TickInfo, const Event& NewEvent);
@@ -193,11 +193,11 @@ namespace ClientPrediction {
 
     template <typename Traits>
     template <typename EventType>
-    TMulticastDelegate<void(const EventType&)>& USimEvents<Traits>::RegisterEvent() {
+    TMulticastDelegate<void(const EventType&, Chaos::FReal)>& USimEvents<Traits>::RegisterEvent() {
         const EventId EventId = FEventIds<Traits>::template GetId<EventType>();
         TUniquePtr<FEventFactory<EventType>> Handler = MakeUnique<FEventFactory<EventType>>(EventId);
 
-        TMulticastDelegate<void(const EventType&)>& Delegate = Handler->Delegate;
+        TMulticastDelegate<void(const EventType&, Chaos::FReal)>& Delegate = Handler->Delegate;
         Factories.Add(EventId, MoveTemp(Handler));
 
         return Delegate;
@@ -237,7 +237,7 @@ namespace ClientPrediction {
             if (NewRemoteSimProxyOffset.ExpectedAppliedServerTick <= TickInfo.ServerTick) {
                 RemoteSimProxyOffset = NewRemoteSimProxyOffset.ServerTickOffset;
                 QueuedRemoteSimProxyOffsets.Pop();
-            }
+            } else { break; }
         }
     }
 
