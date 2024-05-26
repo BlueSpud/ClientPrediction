@@ -142,7 +142,7 @@ namespace ClientPrediction {
             FScopeLock GTInputLock(&GTInputMutex);
             NewInput.Input = CurrentGTInput;
 
-            SimDelegates->ModifyInputPTDelegate.Broadcast(NewInput.Input, PrevState, TickInfo.Dt);
+            SimDelegates->ModifyInputPTDelegate.Broadcast(NewInput.Input, PrevState, FSimTickInfo(TickInfo));
             LatestProducedInput = FMath::Max(TickInfo.ServerTick, LatestProducedInput);
         }
         else if (TickInfo.SimRole == ROLE_Authority) {

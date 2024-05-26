@@ -58,7 +58,7 @@ namespace ClientPrediction {
         DECLARE_MULTICAST_DELEGATE_OneParam(FInputGTDelegate, InputType& Input);
         FInputGTDelegate ProduceInputGTDelegate;
 
-        DECLARE_MULTICAST_DELEGATE_ThreeParams(FInputPtDelegate, InputType& Input, const StateType& PrevState, Chaos::FReal Dt);
+        DECLARE_MULTICAST_DELEGATE_ThreeParams(FInputPtDelegate, InputType& Input, const StateType& PrevState, const FSimTickInfo& TickInfo);
         FInputPtDelegate ModifyInputPTDelegate;
 
         DECLARE_MULTICAST_DELEGATE_FourParams(FSimTickDelegate, const FSimTickInfo& TickInfo, const InputType& Input, const StateType& PrevState, TickOutput& Output);

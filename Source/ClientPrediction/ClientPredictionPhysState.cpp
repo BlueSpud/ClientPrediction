@@ -1,4 +1,4 @@
-﻿#include "ClientPredictionModelTypes.h"
+﻿#include "ClientPredictionPhysState.h"
 
 namespace ClientPrediction {
     CLIENTPREDICTION_API float ClientPredictionPositionTolerance = 0.1;

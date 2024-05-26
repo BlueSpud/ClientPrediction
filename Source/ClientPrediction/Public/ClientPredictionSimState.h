@@ -5,7 +5,6 @@
 #include "Chaos/PhysicsObjectInternalInterface.h"
 
 #include "ClientPredictionDelegate.h"
-#include "ClientPredictionModelTypes.h"
 #include "ClientPredictionNetSerialization.h"
 #include "ClientPredictionSimEvents.h"
 #include "ClientPredictionTick.h"

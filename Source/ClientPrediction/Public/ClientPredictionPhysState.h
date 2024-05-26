@@ -2,10 +2,14 @@
 
 #include "CoreMinimal.h"
 
-#include "ClientPredictionModelTypes.h"
-#include "Data/ClientPredictionDataCompleteness.h"
+#include "ClientPredictionDataCompleteness.h"
 
 namespace ClientPrediction {
+    extern CLIENTPREDICTION_API float ClientPredictionPositionTolerance;
+    extern CLIENTPREDICTION_API float ClientPredictionVelocityTolerance;
+    extern CLIENTPREDICTION_API float ClientPredictionRotationTolerance;
+    extern CLIENTPREDICTION_API float ClientPredictionAngularVelTolerance;
+
     struct FPhysState {
         /** These mirror the Chaos properties for a particle */
         Chaos::EObjectStateType ObjectState = Chaos::EObjectStateType::Uninitialized;
@@ -41,8 +45,10 @@ namespace ClientPrediction {
 
     inline void FPhysState::NetSerialize(FArchive& Ar, EDataCompleteness Completeness) {
         if (Completeness == EDataCompleteness::kLow) {
-            SerializeHalfPrecision(X, Ar);
-            SerializeHalfPrecision(R, Ar);
+            SerializePackedVector<100, 30>(X, Ar);
+
+            bool bOutSuccess = false;
+            R.NetSerialize(Ar, nullptr, bOutSuccess);
 
             return;
         }
