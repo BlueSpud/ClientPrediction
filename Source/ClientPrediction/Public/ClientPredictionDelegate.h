@@ -3,28 +3,36 @@
 #include "CoreMinimal.h"
 #include "ClientPredictionSimEvents.h"
 #include "ClientPredictionTick.h"
-#include "ClientPredictionPhysState.h"
-#include "ClientPredictionSimProxy.h"
 
 namespace ClientPrediction {
-    template <typename Traits>
+    template <typename StateType>
     struct FTickOutput {
-        using StateType = typename Traits::StateType;
+        template <typename OtherStateType>
+        friend struct FTickOutput;
 
-        FTickOutput(StateType& State, const FNetTickInfo& TickInfo, const TSharedPtr<USimEvents<Traits>>& SimEvents);
-        typename Traits::StateType& State;
+        FTickOutput(StateType& State, const FNetTickInfo& TickInfo, const TSharedPtr<USimEvents>& SimEvents);
+        StateType& State;
+
+        template <typename OtherStateType>
+        FTickOutput(const FTickOutput<OtherStateType>& Other);
 
         template <typename Event>
         void DispatchEvent(const Event& NewEvent);
 
     private:
         const FNetTickInfo& TickInfo;
-        TSharedPtr<USimEvents<Traits>> SimEvents;
+        TSharedPtr<USimEvents> SimEvents;
     };
 
-    template <typename Traits>
-    FTickOutput<Traits>::FTickOutput(StateType& State, const FNetTickInfo& TickInfo, const TSharedPtr<USimEvents<Traits>>& SimEvents) : State(State), TickInfo(TickInfo),
+    template <typename StateType>
+    FTickOutput<StateType>::FTickOutput(StateType& State, const FNetTickInfo& TickInfo, const TSharedPtr<USimEvents>& SimEvents) : State(State), TickInfo(TickInfo),
         SimEvents(SimEvents) {}
+
+    template <typename StateType>
+    template <typename OtherStateType>
+    FTickOutput<StateType>::FTickOutput(const FTickOutput<OtherStateType>& Other) : State(Other.State), TickInfo(Other.TickInfo), SimEvents(Other.SimEvents) {
+        static_assert(std::is_convertible_v<OtherStateType, StateType>);
+    }
 
     template <typename Traits>
     template <typename Event>
@@ -37,9 +45,9 @@ namespace ClientPrediction {
     struct FSimDelegates {
         using InputType = typename Traits::InputType;
         using StateType = typename Traits::StateType;
-        using TickOutput = FTickOutput<Traits>;
+        using TickOutput = FTickOutput<StateType>;
 
-        FSimDelegates(const TSharedPtr<USimEvents<Traits>>& SimEvents);
+        FSimDelegates(const TSharedPtr<USimEvents>& SimEvents);
 
         template <typename EventType>
         TMulticastDelegate<void(const EventType&, Chaos::FReal)>& RegisterEvent();
@@ -48,9 +56,8 @@ namespace ClientPrediction {
         FGenInitialStateDelegate GenerateInitialStatePTDelegate;
 
         DECLARE_MULTICAST_DELEGATE_OneParam(FInputGTDelegate, InputType& Input);
-        FInputGTDelegate ProduceInputGTDelegate; // Called on game thread
+        FInputGTDelegate ProduceInputGTDelegate;
 
-        // TODO The phys state can be removed so long as this is called after corrections are applied
         DECLARE_MULTICAST_DELEGATE_ThreeParams(FInputPtDelegate, InputType& Input, const StateType& PrevState, Chaos::FReal Dt);
         FInputPtDelegate ModifyInputPTDelegate;
 
@@ -62,11 +69,11 @@ namespace ClientPrediction {
         FFinalizeDelegate FinalizeDelegate;
 
     private:
-        TSharedPtr<USimEvents<Traits>> SimEvents;
+        TSharedPtr<USimEvents> SimEvents;
     };
 
     template <typename Traits>
-    FSimDelegates<Traits>::FSimDelegates(const TSharedPtr<USimEvents<Traits>>& SimEvents) : SimEvents(SimEvents) {}
+    FSimDelegates<Traits>::FSimDelegates(const TSharedPtr<USimEvents>& SimEvents) : SimEvents(SimEvents) {}
 
     template <typename Traits>
     template <typename EventType>

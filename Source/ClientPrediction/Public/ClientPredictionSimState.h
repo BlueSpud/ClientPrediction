@@ -46,12 +46,12 @@ namespace ClientPrediction {
     public:
         virtual ~USimState() override = default;
         void SetSimDelegates(const TSharedPtr<FSimDelegates<Traits>>& NewSimDelegates);
-        void SetSimEvents(const TSharedPtr<USimEvents<Traits>>& NewSimEvents);
+        void SetSimEvents(const TSharedPtr<USimEvents>& NewSimEvents);
         void SetBufferSize(int32 BufferSize);
 
     private:
         TSharedPtr<FSimDelegates<Traits>> SimDelegates;
-        TSharedPtr<USimEvents<Traits>> SimEvents;
+        TSharedPtr<USimEvents> SimEvents;
 
     public:
         int32 ConsumeSimProxyStates(const FBundledPacketsLow& Packets, Chaos::FReal SimDt);
@@ -114,7 +114,7 @@ namespace ClientPrediction {
     }
 
     template <typename Traits>
-    void USimState<Traits>::SetSimEvents(const TSharedPtr<USimEvents<Traits>>& NewSimEvents) {
+    void USimState<Traits>::SetSimEvents(const TSharedPtr<USimEvents>& NewSimEvents) {
         SimEvents = NewSimEvents;
     }
 

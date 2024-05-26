@@ -8,6 +8,7 @@
 #include "ClientPredictionSimInput.h"
 #include "ClientPredictionSimProxy.h"
 #include "ClientPredictionSimState.h"
+#include "ClientPredictionSimEvents.h"
 #include "ClientPredictionTick.h"
 
 namespace ClientPrediction {
@@ -31,14 +32,14 @@ namespace ClientPrediction {
     class USimCoordinator : public USimCoordinatorBase, public Chaos::ISimCallbackObject {
     public:
         explicit USimCoordinator(const TSharedPtr<USimInput<Traits>>& SimInput, const TSharedPtr<USimState<Traits>>& SimState,
-                                 const TSharedPtr<USimEvents<Traits>>& SimEvents);
+                                 const TSharedPtr<USimEvents>& SimEvents);
 
         virtual ~USimCoordinator() override = default;
 
     private:
         TSharedPtr<USimInput<Traits>> SimInput;
         TSharedPtr<USimState<Traits>> SimState;
-        TSharedPtr<USimEvents<Traits>> SimEvents;
+        TSharedPtr<USimEvents> SimEvents;
 
     public:
         virtual void Initialize(UPrimitiveComponent* NewUpdatedComponent, bool bNowHasNetConnection, ENetRole NewSimRole) override;
@@ -97,7 +98,7 @@ namespace ClientPrediction {
 
     template <typename Traits>
     USimCoordinator<Traits>::USimCoordinator(const TSharedPtr<USimInput<Traits>>& SimInput, const TSharedPtr<USimState<Traits>>& SimState,
-                                             const TSharedPtr<USimEvents<Traits>>& SimEvents) :
+                                             const TSharedPtr<USimEvents>& SimEvents) :
         Chaos::ISimCallbackObject(Chaos::ESimCallbackOptions::Rewind), SimInput(SimInput), SimState(SimState), SimEvents(SimEvents),
         SimDelegates(MakeShared<FSimDelegates<Traits>>(SimEvents)) {
         SimInput->SetSimDelegates(SimDelegates);

@@ -11,7 +11,6 @@
 namespace ClientPrediction {
     using EventId = uint8;
 
-    template <typename Traits>
     struct FEventIds {
         static EventId kNextEventId;
 
@@ -22,8 +21,7 @@ namespace ClientPrediction {
         }
     };
 
-    template <typename Traits>
-    EventId FEventIds<Traits>::kNextEventId = 0;
+    EventId FEventIds::kNextEventId = 0;
 
     struct FEventWrapperBase {
         virtual ~FEventWrapperBase() = default;
@@ -150,20 +148,8 @@ namespace ClientPrediction {
         Event = Userdata.Factories[EventId]->CreateEvent(Ar, Userdata.SimDt);
     }
 
-    class USimEventsBase {
+    class CLIENTPREDICTION_API USimEvents {
     public:
-        virtual ~USimEventsBase() = default;
-
-        DECLARE_DELEGATE_OneParam(FEmitEventBundleDelegate, const FBundledPackets& Bundle)
-        FEmitEventBundleDelegate EmitEventBundle;
-    };
-
-    template <typename Traits>
-    class USimEvents : public USimEventsBase {
-    public:
-        virtual ~USimEvents() override = default;
-
-
         template <typename EventType>
         TMulticastDelegate<void(const EventType&, Chaos::FReal)>& RegisterEvent();
 
@@ -179,6 +165,9 @@ namespace ClientPrediction {
 
         void EmitEvents();
 
+        DECLARE_DELEGATE_OneParam(FEmitEventBundleDelegate, const FBundledPackets& Bundle)
+        FEmitEventBundleDelegate EmitEventBundle;
+
     private:
         TMap<EventId, TUniquePtr<FEventFactoryBase>> Factories;
 
@@ -191,10 +180,9 @@ namespace ClientPrediction {
         int32 RemoteSimProxyOffset = 0;
     };
 
-    template <typename Traits>
     template <typename EventType>
-    TMulticastDelegate<void(const EventType&, Chaos::FReal)>& USimEvents<Traits>::RegisterEvent() {
-        const EventId EventId = FEventIds<Traits>::template GetId<EventType>();
+    TMulticastDelegate<void(const EventType&, Chaos::FReal)>& USimEvents::RegisterEvent() {
+        const EventId EventId = FEventIds::GetId<EventType>();
         TUniquePtr<FEventFactory<EventType>> Handler = MakeUnique<FEventFactory<EventType>>(EventId);
 
         TMulticastDelegate<void(const EventType&, Chaos::FReal)>& Delegate = Handler->Delegate;
@@ -203,86 +191,13 @@ namespace ClientPrediction {
         return Delegate;
     }
 
-    template <typename Traits>
     template <typename EventType>
-    void USimEvents<Traits>::DispatchEvent(const FNetTickInfo& TickInfo, const EventType& NewEvent) {
+    void USimEvents::DispatchEvent(const FNetTickInfo& TickInfo, const EventType& NewEvent) {
         FScopeLock EventLock(&EventMutex);
 
-        const EventId EventId = FEventIds<Traits>::template GetId<EventType>();
+        const EventId EventId = FEventIds::GetId<EventType>();
         if (!Factories.Contains(EventId)) { return; }
 
         Events.Emplace(Factories[EventId]->CreateEvent(TickInfo, RemoteSimProxyOffset, &NewEvent));
-    }
-
-    template <typename Traits>
-    void USimEvents<Traits>::ConsumeEvents(const FBundledPackets& Packets, Chaos::FReal SimDt) {
-        TArray<FEventLoader> AuthorityEvents;
-        Packets.Bundle().Retrieve(AuthorityEvents, FEventLoaderUserdata{Factories, SimDt});
-
-        for (FEventLoader& Loader : AuthorityEvents) {
-            Events.Add(MoveTemp(Loader.Event));
-        }
-    }
-
-    template <typename Traits>
-    void USimEvents<Traits>::ConsumeRemoteSimProxyOffset(const FRemoteSimProxyOffset& Offset) {
-        QueuedRemoteSimProxyOffsets.Enqueue(Offset);
-    }
-
-    template <typename Traits>
-    void USimEvents<Traits>::PreparePrePhysics(const FNetTickInfo& TickInfo) {
-        // These are emitted over a reliable RPC, so the order is guaranteed. No need to keep track of which offset has been acked.
-        FRemoteSimProxyOffset NewRemoteSimProxyOffset{};
-        while (QueuedRemoteSimProxyOffsets.Peek(NewRemoteSimProxyOffset)) {
-            if (NewRemoteSimProxyOffset.ExpectedAppliedServerTick <= TickInfo.ServerTick) {
-                RemoteSimProxyOffset = NewRemoteSimProxyOffset.ServerTickOffset;
-                QueuedRemoteSimProxyOffsets.Pop();
-            } else { break; }
-        }
-    }
-
-    template <typename Traits>
-    void USimEvents<Traits>::ExecuteEvents(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole) {
-        FScopeLock EventLock(&EventMutex);
-        for (int32 EventIdx = 0; EventIdx < Events.Num();) {
-            if (Events[EventIdx]->ExecuteIfNeeded(ResultsTime, SimProxyOffset, SimRole)) {
-                Events.RemoveAt(EventIdx);
-                continue;
-            }
-
-            ++EventIdx;
-        }
-    }
-
-    template <typename Traits>
-    void USimEvents<Traits>::Rewind(int32 LocalRewindTick) {
-        FScopeLock EventLock(&EventMutex);
-        for (int32 EventIdx = 0; EventIdx < Events.Num();) {
-            if (Events[EventIdx]->LocalTick >= LocalRewindTick) {
-                Events.RemoveAt(EventIdx);
-            }
-            else { ++EventIdx; }
-        }
-    }
-
-    template <typename Traits>
-    void USimEvents<Traits>::EmitEvents() {
-        FScopeLock EventLock(&EventMutex);
-        if (Events.IsEmpty() || Events.Last()->ServerTick <= LatestEmittedTick) {
-            return;
-        }
-
-        TArray<FEventSaver> Serializers;
-        for (const TUniquePtr<FEventWrapperBase>& Event : Events) {
-            if (Event->ServerTick > LatestEmittedTick) {
-                Serializers.Add(FEventSaver(Event));
-            }
-        }
-
-        FBundledPackets EventPackets{};
-        EventPackets.Bundle().Store(Serializers, this);
-        EmitEventBundle.ExecuteIfBound(EventPackets);
-
-        LatestEmittedTick = Events.Last()->ServerTick;
     }
 }

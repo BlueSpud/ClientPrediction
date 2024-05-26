@@ -53,7 +53,7 @@ private:
 
     TSharedPtr<ClientPrediction::USimInputBase> SimInput;
     TSharedPtr<ClientPrediction::USimStateBase> SimState;
-    TSharedPtr<ClientPrediction::USimEventsBase> SimEvents;
+    TSharedPtr<ClientPrediction::USimEvents> SimEvents;
     TUniquePtr<ClientPrediction::USimCoordinatorBase> SimCoordinator;
 };
 
@@ -61,21 +61,20 @@ template <typename Traits>
 TSharedPtr<ClientPrediction::FSimDelegates<Traits>> UClientPredictionV2Component::CreateSimulation() {
     TSharedPtr<ClientPrediction::USimInput<Traits>> InputImpl = MakeShared<ClientPrediction::USimInput<Traits>>();
     TSharedPtr<ClientPrediction::USimState<Traits>> StateImpl = MakeShared<ClientPrediction::USimState<Traits>>();
-    TSharedPtr<ClientPrediction::USimEvents<Traits>> EventsImpl = MakeShared<ClientPrediction::USimEvents<Traits>>();
+    SimEvents = MakeShared<ClientPrediction::USimEvents>();
 
-    TUniquePtr<ClientPrediction::USimCoordinator<Traits>> Impl = MakeUnique<ClientPrediction::USimCoordinator<Traits>>(InputImpl, StateImpl, EventsImpl);
+    TUniquePtr<ClientPrediction::USimCoordinator<Traits>> Impl = MakeUnique<ClientPrediction::USimCoordinator<Traits>>(InputImpl, StateImpl, SimEvents);
     TSharedPtr<ClientPrediction::FSimDelegates<Traits>> Delegates = Impl->GetSimDelegates();
 
     InputImpl->EmitInputBundleDelegate.BindUFunction(this, TEXT("ServerRecvInput"));
     StateImpl->EmitSimProxyBundle.BindLambda([&](const FBundledPacketsLow& Packets) { SimProxyStates.Bundle().Copy(Packets.Bundle()); });
     StateImpl->EmitAutoProxyBundle.BindLambda([&](const FBundledPacketsFull& Packets) { AutoProxyStates.Bundle().Copy(Packets.Bundle()); });
-    EventsImpl->EmitEventBundle.BindUFunction(this, TEXT("ClientRecvEvents"));
+    SimEvents->EmitEventBundle.BindUFunction(this, TEXT("ClientRecvEvents"));
 
     Impl->RemoteSimProxyOffsetChangedDelegate.BindUFunction(this, TEXT("ServerRecvRemoteSimProxyOffset"));
 
     SimInput = MoveTemp(InputImpl);
     SimState = MoveTemp(StateImpl);
-    SimEvents = MoveTemp(EventsImpl);
 
     SimCoordinator = MoveTemp(Impl);
     return Delegates;
