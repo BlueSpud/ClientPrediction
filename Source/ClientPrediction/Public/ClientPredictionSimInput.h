@@ -125,8 +125,9 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimInput<Traits>::InjectInputsGT() {
+        FScopeLock GTInputLock(&GTInputMutex);
         if (SimDelegates != nullptr) {
-            FScopeLock GTInputLock(&GTInputMutex);
+            CurrentGTInput = {};
             SimDelegates->ProduceInputGTDelegate.Broadcast(CurrentGTInput);
         }
     }
