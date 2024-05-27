@@ -1,4 +1,4 @@
-﻿#include "ClientPredictionPhysState.h"
+﻿#include "ClientPredictionCVars.h"
 
 namespace ClientPrediction {
     CLIENTPREDICTION_API float ClientPredictionPositionTolerance = 0.1;
@@ -16,4 +16,8 @@ namespace ClientPrediction {
     CLIENTPREDICTION_API float ClientPredictionAngularVelTolerance = 0.1;
     FAutoConsoleVariableRef CVarClientPredictionAngularVelTolerance(TEXT("cp.AngularVelTolerance"), ClientPredictionAngularVelTolerance,
                                                                     TEXT("If the angular velocity deleta is less than this, a correction won't be applied"));
+
+    CLIENTPREDICTION_API int32 ClientPredictionSimProxySendInterval = 2;
+    FAutoConsoleVariableRef CVarClientPredictionSimProxySendInterval(TEXT("cp.SimProxySendInterval"), ClientPredictionSimProxySendInterval,
+                                                                    TEXT("1 out of cp.SimProxySendInterval ticks will be sent to sim proxies"));
 }

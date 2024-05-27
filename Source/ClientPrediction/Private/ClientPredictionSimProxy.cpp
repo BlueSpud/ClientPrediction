@@ -1,10 +1,9 @@
 ﻿#include "ClientPredictionSimProxy.h"
 
-#include "PBDRigidsSolver.h"
-#include "Physics/Experimental/PhysScene_Chaos.h"
+#include "ClientPredictionCVars.h"
 
 static int32 kSimProxyBufferTicks = 6;
-static int32 kSimProxyBufferCorrectionThreshold = 8;
+static int32 kSimProxyBufferCorrectionThreshold = 6;
 
 namespace ClientPrediction {
     TMap<UWorld*, FSimProxyWorldManager*> FSimProxyWorldManager::Managers;

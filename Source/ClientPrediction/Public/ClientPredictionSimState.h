@@ -9,8 +9,26 @@
 #include "ClientPredictionSimEvents.h"
 #include "ClientPredictionTick.h"
 #include "ClientPredictionPhysState.h"
+#include "ClientPredictionCVars.h"
 
 namespace ClientPrediction {
+    template <typename StateType>
+    struct FWrappedState {
+        int32 LocalTick = INDEX_NONE;
+        int32 ServerTick = INDEX_NONE;
+
+        StateType State{};
+        FPhysState PhysState{};
+
+        // These are not sent over the network, they're used for local interpolation only
+        Chaos::FReal StartTime = 0.0;
+        Chaos::FReal EndTime = 0.0;
+
+        void NetSerialize(FArchive& Ar, EDataCompleteness Completeness, void* Userdata);
+        void Interpolate(const FWrappedState& Other, Chaos::FReal Alpha);
+        void Extrapolate(const FWrappedState& PrevState, Chaos::FReal ExtrapolationTime);
+    };
+
     template <typename StateType>
     void FWrappedState<StateType>::NetSerialize(FArchive& Ar, EDataCompleteness Completeness, void* Userdata) {
         Ar << ServerTick;
@@ -22,6 +40,12 @@ namespace ClientPrediction {
     void FWrappedState<StateType>::Interpolate(const FWrappedState& Other, Chaos::FReal Alpha) {
         PhysState.Interpolate(Other.PhysState, Alpha);
         State.Interpolate(Other.State, Alpha);
+    }
+
+    template <typename StateType>
+    void FWrappedState<StateType>::Extrapolate(const FWrappedState& PrevState, Chaos::FReal ExtrapolationTime) {
+        const Chaos::FReal StateDt = EndTime - PrevState.EndTime;
+        PhysState.Extrapolate(PrevState.PhysState, StateDt, ExtrapolationTime);
     }
 
     class USimStateBase {
@@ -351,14 +375,16 @@ namespace ClientPrediction {
 
         TArray<WrappedState> SimProxyStates;
         for (const WrappedState& State : StateHistory) {
-            if (State.ServerTick > LatestEmittedTick) {
+            if (State.ServerTick > LatestEmittedTick && State.ServerTick % ClientPredictionSimProxySendInterval == 0) {
                 SimProxyStates.Add(State);
             }
         }
 
-        FBundledPacketsLow SimProxyPackets{};
-        SimProxyPackets.Bundle().Store(SimProxyStates, this);
-        EmitSimProxyBundle.ExecuteIfBound(SimProxyPackets);
+        if (!SimProxyStates.IsEmpty()) {
+            FBundledPacketsLow SimProxyPackets{};
+            SimProxyPackets.Bundle().Store(SimProxyStates, this);
+            EmitSimProxyBundle.ExecuteIfBound(SimProxyPackets);
+        }
 
         LatestEmittedTick = StateHistory.Last().ServerTick;
     }
@@ -427,6 +453,13 @@ namespace ClientPrediction {
         }
 
         OutState = StateHistory.Last();
+
+        if (StateHistory.Num() == 1) {
+            return;
+        }
+
+        const Chaos::FReal ExtrapolationTime = ResultsTime - OutState.EndTime;
+        OutState.Extrapolate(StateHistory[StateHistory.Num() - 2], ExtrapolationTime);
     }
 
     template <typename Traits>

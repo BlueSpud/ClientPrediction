@@ -7,49 +7,49 @@ public class ClientPrediction : ModuleRules
 	public ClientPrediction(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
-		
+
 		PublicIncludePaths.AddRange(
-			new string[] {
+			new string[]
+			{
 				// ... add public include paths required here ...
 			}
-			);
-				
-		
+		);
+
+
 		PrivateIncludePaths.AddRange(
-			new string[] {
+			new string[]
+			{
 				// ... add other private include paths required here ...
 			}
-			);
-			
-		
+		);
+
+
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
-				"Core",
-				"Chaos", "PhysicsCore", "Engine"
+				"Core", "Chaos", "PhysicsCore", "Engine"
 				// ... add other public dependencies that you statically link with here ...
 			}
-			);
-			
-		
+		);
+
+
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
-				"CoreUObject",
-				"Engine"
+				"CoreUObject", "Engine", "ChaosCore", "NetCore"
 				// ... add private dependencies that you statically link with here ...	
 			}
-			);
+		);
 
 		if (Target.Type == TargetType.Editor)
 		{
 			PrivateDependencyModuleNames.AddRange(
-	            new string[]
-	            {
-            		"Settings"
-            		// ... add private dependencies that you statically link with here ...	
-	            }
-	            );
+				new string[]
+				{
+					"Settings"
+					// ... add private dependencies that you statically link with here ...	
+				}
+			);
 		}
 
 
@@ -58,6 +58,6 @@ public class ClientPrediction : ModuleRules
 			{
 				// ... add any modules that your module loads dynamically here ...
 			}
-			);
+		);
 	}
 }
