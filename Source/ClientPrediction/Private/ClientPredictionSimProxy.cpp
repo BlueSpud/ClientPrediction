@@ -3,8 +3,8 @@
 #include "PBDRigidsSolver.h"
 #include "Physics/Experimental/PhysScene_Chaos.h"
 
-static int32 kSimProxyBufferTicks = 4;
-static int32 kSimProxyBufferCorrectionThreshold = 6;
+static int32 kSimProxyBufferTicks = 6;
+static int32 kSimProxyBufferCorrectionThreshold = 8;
 
 namespace ClientPrediction {
     TMap<UWorld*, FSimProxyWorldManager*> FSimProxyWorldManager::Managers;
@@ -39,15 +39,24 @@ namespace ClientPrediction {
     void FSimProxyWorldManager::ReceivedSimProxyStates(const FNetTickInfo& TickInfo, const int32 LatestReceivedServerTick) {
         if (LatestReceivedServerTick == INDEX_NONE || TickInfo.bIsResim) { return; }
 
+        // If the server is ahead of the client we don't update the offset, since that wouldn't be valid.
+        if (LatestReceivedServerTick > TickInfo.ServerTick) {
+            return;
+        }
+
         const int32 NewLocalOffset = LatestReceivedServerTick - TickInfo.LocalTick - kSimProxyBufferTicks;
         if (LocalToServerOffset == INDEX_NONE || FMath::Abs(LocalToServerOffset - NewLocalOffset) >= kSimProxyBufferCorrectionThreshold) {
-            UE_LOG(LogTemp, Log, TEXT("Updating sim proxy offset to %d"), NewLocalOffset);
             LocalToServerOffset = NewLocalOffset;
 
-            // This offset can be added to a server tick on the authority to get the tick for sim proxies that is being displayed
-            const int32 AuthorityServerOffset = LatestReceivedServerTick - kSimProxyBufferTicks - TickInfo.ServerTick;
+            UE_LOG(LogTemp, Log, TEXT("Updating sim proxy offset to %d. "), NewLocalOffset);
+        }
+
+        // This offset can be added to a server tick on the authority to get the tick for sim proxies that is being displayed
+        const int32 AuthorityServerOffset = TickInfo.LocalTick + LocalToServerOffset - TickInfo.ServerTick;
+        if (!RemoteSimProxyOffset.IsSet() || RemoteSimProxyOffset.GetValue().ServerTickOffset != AuthorityServerOffset) {
             RemoteSimProxyOffset = {TickInfo.ServerTick, AuthorityServerOffset};
 
+            UE_LOG(LogTemp, Log, TEXT("Updating remote sim proxy offset %d"), AuthorityServerOffset);
             RemoteSimProxyOffsetChangedDelegate.Broadcast(RemoteSimProxyOffset);
         }
     }

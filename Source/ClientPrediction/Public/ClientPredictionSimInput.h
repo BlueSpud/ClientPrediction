@@ -174,17 +174,14 @@ namespace ClientPrediction {
             FScopeLock SendLock(&SendMutex);
             PendingSend.Add(CurrentInput);
         }
-
-        // TODO Make this message a bit better
-        // There might be input faults even on auto proxies since the server offset can change
-        if (!CurrentInput.ServerTick == TickInfo.ServerTick) {
-            UE_LOG(LogTemp, Warning, TEXT("Input fault looking for %d, but best found was %d"), TickInfo.ServerTick, CurrentInput.ServerTick);
-        }
     }
 
     template <typename Traits>
     void USimInput<Traits>::EmitInputs() {
         FScopeLock SendLock(&SendMutex);
+        if (PendingSend.IsEmpty()) {
+            return;
+        }
 
         int32 SendWindowMaxSize = FMath::Max(PendingSend.Num(), kSendWindowSize);
         SendWindow.Append(PendingSend);
