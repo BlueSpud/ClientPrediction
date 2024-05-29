@@ -47,7 +47,7 @@ namespace ClientPrediction {
         using StateType = typename Traits::StateType;
         using TickOutput = FTickOutput<StateType>;
 
-        FSimDelegates(const TSharedPtr<USimEvents>& SimEvents);
+        FSimDelegates(const TSharedPtr<USimEvents>& SimEvents) : SimEvents(SimEvents) {}
 
         template <typename EventType>
         TMulticastDelegate<void(const EventType&, Chaos::FReal)>& RegisterEvent();
@@ -68,12 +68,12 @@ namespace ClientPrediction {
         DECLARE_MULTICAST_DELEGATE_TwoParams(FFinalizeDelegate, const StateType& State, Chaos::FReal Dt)
         FFinalizeDelegate FinalizeDelegate;
 
+        DECLARE_DELEGATE_RetVal_TwoParams(bool, FIsSimFinishedDelegate, const FSimTickInfo& TickInfo, const StateType& State)
+        FIsSimFinishedDelegate IsSimFinishedDelegate;
+
     private:
         TSharedPtr<USimEvents> SimEvents;
     };
-
-    template <typename Traits>
-    FSimDelegates<Traits>::FSimDelegates(const TSharedPtr<USimEvents>& SimEvents) : SimEvents(SimEvents) {}
 
     template <typename Traits>
     template <typename EventType>

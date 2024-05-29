@@ -3,7 +3,6 @@
 #include "ClientPredictionDelegate.h"
 #include "ClientPredictionNetSerialization.h"
 #include "ClientPredictionTick.h"
-#include "ClientPredictionPhysState.h"
 
 static constexpr int32 kSendWindowSize = 3;
 
@@ -46,7 +45,6 @@ namespace ClientPrediction {
 
     public:
         void ConsumeInputBundle(const FBundledPackets& Packets);
-        void DequeueRecievedInputs();
 
         void InjectInputsGT();
         void PreparePrePhysics(const FNetTickInfo& TickInfo, const StateType& PrevState);
@@ -56,7 +54,6 @@ namespace ClientPrediction {
         bool ShouldProduceInput(const FNetTickInfo& TickInfo);
 
     private:
-        FCriticalSection RecvMutex;
         TArray<WrappedInput> Inputs;
         TQueue<WrappedInput> RecvQueue;
 
@@ -99,23 +96,7 @@ namespace ClientPrediction {
         TArray<WrappedInput> BundleInputs;
         Packets.Bundle().Retrieve<>(BundleInputs, this);
 
-        FScopeLock RecvLock(&RecvMutex);
         for (WrappedInput& NewInput : BundleInputs) {
-            RecvQueue.Enqueue(MoveTemp(NewInput));
-        }
-    }
-
-    template <typename Traits>
-    void USimInput<Traits>::DequeueRecievedInputs() {
-        FScopeLock RecvLock(&RecvMutex);
-
-        WrappedInput NewInput{};
-        if (RecvQueue.IsEmpty()) {
-            return;
-        }
-
-        // TODO this can be optimized a bit, but the input buffer is probably not going to get too large so it's fine
-        while (RecvQueue.Dequeue(NewInput)) {
             const int32 NewBufferIndex = BufferIndex(NewInput.ServerTick);
             if (Inputs[NewBufferIndex].ServerTick < NewInput.ServerTick) {
                 Inputs[NewBufferIndex] = NewInput;
@@ -145,9 +126,6 @@ namespace ClientPrediction {
 
             SimDelegates->ModifyInputPTDelegate.Broadcast(NewInput.Input, PrevState, FSimTickInfo(TickInfo));
             LatestProducedInput = FMath::Max(TickInfo.ServerTick, LatestProducedInput);
-        }
-        else if (TickInfo.SimRole == ROLE_Authority) {
-            DequeueRecievedInputs();
         }
 
         // We always use the server tick to find the input to use. This way if the server offset changes, the right input will still be picked.

@@ -21,6 +21,8 @@ namespace ClientPrediction {
         virtual void ConsumeInputBundle(FBundledPackets Packets) = 0;
         virtual void ConsumeSimProxyStates(FBundledPacketsLow Packets) = 0;
         virtual void ConsumeAutoProxyStates(FBundledPacketsFull Packets) = 0;
+        virtual void ConsumeFinalState(FBundledPacketsFull Packets) = 0;
+
         virtual void ConsumeEvents(FBundledPackets Packets) = 0;
         virtual void ConsumeRemoteSimProxyOffset(FRemoteSimProxyOffset Offset) = 0;
 
@@ -70,6 +72,8 @@ namespace ClientPrediction {
         virtual void ConsumeInputBundle(FBundledPackets Packets) override;
         virtual void ConsumeSimProxyStates(FBundledPacketsLow Packets) override;
         virtual void ConsumeAutoProxyStates(FBundledPacketsFull Packets) override;
+        virtual void ConsumeFinalState(FBundledPacketsFull Packets) override;
+
         virtual void ConsumeEvents(FBundledPackets Packets) override;
         virtual void ConsumeRemoteSimProxyOffset(FRemoteSimProxyOffset Offset) override;
 
@@ -304,7 +308,9 @@ namespace ClientPrediction {
         FPhysScene* PhysScene = GetPhysScene();
         if (PhysScene == nullptr) { return; }
 
-        SimInput->ConsumeInputBundle(Packets);
+        PhysScene->EnqueueAsyncPhysicsCommand(0, UpdatedComponent, [this, Packets = MoveTemp(Packets)]() {
+            SimInput->ConsumeInputBundle(Packets);
+        });
     }
 
     template <typename Traits>
@@ -338,6 +344,21 @@ namespace ClientPrediction {
 
         PhysScene->EnqueueAsyncPhysicsCommand(0, UpdatedComponent, [this, Packets = MoveTemp(Packets)]() {
             SimState->ConsumeAutoProxyStates(Packets);
+        });
+    }
+
+    template <typename Traits>
+    void USimCoordinator<Traits>::ConsumeFinalState(FBundledPacketsFull Packets) {
+        if (UpdatedComponent == nullptr || SimState == nullptr || SimRole == ROLE_Authority) { return; }
+
+        FPhysScene* PhysScene = GetPhysScene();
+        if (PhysScene == nullptr) { return; }
+
+        PhysScene->EnqueueAsyncPhysicsCommand(0, UpdatedComponent, [this, Packets = MoveTemp(Packets)]() {
+            FNetTickInfo TickInfo{};
+            if (!BuildTickInfo(TickInfo)) { return; }
+
+            SimState->ConsumeFinalState(Packets, TickInfo);
         });
     }
 

@@ -16,6 +16,7 @@ namespace ClientPrediction {
     struct FWrappedState {
         int32 LocalTick = INDEX_NONE;
         int32 ServerTick = INDEX_NONE;
+        bool bIsFinalState = false;
 
         StateType State{};
         FPhysState PhysState{};
@@ -31,7 +32,20 @@ namespace ClientPrediction {
 
     template <typename StateType>
     void FWrappedState<StateType>::NetSerialize(FArchive& Ar, EDataCompleteness Completeness, void* Userdata) {
-        Ar << ServerTick;
+        if (Ar.IsSaving()) {
+            checkSlow(ServerTick >= INDEX_NONE);
+
+            uint32 Packed = (ServerTick + 1) | (bIsFinalState << 31);
+            Ar << Packed;
+        }
+        else {
+            uint32 Packed;
+            Ar << Packed;
+
+            ServerTick = static_cast<int32>(Packed & ~0x80000000) - 1;
+            bIsFinalState = static_cast<bool>(Packed >> 31);
+        }
+
         PhysState.NetSerialize(Ar, Completeness);
         State.NetSerialize(Ar, Completeness);
     }
@@ -52,11 +66,12 @@ namespace ClientPrediction {
     public:
         virtual ~USimStateBase() = default;
 
-        DECLARE_DELEGATE_OneParam(FEmitSimProxyStateBundleDelegate, const FBundledPacketsLow& Bundle)
-        FEmitSimProxyStateBundleDelegate EmitSimProxyBundle;
+        DECLARE_DELEGATE_OneParam(FEmitLowStateDelegate, const FBundledPacketsLow& Bundle)
+        FEmitLowStateDelegate EmitSimProxyBundle;
 
-        DECLARE_DELEGATE_OneParam(FEmitAutoProxyStateBundleDelegate, const FBundledPacketsFull& Bundle)
-        FEmitAutoProxyStateBundleDelegate EmitAutoProxyBundle;
+        DECLARE_DELEGATE_OneParam(FEmitFullStateDelegate, const FBundledPacketsFull& Bundle)
+        FEmitFullStateDelegate EmitAutoProxyBundle;
+        FEmitFullStateDelegate EmitFinalBundle;
     };
 
     template <typename Traits>
@@ -79,6 +94,10 @@ namespace ClientPrediction {
     public:
         int32 ConsumeSimProxyStates(const FBundledPacketsLow& Packets, Chaos::FReal SimDt);
         void ConsumeAutoProxyStates(const FBundledPacketsFull& Packets);
+        void ConsumeFinalState(const FBundledPacketsFull& Packets, const FNetTickInfo& TickInfo);
+
+    private:
+        void UpdateTimesRecvSimProxy(WrappedState& State, Chaos::FReal SimDt);
 
     private:
         static void FillStateSimDetails(WrappedState& State, const FNetTickInfo& TickInfo);
@@ -94,6 +113,13 @@ namespace ClientPrediction {
     public:
         void TickPrePhysics(const FNetTickInfo& TickInfo, const InputType& Input);
         void TickPostPhysics(const FNetTickInfo& TickInfo, const InputType& Input);
+
+    private:
+        void UpdateStateHistory(const FNetTickInfo& TickInfo, const WrappedState& State);
+
+        bool IsSimOverPT(const FNetTickInfo& TickInfo);
+        void EndSimIfNeeded(const FNetTickInfo& TickInfo);
+        void EndSimPT(const FNetTickInfo& TickInfo);
 
     public:
         int32 GetRewindTick(Chaos::FPhysicsSolver* PhysSolver, Chaos::FPhysicsObjectHandle PhysObject);
@@ -118,6 +144,10 @@ namespace ClientPrediction {
         WrappedState CurrentState{};
         WrappedState LastInterpolatedState{};
         bool bGeneratedInitialState = false;
+        bool bEndedSimOnGameThread = false;
+
+        FCriticalSection FinalStateMutex;
+        WrappedState FinalState{};
 
         // Relevant only for sim proxies
         ECollisionEnabled::Type CachedCollisionMode = ECollisionEnabled::NoCollision;
@@ -125,7 +155,9 @@ namespace ClientPrediction {
         // Relevant only for auto proxies
         WrappedState LatestAuthorityState{};
         int32 LatestAckedServerTick = INDEX_NONE;
+
         TOptional<WrappedState> PendingCorrection;
+        bool bAutoProxyAppliedFinalState = false;
 
         // Relevant only for the authorities
         int32 LatestEmittedTick = INDEX_NONE;
@@ -154,7 +186,7 @@ namespace ClientPrediction {
         Packets.Bundle().Retrieve(AuthorityStates, this);
 
         // We add the states to a queue so that we can update these states as well as the existing ones in SimProxyAdjustStateTimeline(). We can't do all that
-        // logic in this function since the sim proxy offset might change in between recieves.
+        // logic in this function since the sim proxy offset might change in between receives.
         int32 NewestState = INDEX_NONE;
         for (WrappedState& NewState : AuthorityStates) {
             NewestState = FMath::Max(NewestState, NewState.ServerTick);
@@ -163,12 +195,11 @@ namespace ClientPrediction {
                 continue;
             }
 
-            // By keeping the times in server time we avoid needing maintenance on the buffer if the offset changes.  
-            NewState.StartTime = static_cast<Chaos::FReal>(NewState.ServerTick) * SimDt;
-            NewState.EndTime = NewState.StartTime + SimDt;
-
+            UpdateTimesRecvSimProxy(NewState, SimDt);
             StateHistory.Add(MoveTemp(NewState));
         }
+
+        StateHistory.Sort([](const WrappedState& Lhs, const WrappedState& Rhs) { return Lhs.ServerTick < Rhs.ServerTick; });
 
         return NewestState;
     }
@@ -178,8 +209,40 @@ namespace ClientPrediction {
         TArray<WrappedState> AuthorityStates;
         Packets.Bundle().Retrieve(AuthorityStates, this);
 
-        if (AuthorityStates.IsEmpty()) { return; }
+        if (AuthorityStates.IsEmpty() || AuthorityStates.Last().ServerTick <= LatestAuthorityState.ServerTick) { return; }
         LatestAuthorityState = AuthorityStates.Last();
+    }
+
+    template <typename Traits>
+    void USimState<Traits>::ConsumeFinalState(const FBundledPacketsFull& Packets, const FNetTickInfo& TickInfo) {
+        FScopeLock FinalStateLock(&FinalStateMutex);
+        FScopeLock StateLock(&StateMutex);
+
+        TArray<WrappedState> AuthorityState;
+        Packets.Bundle().Retrieve(AuthorityState, this);
+
+        check(AuthorityState.Num() == 1);
+        FinalState = AuthorityState[0];
+
+        if (TickInfo.SimRole == ROLE_SimulatedProxy) {
+            UpdateTimesRecvSimProxy(FinalState, TickInfo.Dt);
+
+            // The final state should always be the last. Plus we sort in ConsumeSimProxyStates() so it shouldn't be a problem if another state is received after.
+            StateHistory.Add(FinalState);
+            return;
+        }
+
+        // We use the current tick offset between the client and server to assign a local tick. This way, if the offset changes we still have a fixed point in time
+        // that the simulation will end on the client. If it does change, this simulation doesn't really care because it's already over on the authority. This offset
+        // will most likely be negative since the client predicts ahead of the authority.
+        FinalState.LocalTick = TickInfo.LocalTick + (FinalState.ServerTick - TickInfo.ServerTick);
+    }
+
+    template <typename Traits>
+    void USimState<Traits>::UpdateTimesRecvSimProxy(WrappedState& State, Chaos::FReal SimDt) {
+        // By keeping the times in server time we avoid needing maintenance on the buffer if the offset changes.
+        State.StartTime = static_cast<Chaos::FReal>(State.ServerTick) * SimDt;
+        State.EndTime = State.StartTime + SimDt;
     }
 
     template <typename Traits>
@@ -229,9 +292,17 @@ namespace ClientPrediction {
             return;
         }
 
-        FScopeLock StateLock(&StateMutex);
-        TrimStateBuffer();
+        // We need to unlock the state mutex before checking if the sim is over to prevent deadlock since everything is done final state then state lock.
+        {
+            FScopeLock StateLock(&StateMutex);
+            TrimStateBuffer();
+        }
 
+        if (IsSimOverPT(TickInfo)) {
+            return;
+        }
+
+        FScopeLock StateLock(&StateMutex);
         if (!bGeneratedInitialState) {
             GenerateInitialState(TickInfo);
             bGeneratedInitialState = true;
@@ -260,6 +331,12 @@ namespace ClientPrediction {
     template <typename Traits>
     void USimState<Traits>::TickPrePhysics(const FNetTickInfo& TickInfo, const InputType& Input) {
         if (SimDelegates == nullptr || TickInfo.SimRole == ROLE_SimulatedProxy) { return; }
+
+        EndSimIfNeeded(TickInfo);
+        if (IsSimOverPT(TickInfo)) {
+            return;
+        }
+
         CurrentState.State = PrevState.State;
 
         FTickOutput Output(CurrentState.State, TickInfo, SimEvents);
@@ -268,24 +345,107 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimState<Traits>::TickPostPhysics(const FNetTickInfo& TickInfo, const InputType& Input) {
-        if (TickInfo.SimRole == ROLE_SimulatedProxy) { return; }
+        if (SimDelegates == nullptr || TickInfo.SimRole == ROLE_SimulatedProxy) { return; }
+
+        if (IsSimOverPT(TickInfo)) {
+            return;
+        }
 
         FTickOutput Output(CurrentState.State, TickInfo, SimEvents);
         SimDelegates->SimTickPostPhysicsDelegate.Broadcast(TickInfo, Input, PrevState.State, Output);
         USimState::FillStateSimDetails(CurrentState, TickInfo);
 
+        UpdateStateHistory(TickInfo, CurrentState);
+    }
+
+    template <typename Traits>
+    void USimState<Traits>::UpdateStateHistory(const FNetTickInfo& TickInfo, const WrappedState& State) {
         FScopeLock StateLock(&StateMutex);
         if (StateHistory.IsEmpty() || StateHistory.Last().LocalTick < TickInfo.LocalTick) {
-            StateHistory.Add(MoveTemp(CurrentState));
+            StateHistory.Add(State);
             return;
         }
 
-        for (WrappedState& State : StateHistory) {
-            if (State.LocalTick == TickInfo.LocalTick) {
-                State = CurrentState;
+        for (int32 StateIdx = 0; StateIdx < StateHistory.Num(); ++StateIdx) {
+            WrappedState& HistoricState = StateHistory[StateIdx];
+            if (HistoricState.LocalTick != TickInfo.LocalTick) {
+                continue;
+            }
+
+            HistoricState = State;
+            if (!State.bIsFinalState) {
                 return;
             }
+
+            // Auto proxies were probably ahead of the authority, so there were most likely states that were predicted after the end of the simulation.
+            // These states never actually happened on the authority , so we want to remove them.
+            const int32 NextStateIdx = StateIdx + 1;
+            while (StateHistory.Num() > NextStateIdx) {
+                StateHistory.RemoveAt(NextStateIdx);
+            }
+
+            return;
         }
+    }
+
+    template <typename Traits>
+    bool USimState<Traits>::IsSimOverPT(const FNetTickInfo& TickInfo) {
+        // Auto proxies assign a local tick when the final state is consumed to avoid a changing server offset causing the simulation to report as not over for a few ticks.
+        // Authorities can just use the local tick because for them LocalTick == ServerTick.
+        FScopeLock FinalStateLock(&FinalStateMutex);
+        return FinalState.LocalTick != INDEX_NONE && TickInfo.LocalTick >= FinalState.LocalTick;
+    }
+
+    template <typename Traits>
+    void USimState<Traits>::EndSimIfNeeded(const FNetTickInfo& TickInfo) {
+        FScopeLock FinalStateLock(&FinalStateMutex);
+
+        if (TickInfo.SimRole == ROLE_AutonomousProxy && FinalState.LocalTick != INDEX_NONE && TickInfo.LocalTick >= FinalState.LocalTick) {
+            if (bAutoProxyAppliedFinalState) { return; }
+            bAutoProxyAppliedFinalState = true;
+
+            // Now that we know when the final state is actually applied, we can update all of the relevant values on it. 
+            FinalState.LocalTick = TickInfo.LocalTick;
+            FinalState.ServerTick = TickInfo.ServerTick;
+
+            FinalState.StartTime = TickInfo.StartTime;
+            FinalState.EndTime = TickInfo.EndTime;
+
+            EndSimPT(TickInfo);
+            UpdateStateHistory(TickInfo, FinalState);
+
+            return;
+        }
+
+        // We only allow the authority to end the simulation so that the client doesn't mispredict and end it early.
+        if (TickInfo.SimRole != ROLE_Authority || FinalState.ServerTick != INDEX_NONE) {
+            return;
+        }
+
+        if (!SimDelegates->IsSimFinishedDelegate.IsBound() || !SimDelegates->IsSimFinishedDelegate.Execute(TickInfo, PrevState.State)) {
+            return;
+        }
+
+        FinalState.bIsFinalState = true;
+        FinalState.State = PrevState.State;
+        USimState::FillStateSimDetails(FinalState, TickInfo);
+
+        UpdateStateHistory(TickInfo, FinalState);
+        EndSimPT(TickInfo);
+    }
+
+    template <typename Traits>
+    void USimState<Traits>::EndSimPT(const FNetTickInfo& TickInfo) {
+        Chaos::FRigidBodyHandle_Internal* Handle = GetPhysHandle(TickInfo);
+        if (Handle == nullptr) { return; }
+
+        Handle->SetX(FinalState.PhysState.X);
+        Handle->SetR(FinalState.PhysState.R);
+
+        Handle->SetV(Chaos::FVec3(0.0, 0.0, 0.0));
+        Handle->SetW(Chaos::FVec3(0.0, 0.0, 0.0));
+
+        Handle->SetObjectState(Chaos::EObjectStateType::Static);
     }
 
     template <typename Traits>
@@ -362,8 +522,21 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimState<Traits>::EmitStates() {
+        FScopeLock FinalStateLock(&FinalStateMutex);
         FScopeLock StateLock(&StateMutex);
+
         if (StateHistory.IsEmpty() || StateHistory.Last().ServerTick <= LatestEmittedTick) {
+            return;
+        }
+
+        if (FinalState.ServerTick != INDEX_NONE) {
+            FBundledPacketsFull FinalStatePacket{};
+            TArray<WrappedState> FinalStateArr = {FinalState};
+
+            FinalStatePacket.Bundle().Store(FinalStateArr, this);
+            EmitFinalBundle.ExecuteIfBound(FinalStatePacket);
+
+            LatestEmittedTick = TNumericLimits<int32>::Max();
             return;
         }
 
@@ -392,34 +565,44 @@ namespace ClientPrediction {
     template <typename Traits>
     void USimState<Traits>::InterpolateGameThread(UPrimitiveComponent* UpdatedComponent, Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, Chaos::FReal Dt,
                                                   ENetRole SimRole) {
-        if (SimDelegates == nullptr) { return; }
+        if (UpdatedComponent == nullptr || SimDelegates == nullptr || bEndedSimOnGameThread) { return; }
 
         Chaos::FReal AdjustedResultsTime = SimRole != ROLE_SimulatedProxy ? ResultsTime : ResultsTime + SimProxyOffset;
         GetInterpolatedStateAtTime(AdjustedResultsTime, LastInterpolatedState);
 
+        FBodyInstance* BodyInstance = UpdatedComponent->GetBodyInstance();
+        if (BodyInstance == nullptr) { return; }
+
         // Sim proxies have custom logic since they aren't really simulated.
         if (SimRole == ROLE_SimulatedProxy) {
-            FBodyInstance* BodyInstance = UpdatedComponent->GetBodyInstance();
-            if (BodyInstance == nullptr) { return; }
-
             Chaos::FRigidBodyHandle_External& Handle = BodyInstance->GetPhysicsActorHandle()->GetGameThreadAPI();
             Handle.SetObjectState(Chaos::EObjectStateType::Kinematic);
 
-            // TODO pull in the settings and make this conditional right
-            if (true) {
-                const ECollisionEnabled::Type CurrentCollisionMode = UpdatedComponent->GetCollisionEnabled();
-                if (CurrentCollisionMode != ECollisionEnabled::QueryAndProbe) {
-                    CachedCollisionMode = CurrentCollisionMode;
-                }
-
-                UpdatedComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndProbe);
+            const ECollisionEnabled::Type CurrentCollisionMode = UpdatedComponent->GetCollisionEnabled();
+            if (CurrentCollisionMode != ECollisionEnabled::QueryAndProbe) {
+                CachedCollisionMode = CurrentCollisionMode;
             }
+
+            UpdatedComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndProbe);
 
             Handle.SetX(LastInterpolatedState.PhysState.X);
             Handle.SetR(LastInterpolatedState.PhysState.R);
         }
 
         SimDelegates->FinalizeDelegate.Broadcast(LastInterpolatedState.State, Dt);
+
+        if (!LastInterpolatedState.bIsFinalState) {
+            return;
+        }
+
+        if (SimRole == ROLE_SimulatedProxy) {
+            UpdatedComponent->SetCollisionEnabled(CachedCollisionMode);
+        }
+
+        UpdatedComponent->SyncComponentToRBPhysics();
+        BodyInstance->SetInstanceSimulatePhysics(false, true, true);
+
+        bEndedSimOnGameThread = true;
     }
 
     template <typename Traits>
@@ -454,7 +637,7 @@ namespace ClientPrediction {
 
         OutState = StateHistory.Last();
 
-        if (StateHistory.Num() == 1) {
+        if (StateHistory.Num() == 1 || OutState.bIsFinalState) {
             return;
         }
 

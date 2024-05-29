@@ -36,11 +36,17 @@ private:
     UPROPERTY(ReplicatedUsing=OnRep_AutoProxyStates, Transient)
     FBundledPacketsFull AutoProxyStates;
 
+    UPROPERTY(ReplicatedUsing=OnRep_FinalState, Transient)
+    FBundledPacketsFull FinalState;
+
     UFUNCTION()
     void OnRep_SimProxyStates();
 
     UFUNCTION()
     void OnRep_AutoProxyStates();
+
+    UFUNCTION()
+    void OnRep_FinalState();
 
     UFUNCTION(NetMulticast, Reliable)
     void ClientRecvEvents(const FBundledPackets& Bundle);
@@ -69,6 +75,8 @@ TSharedPtr<ClientPrediction::FSimDelegates<Traits>> UClientPredictionV2Component
     InputImpl->EmitInputBundleDelegate.BindUFunction(this, TEXT("ServerRecvInput"));
     StateImpl->EmitSimProxyBundle.BindLambda([&](const FBundledPacketsLow& Packets) { SimProxyStates.Bundle().Copy(Packets.Bundle()); });
     StateImpl->EmitAutoProxyBundle.BindLambda([&](const FBundledPacketsFull& Packets) { AutoProxyStates.Bundle().Copy(Packets.Bundle()); });
+    StateImpl->EmitFinalBundle.BindLambda([&](const FBundledPacketsFull& Packets) { FinalState.Bundle().Copy(Packets.Bundle()); });
+
     SimEvents->EmitEventBundle.BindUFunction(this, TEXT("ClientRecvEvents"));
 
     Impl->RemoteSimProxyOffsetChangedDelegate.BindUFunction(this, TEXT("ServerRecvRemoteSimProxyOffset"));

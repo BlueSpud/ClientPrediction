@@ -17,6 +17,7 @@ void UClientPredictionV2Component::GetLifetimeReplicatedProps(TArray<FLifetimePr
 
     DOREPLIFETIME_CONDITION(UClientPredictionV2Component, SimProxyStates, COND_SimulatedOnly);
     DOREPLIFETIME_CONDITION(UClientPredictionV2Component, AutoProxyStates, COND_AutonomousOnly);
+    DOREPLIFETIME(UClientPredictionV2Component, FinalState);
 }
 
 void UClientPredictionV2Component::InitializeComponent() {
@@ -64,6 +65,10 @@ void UClientPredictionV2Component::OnRep_SimProxyStates() {
 
 void UClientPredictionV2Component::OnRep_AutoProxyStates() {
     if (SimCoordinator != nullptr) { SimCoordinator->ConsumeAutoProxyStates(AutoProxyStates); }
+}
+
+void UClientPredictionV2Component::OnRep_FinalState() {
+    if (SimCoordinator != nullptr) { SimCoordinator->ConsumeFinalState(FinalState); }
 }
 
 void UClientPredictionV2Component::ClientRecvEvents_Implementation(const FBundledPackets& Bundle) {
