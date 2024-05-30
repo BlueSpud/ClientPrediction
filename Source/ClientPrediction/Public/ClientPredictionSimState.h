@@ -105,7 +105,7 @@ namespace ClientPrediction {
         void GenerateInitialState(const FNetTickInfo& TickInfo);
 
     public:
-        void PreparePrePhysics(const FNetTickInfo& TickInfo);
+        bool PreparePrePhysics(const FNetTickInfo& TickInfo);
 
     private:
         void TrimStateBuffer();
@@ -285,11 +285,11 @@ namespace ClientPrediction {
     }
 
     template <typename Traits>
-    void USimState<Traits>::PreparePrePhysics(const FNetTickInfo& TickInfo) {
-        if (SimDelegates == nullptr) { return; }
+    bool USimState<Traits>::PreparePrePhysics(const FNetTickInfo& TickInfo) {
+        if (SimDelegates == nullptr) { return true; }
 
         if (TickInfo.SimRole == ROLE_SimulatedProxy) {
-            return;
+            return true;
         }
 
         // We need to unlock the state mutex before checking if the sim is over to prevent deadlock since everything is done final state then state lock.
@@ -299,7 +299,7 @@ namespace ClientPrediction {
         }
 
         if (IsSimOverPT(TickInfo)) {
-            return;
+            return true;
         }
 
         FScopeLock StateLock(&StateMutex);
@@ -317,6 +317,8 @@ namespace ClientPrediction {
             PrevState = State;
             if (State.LocalTick == PrevTickNumber) { break; }
         }
+
+        return false;
     }
 
     template <typename Traits>

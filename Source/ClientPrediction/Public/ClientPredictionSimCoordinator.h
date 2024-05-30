@@ -67,6 +67,7 @@ namespace ClientPrediction {
         FDelegateHandle PostAdvanceDelegateHandle;
         FDelegateHandle PhysScenePostTickDelegateHandle;
         FDelegateHandle RemoteSimProxyOffsetChangedDelegateHandle;
+        bool bDestroyed = false;
 
     public:
         virtual void ConsumeInputBundle(FBundledPackets Packets) override;
@@ -154,6 +155,8 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimCoordinator<Traits>::Destroy() {
+        if (bDestroyed) { return; }
+
         FPhysScene* PhysScene = GetPhysScene();
         if (PhysScene == nullptr) { return; }
 
@@ -173,6 +176,7 @@ namespace ClientPrediction {
         SimProxyWorldManager->RemoteSimProxyOffsetChangedDelegate.Remove(RemoteSimProxyOffsetChangedDelegateHandle);
 
         PhysCallback->UnregisterRewindableSimCallback_Internal(this);
+        bDestroyed = true;
     }
 
     template <typename Traits>
@@ -214,11 +218,12 @@ namespace ClientPrediction {
         FNetTickInfo TickInfo{};
         if (!BuildTickInfo(TickInfo)) { return; }
 
-        // State needs to come before the input because the input depends on the current state
-        SimState->PreparePrePhysics(TickInfo);
-        SimInput->PreparePrePhysics(TickInfo, SimState->GetPrevState());
-        SimEvents->PreparePrePhysics(TickInfo);
+        // State needs to come before the input because the input depends on the current state. If the simulation is over we don't need to prepare input anymore.
+        if (!SimState->PreparePrePhysics(TickInfo)) {
+            SimInput->PreparePrePhysics(TickInfo, SimState->GetPrevState());
+        }
 
+        SimEvents->PreparePrePhysics(TickInfo);
         SimState->TickPrePhysics(TickInfo, SimInput->GetCurrentInput());
     }
 

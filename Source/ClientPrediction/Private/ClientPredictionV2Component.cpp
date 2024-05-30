@@ -51,7 +51,11 @@ void UClientPredictionV2Component::UninitializeComponent() {
 void UClientPredictionV2Component::DestroySimulation() {
     if (SimCoordinator != nullptr) {
         SimCoordinator->Destroy();
+
         SimCoordinator = nullptr;
+        SimInput = nullptr;
+        SimState = nullptr;
+        SimEvents = nullptr;
     }
 }
 
