@@ -62,6 +62,12 @@ namespace ClientPrediction {
         PhysState.Extrapolate(PrevState.PhysState, StateDt, ExtrapolationTime);
     }
 
+    enum class ESimStage {
+        kRunning,
+        kEnded,
+        kReadyForCleanup
+    };
+
     class USimStateBase {
     public:
         virtual ~USimStateBase() = default;
@@ -105,9 +111,10 @@ namespace ClientPrediction {
         void GenerateInitialState(const FNetTickInfo& TickInfo);
 
     public:
-        bool PreparePrePhysics(const FNetTickInfo& TickInfo);
+        ESimStage PreparePrePhysics(const FNetTickInfo& TickInfo);
 
     private:
+        bool CanSimBeCleanedUp(const FNetTickInfo& TickInfo);
         void TrimStateBuffer();
 
     public:
@@ -144,8 +151,8 @@ namespace ClientPrediction {
         WrappedState CurrentState{};
         WrappedState LastInterpolatedState{};
         bool bGeneratedInitialState = false;
-        bool bEndedSimOnGameThread = false;
 
+        TAtomic<bool> bEndedSimOnGameThread = false;
         FCriticalSection FinalStateMutex;
         WrappedState FinalState{};
 
@@ -285,11 +292,15 @@ namespace ClientPrediction {
     }
 
     template <typename Traits>
-    bool USimState<Traits>::PreparePrePhysics(const FNetTickInfo& TickInfo) {
-        if (SimDelegates == nullptr) { return true; }
+    ESimStage USimState<Traits>::PreparePrePhysics(const FNetTickInfo& TickInfo) {
+        if (SimDelegates == nullptr) { return ESimStage::kRunning; }
+
+        if (CanSimBeCleanedUp(TickInfo)) {
+            return ESimStage::kReadyForCleanup;
+        }
 
         if (TickInfo.SimRole == ROLE_SimulatedProxy) {
-            return true;
+            return bEndedSimOnGameThread ? ESimStage::kEnded : ESimStage::kRunning;
         }
 
         // We need to unlock the state mutex before checking if the sim is over to prevent deadlock since everything is done final state then state lock.
@@ -299,7 +310,7 @@ namespace ClientPrediction {
         }
 
         if (IsSimOverPT(TickInfo)) {
-            return true;
+            return ESimStage::kEnded;
         }
 
         FScopeLock StateLock(&StateMutex);
@@ -318,7 +329,19 @@ namespace ClientPrediction {
             if (State.LocalTick == PrevTickNumber) { break; }
         }
 
-        return false;
+        return ESimStage::kRunning;
+    }
+
+    template <typename Traits>
+    bool USimState<Traits>::CanSimBeCleanedUp(const FNetTickInfo& TickInfo) {
+        if (!bEndedSimOnGameThread) { return false; }
+
+        if (TickInfo.SimRole == ROLE_SimulatedProxy) {
+            return true;
+        }
+
+        FScopeLock FinalStateLock(&FinalStateMutex);
+        return FinalState.LocalTick != INDEX_NONE && TickInfo.LocalTick > FinalState.LocalTick + StateHistory.Num();
     }
 
     template <typename Traits>

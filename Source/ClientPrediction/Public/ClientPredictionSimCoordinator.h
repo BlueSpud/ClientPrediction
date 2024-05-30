@@ -47,6 +47,10 @@ namespace ClientPrediction {
         virtual void Initialize(UPrimitiveComponent* NewUpdatedComponent, bool bNowHasNetConnection, ENetRole NewSimRole) override;
         virtual void Destroy() override;
 
+    private:
+        void DestroyPT();
+        void DestroyGT();
+
         virtual void FreeOutputData_External(Chaos::FSimCallbackOutput* Output) override {}
         virtual void FreeInputData_Internal(Chaos::FSimCallbackInput* Input) override {}
 
@@ -67,7 +71,10 @@ namespace ClientPrediction {
         FDelegateHandle PostAdvanceDelegateHandle;
         FDelegateHandle PhysScenePostTickDelegateHandle;
         FDelegateHandle RemoteSimProxyOffsetChangedDelegateHandle;
-        bool bDestroyed = false;
+
+        TAtomic<ESimStage> SimStage = ESimStage::kRunning;
+        TAtomic<bool> bDestroyedPT = false;
+        TAtomic<bool> bDestroyedGT = false;
 
     public:
         virtual void ConsumeInputBundle(FBundledPackets Packets) override;
@@ -155,7 +162,13 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimCoordinator<Traits>::Destroy() {
-        if (bDestroyed) { return; }
+        DestroyPT();
+        DestroyGT();
+    }
+
+    template <typename Traits>
+    void USimCoordinator<Traits>::DestroyPT() {
+        if (bDestroyedPT.Exchange(true)) { return; }
 
         FPhysScene* PhysScene = GetPhysScene();
         if (PhysScene == nullptr) { return; }
@@ -172,11 +185,18 @@ namespace ClientPrediction {
         PhysCallback->InjectInputsExternal.Remove(InjectInputsGTDelegateHandle);
         PhysCallback->PreProcessInputsInternal.Remove(PreAdvanceDelegateHandle);
         PhysSolver->RemovePostAdvanceCallback(PostAdvanceDelegateHandle);
-        PhysScene->OnPhysScenePostTick.Remove(PhysScenePostTickDelegateHandle);
-        SimProxyWorldManager->RemoteSimProxyOffsetChangedDelegate.Remove(RemoteSimProxyOffsetChangedDelegateHandle);
 
         PhysCallback->UnregisterRewindableSimCallback_Internal(this);
-        bDestroyed = true;
+    }
+
+    template <typename Traits>
+    void USimCoordinator<Traits>::DestroyGT() {
+        if (bDestroyedGT.Exchange(true)) { return; }
+
+        FPhysScene* PhysScene = GetPhysScene();
+        if (PhysScene == nullptr) { return; }
+
+        PhysScene->OnPhysScenePostTick.Remove(PhysScenePostTickDelegateHandle);
     }
 
     template <typename Traits>
@@ -196,7 +216,7 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimCoordinator<Traits>::InjectInputsGT(const int32 StartTick, const int32 NumTicks) {
-        if (SimInput != nullptr) {
+        if (SimInput != nullptr && SimStage == ESimStage::kRunning) {
             SimInput->InjectInputsGT();
         }
     }
@@ -219,7 +239,14 @@ namespace ClientPrediction {
         if (!BuildTickInfo(TickInfo)) { return; }
 
         // State needs to come before the input because the input depends on the current state. If the simulation is over we don't need to prepare input anymore.
-        if (!SimState->PreparePrePhysics(TickInfo)) {
+        SimStage = SimState->PreparePrePhysics(TickInfo);
+
+        if (SimStage == ESimStage::kReadyForCleanup) {
+            DestroyPT();
+            return;
+        }
+
+        if (SimStage == ESimStage::kRunning) {
             SimInput->PreparePrePhysics(TickInfo, SimState->GetPrevState());
         }
 
@@ -245,6 +272,11 @@ namespace ClientPrediction {
     template <typename Traits>
     void USimCoordinator<Traits>::OnPhysScenePostTick(FChaosScene* Scene) {
         if (SimInput == nullptr || SimState == nullptr || SimEvents == nullptr || EarliestLocalTick == INDEX_NONE) { return; }
+
+        if (SimStage == ESimStage::kReadyForCleanup) {
+            DestroyGT();
+            return;
+        }
 
         Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
         if (PhysSolver == nullptr) { return; }
