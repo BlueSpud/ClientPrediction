@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 
-DECLARE_LOG_CATEGORY_EXTERN(LogClientPrediction, Log, All);
+CLIENTPREDICTION_API DECLARE_LOG_CATEGORY_EXTERN(LogClientPrediction, Log, All);
 
 class FClientPredictionModule : public IModuleInterface {
 public:
@@ -16,10 +16,4 @@ private:
 
     static void OnPostWorldInitialize(UWorld* InWorld, const UWorld::InitializationValues);
     static void OnWorldCleanup(UWorld* InWorld, bool bSessionEnded, bool bCleanupResources);
-
-    static FDelegateHandle OnPlayerLoginDelegate;
-    static FDelegateHandle OnPlayerLogoutDelegate;
-
-    static void OnPlayerLogin(AGameModeBase* GameMode, APlayerController* PlayerController);
-    static void OnPlayerLogout(class AGameModeBase* GameMode, class AController* PlayerController);
 };
