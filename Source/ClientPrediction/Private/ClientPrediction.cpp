@@ -1,31 +1,15 @@
 #include "ClientPrediction.h"
 
-#if WITH_EDITOR
-#include "ISettingsModule.h"
-#endif
-
-#include "ClientPredictionSettings.h"
 #include "ClientPredictionSimProxy.h"
 
 #define LOCTEXT_NAMESPACE "FClientPredictionModule"
 
-DEFINE_LOG_CATEGORY(LogClientPrediction);
+CLIENTPREDICTION_API DEFINE_LOG_CATEGORY(LogClientPrediction);
 
 FDelegateHandle FClientPredictionModule::OnPostWorldInitializationDelegate;
 FDelegateHandle FClientPredictionModule::OnWorldCleanupDelegate;
 
 void FClientPredictionModule::StartupModule() {
-#if WITH_EDITOR
-	ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings");
-	if (SettingsModule != nullptr) {
-		SettingsModule->RegisterSettings("Project", "Project", "ClientPrediction",
-		                                 LOCTEXT("ClientPredictionSettingsName", "ClientPrediction"),
-		                                 LOCTEXT("ClientPredictionSettingsDescription", "Settings for ClientPrediction"),
-		                                 GetMutableDefault<UClientPredictionSettings>()
-		);
-	}
-#endif
-
 	OnPostWorldInitializationDelegate = FWorldDelegates::OnPostWorldInitialization.AddStatic(&OnPostWorldInitialize);
 	OnWorldCleanupDelegate = FWorldDelegates::OnWorldCleanup.AddStatic(&OnWorldCleanup);
 }

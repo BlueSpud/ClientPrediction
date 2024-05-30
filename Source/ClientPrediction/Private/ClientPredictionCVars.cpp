@@ -17,7 +17,24 @@ namespace ClientPrediction {
     FAutoConsoleVariableRef CVarClientPredictionAngularVelTolerance(TEXT("cp.AngularVelTolerance"), ClientPredictionAngularVelTolerance,
                                                                     TEXT("If the angular velocity deleta is less than this, a correction won't be applied"));
 
+    CLIENTPREDICTION_API int32 ClientPredictionAutoProxySendInterval = 4;
+    FAutoConsoleVariableRef CVarClientPredictionAutoProxySendInterval(TEXT("cp.AutoProxySendInterval"), ClientPredictionSimProxySendInterval,
+                                                                      TEXT("1 out of cp.AutoProxySendInterval ticks will be sent to auto proxies"));
+
     CLIENTPREDICTION_API int32 ClientPredictionSimProxySendInterval = 2;
     FAutoConsoleVariableRef CVarClientPredictionSimProxySendInterval(TEXT("cp.SimProxySendInterval"), ClientPredictionSimProxySendInterval,
-                                                                    TEXT("1 out of cp.SimProxySendInterval ticks will be sent to sim proxies"));
+                                                                     TEXT("1 out of cp.SimProxySendInterval ticks will be sent to sim proxies"));
+
+    CLIENTPREDICTION_API int32 ClientPredictionSimProxyBufferTicks = 6;
+    FAutoConsoleVariableRef CVarClientPredictionSimProxyBufferTicks(TEXT("cp.SimProxyBufferTicks"), ClientPredictionSimProxyBufferTicks,
+                                                                    TEXT("The number of ticks to buffer states recieved from the authority for sim proxies"));
+
+    CLIENTPREDICTION_API int32 ClientPredictionSimProxyCorrectionThreshold = 6;
+    FAutoConsoleVariableRef CVarClientPredictionSimProxyCorrectionThreshold(TEXT("cp.SimProxyCorrectionThreshold"), ClientPredictionSimProxyCorrectionThreshold,
+                                                                            TEXT(
+                                                                                "If the client gets this number of ticks away from the desired sim proxy offset a correction is applied"));
+
+    CLIENTPREDICTION_API int32 ClientPredictionInputWindowSize = 3;
+    FAutoConsoleVariableRef CVarClientPredictionInputWindowSize(TEXT("cp.InputWindowSize"), ClientPredictionInputWindowSize,
+                                                                TEXT("The size of the sliding window used to send inputs"));
 }

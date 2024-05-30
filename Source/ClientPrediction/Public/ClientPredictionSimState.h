@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include "ClientPrediction.h"
 #include "PhysicsProxy/SingleParticlePhysicsProxy.h"
 #include "Chaos/PhysicsObjectInterface.h"
 #include "Chaos/PhysicsObjectInternalInterface.h"
@@ -523,7 +524,7 @@ namespace ClientPrediction {
         const int32 SolverResimTick = (RewindData->GetResimFrame() == INDEX_NONE) ? RewindTick : FMath::Min(RewindTick, RewindData->GetResimFrame());
         RewindData->SetResimFrame(SolverResimTick);
 
-        UE_LOG(LogTemp, Warning, TEXT("Queueing correction on %d (Server tick %d)"), RewindTick, LatestAuthorityState.ServerTick);
+        UE_LOG(LogClientPrediction, Warning, TEXT("Queueing correction on %d (Server tick %d)"), RewindTick, LatestAuthorityState.ServerTick);
         return RewindTick;
     }
 
@@ -541,7 +542,7 @@ namespace ClientPrediction {
         Handle->SetR(PhysState.R);
         Handle->SetW(PhysState.W);
 
-        UE_LOG(LogTemp, Log, TEXT("Applying correction on %d"), PendingCorrection->LocalTick);
+        UE_LOG(LogClientPrediction, Log, TEXT("Applying correction on %d"), PendingCorrection->LocalTick);
         PendingCorrection.Reset();
     }
 
@@ -565,11 +566,18 @@ namespace ClientPrediction {
             return;
         }
 
-        FBundledPacketsFull AutoProxyPackets{};
-        TArray<WrappedState> AutoProxyStates = {StateHistory.Last()};
+        // Auto proxies predict so they don't need every single state to be sent. We go backwards and find the one that matches the send interval that hasn't already been
+        // emitted.
+        for (int32 StateIdx = StateHistory.Num() - 1; StateIdx >= 0; --StateIdx) {
+            if (StateHistory[StateIdx].ServerTick <= LatestEmittedTick) { break; }
+            if (StateHistory[StateIdx].ServerTick % ClientPredictionAutoProxySendInterval != 0) { continue; }
 
-        AutoProxyPackets.Bundle().Store(AutoProxyStates, this);
-        EmitAutoProxyBundle.ExecuteIfBound(AutoProxyPackets);
+            FBundledPacketsFull AutoProxyPackets{};
+            TArray<WrappedState> AutoProxyStates{StateHistory[StateIdx]};
+
+            AutoProxyPackets.Bundle().Store(AutoProxyStates, this);
+            EmitAutoProxyBundle.ExecuteIfBound(AutoProxyPackets);
+        }
 
         TArray<WrappedState> SimProxyStates;
         for (const WrappedState& State : StateHistory) {

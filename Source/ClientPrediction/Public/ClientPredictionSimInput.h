@@ -1,10 +1,9 @@
 ﻿#pragma once
 
+#include "ClientPredictionCVars.h"
 #include "ClientPredictionDelegate.h"
 #include "ClientPredictionNetSerialization.h"
 #include "ClientPredictionTick.h"
-
-static constexpr int32 kSendWindowSize = 3;
 
 namespace ClientPrediction {
     class USimInputBase {
@@ -161,7 +160,7 @@ namespace ClientPrediction {
             return;
         }
 
-        int32 SendWindowMaxSize = FMath::Max(PendingSend.Num(), kSendWindowSize);
+        int32 SendWindowMaxSize = FMath::Max(PendingSend.Num(), ClientPredictionInputWindowSize);
         SendWindow.Append(PendingSend);
 
         while (SendWindow.Num() > SendWindowMaxSize) {

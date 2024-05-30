@@ -12,7 +12,7 @@
 #include "ClientPredictionTick.h"
 
 namespace ClientPrediction {
-    struct USimCoordinatorBase {
+    class USimCoordinatorBase {
     public:
         virtual ~USimCoordinatorBase() = default;
         virtual void Initialize(UPrimitiveComponent* NewUpdatedComponent, bool bNowHasNetConnection, ENetRole NewSimRole) = 0;

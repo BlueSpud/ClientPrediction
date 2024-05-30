@@ -1,9 +1,7 @@
 ﻿#include "ClientPredictionSimProxy.h"
 
+#include "ClientPrediction.h"
 #include "ClientPredictionCVars.h"
-
-static int32 kSimProxyBufferTicks = 6;
-static int32 kSimProxyBufferCorrectionThreshold = 6;
 
 namespace ClientPrediction {
     TMap<UWorld*, FSimProxyWorldManager*> FSimProxyWorldManager::Managers;
@@ -43,11 +41,11 @@ namespace ClientPrediction {
             return;
         }
 
-        const int32 NewLocalOffset = LatestReceivedServerTick - TickInfo.LocalTick - kSimProxyBufferTicks;
-        if (LocalToServerOffset == INDEX_NONE || FMath::Abs(LocalToServerOffset - NewLocalOffset) >= kSimProxyBufferCorrectionThreshold) {
+        const int32 NewLocalOffset = LatestReceivedServerTick - TickInfo.LocalTick - ClientPredictionSimProxyBufferTicks;
+        if (LocalToServerOffset == INDEX_NONE || FMath::Abs(LocalToServerOffset - NewLocalOffset) >= ClientPredictionSimProxyCorrectionThreshold) {
             LocalToServerOffset = NewLocalOffset;
 
-            UE_LOG(LogTemp, Log, TEXT("Updating sim proxy offset to %d. "), NewLocalOffset);
+            UE_LOG(LogClientPrediction, Log, TEXT("Updating sim proxy offset to %d. "), NewLocalOffset);
         }
 
         // This offset can be added to a server tick on the authority to get the tick for sim proxies that is being displayed
@@ -55,7 +53,7 @@ namespace ClientPrediction {
         if (!RemoteSimProxyOffset.IsSet() || RemoteSimProxyOffset.GetValue().ServerTickOffset != AuthorityServerOffset) {
             RemoteSimProxyOffset = {TickInfo.ServerTick, AuthorityServerOffset};
 
-            UE_LOG(LogTemp, Log, TEXT("Updating remote sim proxy offset %d"), AuthorityServerOffset);
+            UE_LOG(LogClientPrediction, Log, TEXT("Updating remote sim proxy offset %d"), AuthorityServerOffset);
             RemoteSimProxyOffsetChangedDelegate.Broadcast(RemoteSimProxyOffset);
         }
     }
