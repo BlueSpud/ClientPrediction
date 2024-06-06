@@ -151,7 +151,7 @@ namespace ClientPrediction {
         WrappedState PrevState{};
         WrappedState CurrentState{};
         WrappedState LastInterpolatedState{};
-        bool bGeneratedInitialState = false;
+        TAtomic<bool> bGeneratedInitialState = false;
 
         TAtomic<bool> bEndedSimOnGameThread = false;
         FCriticalSection FinalStateMutex;
@@ -285,6 +285,8 @@ namespace ClientPrediction {
     void USimState<Traits>::GenerateInitialState(const FNetTickInfo& TickInfo) {
         if (SimDelegates == nullptr) { return; }
 
+        FScopeLock StateLock(&StateMutex);
+
         // We can leave the frame indexes and times as invalid because this is just a starting off point until we get the first valid frame
         USimState::FillStatePhysInfo(CurrentState, TickInfo);
         SimDelegates->GenerateInitialStatePTDelegate.Broadcast(CurrentState.State);
@@ -295,6 +297,10 @@ namespace ClientPrediction {
     template <typename Traits>
     ESimStage USimState<Traits>::PreparePrePhysics(const FNetTickInfo& TickInfo) {
         if (SimDelegates == nullptr) { return ESimStage::kRunning; }
+
+        if (!bGeneratedInitialState.Exchange(true)) {
+            GenerateInitialState(TickInfo);
+        }
 
         if (CanSimBeCleanedUp(TickInfo)) {
             return ESimStage::kReadyForCleanup;
@@ -315,11 +321,6 @@ namespace ClientPrediction {
         }
 
         FScopeLock StateLock(&StateMutex);
-        if (!bGeneratedInitialState) {
-            GenerateInitialState(TickInfo);
-            bGeneratedInitialState = true;
-        }
-
         ApplyCorrectionIfNeeded(TickInfo);
 
         const int32 PrevTickNumber = TickInfo.LocalTick - 1;
@@ -598,7 +599,7 @@ namespace ClientPrediction {
     template <typename Traits>
     void USimState<Traits>::InterpolateGameThread(UPrimitiveComponent* UpdatedComponent, Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, Chaos::FReal Dt,
                                                   ENetRole SimRole) {
-        if (UpdatedComponent == nullptr || SimDelegates == nullptr || bEndedSimOnGameThread) { return; }
+        if (UpdatedComponent == nullptr || SimDelegates == nullptr || !bGeneratedInitialState || bEndedSimOnGameThread) { return; }
 
         Chaos::FReal AdjustedResultsTime = SimRole != ROLE_SimulatedProxy ? ResultsTime : ResultsTime + SimProxyOffset;
         GetInterpolatedStateAtTime(AdjustedResultsTime, LastInterpolatedState);
