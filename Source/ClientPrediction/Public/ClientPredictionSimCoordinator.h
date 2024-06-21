@@ -143,6 +143,7 @@ namespace ClientPrediction {
 
         SimInput->SetBufferSize(RewindData->Capacity());
         SimState->SetBufferSize(RewindData->Capacity());
+        SimEvents->SetHistoryDuration(RewindData->Capacity() * PhysSolver->GetAsyncDeltaTime());
 
         InjectInputsGTDelegateHandle = PhysCallback->InjectInputsExternal.AddRaw(this, &USimCoordinator::InjectInputsGT);
         PreAdvanceDelegateHandle = PhysCallback->PreProcessInputsInternal.AddRaw(this, &USimCoordinator::PreAdvance);

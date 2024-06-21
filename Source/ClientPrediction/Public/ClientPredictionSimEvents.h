@@ -57,18 +57,13 @@ namespace ClientPrediction {
 
         bool bHasExecuted = false;
 
-        void ExecuteIfNeeded(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole);
+        void Execute();
         virtual void NetSerialize(FArchive& Ar) override;
     };
 
     template <typename EventType>
-    void FEventWrapper<EventType>::ExecuteIfNeeded(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole) {
+    void FEventWrapper<EventType>::Execute() {
         if (Delegate == nullptr) { return; }
-
-        Chaos::FReal AdjustedResultsTime = SimRole != ROLE_SimulatedProxy ? ResultsTime : ResultsTime + SimProxyOffset;
-        if (AdjustedResultsTime < ExecutionTime || bHasExecuted) {
-            return;
-        }
 
         Delegate->Broadcast(Event, TimeSincePredicted);
         bHasExecuted = true;
@@ -87,7 +82,7 @@ namespace ClientPrediction {
         virtual void CreateEvent(const FNetTickInfo& TickInfo, int32 RemoteSimProxyOffset, const void* Data) = 0;
         virtual void CreateEvent(FArchive& Ar, Chaos::FReal SimDt) = 0;
 
-        virtual void ExecuteEvents(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole) = 0;
+        virtual void ExecuteEvents(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole, Chaos::FReal HistoryDuration) = 0;
         virtual void Rewind(int32 LocalRewindTick) = 0;
         virtual int32 EmitEvents(int32 LatestEmittedTick, TArray<FEventSaver>& Serializers) = 0;
     };
@@ -100,7 +95,7 @@ namespace ClientPrediction {
         virtual void CreateEvent(const FNetTickInfo& TickInfo, int32 RemoteSimProxyOffset, const void* Data) override;
         virtual void CreateEvent(FArchive& Ar, Chaos::FReal SimDt) override;
 
-        virtual void ExecuteEvents(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole) override;
+        virtual void ExecuteEvents(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole, Chaos::FReal HistoryDuration) override;
         virtual void Rewind(int32 LocalRewindTick) override;
         virtual int32 EmitEvents(int32 LatestEmittedTick, TArray<FEventSaver>& Serializers) override;
 
@@ -112,6 +107,16 @@ namespace ClientPrediction {
 
     template <typename EventType>
     void FEventFactory<EventType>::CreateEvent(const FNetTickInfo& TickInfo, int32 RemoteSimProxyOffset, const void* Data) {
+        // We check for duplicate events that have already been emitted so that during resims we don't get a bunch of duplicate
+        // events all firing off.
+        const EventType& EventData = *static_cast<const EventType*>(Data);
+        for (WrappedEvent& Event : Events) {
+            if (!Event.bHasExecuted || TickInfo.LocalTick != Event.LocalTick) { continue; }
+            if (Event.Event.NetIdentical(EventData)) {
+                return;
+            }
+        }
+
         WrappedEvent NewEvent{};
         NewEvent.EventId = EventId;
         NewEvent.LocalTick = TickInfo.LocalTick;
@@ -121,9 +126,8 @@ namespace ClientPrediction {
         NewEvent.TimeSincePredicted = FMath::Abs(static_cast<Chaos::FReal>(FMath::Min(RemoteSimProxyOffset, 0)) * TickInfo.Dt);
 
         NewEvent.Delegate = &Delegate;
-        NewEvent.Event = *static_cast<const EventType*>(Data);
+        NewEvent.Event = EventData;
 
-        // CHECK FOR DUPLICATE EVENTS
         Events.Emplace(MoveTemp(NewEvent));
     }
 
@@ -136,13 +140,30 @@ namespace ClientPrediction {
         NewEvent.NetSerialize(Ar);
         NewEvent.ExecutionTime = static_cast<Chaos::FReal>(NewEvent.ServerTick) * SimDt;
 
+        // We don't need to check for duplicate events here because the authority sends them reliably.
         Events.Emplace(MoveTemp(NewEvent));
     }
 
     template <typename EventType>
-    void FEventFactory<EventType>::ExecuteEvents(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole) {
+    void FEventFactory<EventType>::ExecuteEvents(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole, Chaos::FReal HistoryDuration) {
+        const Chaos::FReal AdjustedResultsTime = SimRole != ROLE_SimulatedProxy ? ResultsTime : ResultsTime + SimProxyOffset;
+        const Chaos::FReal HistoryStartTime = AdjustedResultsTime - HistoryDuration;
+
         for (WrappedEvent& Event : Events) {
-            Event.ExecuteIfNeeded(ResultsTime, SimProxyOffset, SimRole);
+            if (AdjustedResultsTime < Event.ExecutionTime || Event.bHasExecuted) {
+                continue;
+            }
+
+            Event.Execute();
+        }
+
+        for (int32 EventIdx = 0; EventIdx < Events.Num();) {
+            if (Events[EventIdx].ExecutionTime < HistoryStartTime && Events[EventIdx].bHasExecuted) {
+                Events.RemoveAt(EventIdx);
+                continue;
+            }
+
+            ++EventIdx;
         }
     }
 
@@ -193,6 +214,8 @@ namespace ClientPrediction {
 
     class CLIENTPREDICTION_API USimEvents {
     public:
+        void SetHistoryDuration(Chaos::FReal NewHistoryDuration) { HistoryDuration = NewHistoryDuration; }
+
         template <typename EventType>
         TMulticastDelegate<void(const EventType&, Chaos::FReal)>& RegisterEvent();
 
@@ -215,6 +238,7 @@ namespace ClientPrediction {
         TMap<EventId, TUniquePtr<FEventFactoryBase>> Factories;
 
         FCriticalSection EventMutex;
+        int32 HistoryDuration = INDEX_NONE;
 
         // Relevant only for the authorities
         int32 LatestEmittedTick = INDEX_NONE;

@@ -11,6 +11,8 @@ namespace ClientPrediction {
     }
 
     void USimEvents::PreparePrePhysics(const FNetTickInfo& TickInfo) {
+        FScopeLock EventLock(&EventMutex);
+
         // These are emitted over a reliable RPC, so the order is guaranteed. No need to keep track of which offset has been acked.
         FRemoteSimProxyOffset NewRemoteSimProxyOffset{};
         while (QueuedRemoteSimProxyOffsets.Peek(NewRemoteSimProxyOffset)) {
@@ -25,7 +27,7 @@ namespace ClientPrediction {
     void USimEvents::ExecuteEvents(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole) {
         FScopeLock EventLock(&EventMutex);
         for (auto& FactoryPair : Factories) {
-            FactoryPair.Value->ExecuteEvents(ResultsTime, SimProxyOffset, SimRole);
+            FactoryPair.Value->ExecuteEvents(ResultsTime, SimProxyOffset, SimRole, HistoryDuration);
         }
     }
 
