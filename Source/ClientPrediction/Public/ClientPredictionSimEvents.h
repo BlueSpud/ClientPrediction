@@ -25,16 +25,23 @@ namespace ClientPrediction {
 
     struct FEventWrapperBase {
         virtual ~FEventWrapperBase() = default;
-
         EventId EventId = INDEX_NONE;
-        int32 LocalTick = INDEX_NONE;
-        int32 ServerTick = INDEX_NONE;
 
-        Chaos::FReal ExecutionTime = 0.0;
-        Chaos::FReal TimeSincePredicted = 0.0;
-
-        virtual bool ExecuteIfNeeded(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole) = 0;
         virtual void NetSerialize(FArchive& Ar) = 0;
+    };
+
+    struct FEventSaver {
+        FEventSaver(FEventWrapperBase& Event) : Event(Event) {}
+
+        void NetSerialize(FArchive& Ar, void* Userdata) {
+            check(Ar.IsSaving());
+
+            Ar << Event.EventId;
+            Event.NetSerialize(Ar);
+        }
+
+    private:
+        FEventWrapperBase& Event;
     };
 
     template <typename EventType>
@@ -42,21 +49,29 @@ namespace ClientPrediction {
         TMulticastDelegate<void(const EventType&, Chaos::FReal)>* Delegate = nullptr;
         EventType Event{};
 
-        virtual bool ExecuteIfNeeded(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole) override;
+        int32 LocalTick = INDEX_NONE;
+        int32 ServerTick = INDEX_NONE;
+
+        Chaos::FReal ExecutionTime = 0.0;
+        Chaos::FReal TimeSincePredicted = 0.0;
+
+        bool bHasExecuted = false;
+
+        void ExecuteIfNeeded(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole);
         virtual void NetSerialize(FArchive& Ar) override;
     };
 
     template <typename EventType>
-    bool FEventWrapper<EventType>::ExecuteIfNeeded(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole) {
-        if (Delegate == nullptr) { return true; }
+    void FEventWrapper<EventType>::ExecuteIfNeeded(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole) {
+        if (Delegate == nullptr) { return; }
 
         Chaos::FReal AdjustedResultsTime = SimRole != ROLE_SimulatedProxy ? ResultsTime : ResultsTime + SimProxyOffset;
-        if (AdjustedResultsTime < ExecutionTime) {
-            return false;
+        if (AdjustedResultsTime < ExecutionTime || bHasExecuted) {
+            return;
         }
 
         Delegate->Broadcast(Event, TimeSincePredicted);
-        return true;
+        bHasExecuted = true;
     }
 
     template <typename EventType>
@@ -69,8 +84,12 @@ namespace ClientPrediction {
 
     struct FEventFactoryBase {
         virtual ~FEventFactoryBase() = default;
-        virtual TUniquePtr<FEventWrapperBase> CreateEvent(const FNetTickInfo& TickInfo, int32 RemoteSimProxyOffset, const void* Data) = 0;
-        virtual TUniquePtr<FEventWrapperBase> CreateEvent(FArchive& Ar, Chaos::FReal SimDt) = 0;
+        virtual void CreateEvent(const FNetTickInfo& TickInfo, int32 RemoteSimProxyOffset, const void* Data) = 0;
+        virtual void CreateEvent(FArchive& Ar, Chaos::FReal SimDt) = 0;
+
+        virtual void ExecuteEvents(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole) = 0;
+        virtual void Rewind(int32 LocalRewindTick) = 0;
+        virtual int32 EmitEvents(int32 LatestEmittedTick, TArray<FEventSaver>& Serializers) = 0;
     };
 
     template <typename EventType>
@@ -78,55 +97,80 @@ namespace ClientPrediction {
         using WrappedEvent = FEventWrapper<EventType>;
 
         FEventFactory(int32 EventId) : EventId(EventId) {}
-        virtual TUniquePtr<FEventWrapperBase> CreateEvent(const FNetTickInfo& TickInfo, int32 RemoteSimProxyOffset, const void* Data) override;
-        virtual TUniquePtr<FEventWrapperBase> CreateEvent(FArchive& Ar, Chaos::FReal SimDt) override;
+        virtual void CreateEvent(const FNetTickInfo& TickInfo, int32 RemoteSimProxyOffset, const void* Data) override;
+        virtual void CreateEvent(FArchive& Ar, Chaos::FReal SimDt) override;
+
+        virtual void ExecuteEvents(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole) override;
+        virtual void Rewind(int32 LocalRewindTick) override;
+        virtual int32 EmitEvents(int32 LatestEmittedTick, TArray<FEventSaver>& Serializers) override;
 
         TMulticastDelegate<void(const EventType&, Chaos::FReal)> Delegate;
         int32 EventId = INDEX_NONE;
+
+        TArray<WrappedEvent> Events;
     };
 
     template <typename EventType>
-    TUniquePtr<FEventWrapperBase> FEventFactory<EventType>::CreateEvent(const FNetTickInfo& TickInfo, int32 RemoteSimProxyOffset, const void* Data) {
-        TUniquePtr<WrappedEvent> NewEvent = MakeUnique<WrappedEvent>();
-        NewEvent->EventId = EventId;
-        NewEvent->LocalTick = TickInfo.LocalTick;
-        NewEvent->ServerTick = TickInfo.ServerTick;
+    void FEventFactory<EventType>::CreateEvent(const FNetTickInfo& TickInfo, int32 RemoteSimProxyOffset, const void* Data) {
+        WrappedEvent NewEvent{};
+        NewEvent.EventId = EventId;
+        NewEvent.LocalTick = TickInfo.LocalTick;
+        NewEvent.ServerTick = TickInfo.ServerTick;
 
-        NewEvent->ExecutionTime = TickInfo.StartTime;
-        NewEvent->TimeSincePredicted = FMath::Abs(static_cast<Chaos::FReal>(FMath::Min(RemoteSimProxyOffset, 0)) * TickInfo.Dt);
+        NewEvent.ExecutionTime = TickInfo.StartTime;
+        NewEvent.TimeSincePredicted = FMath::Abs(static_cast<Chaos::FReal>(FMath::Min(RemoteSimProxyOffset, 0)) * TickInfo.Dt);
 
-        NewEvent->Delegate = &Delegate;
-        NewEvent->Event = *static_cast<const EventType*>(Data);
+        NewEvent.Delegate = &Delegate;
+        NewEvent.Event = *static_cast<const EventType*>(Data);
 
-        return NewEvent;
+        // CHECK FOR DUPLICATE EVENTS
+        Events.Emplace(MoveTemp(NewEvent));
     }
 
     template <typename EventType>
-    TUniquePtr<FEventWrapperBase> FEventFactory<EventType>::CreateEvent(FArchive& Ar, Chaos::FReal SimDt) {
-        TUniquePtr<WrappedEvent> NewEvent = MakeUnique<WrappedEvent>();
-        NewEvent->EventId = EventId;
-        NewEvent->Delegate = &Delegate;
+    void FEventFactory<EventType>::CreateEvent(FArchive& Ar, Chaos::FReal SimDt) {
+        WrappedEvent NewEvent{};
+        NewEvent.EventId = EventId;
+        NewEvent.Delegate = &Delegate;
 
-        NewEvent->NetSerialize(Ar);
+        NewEvent.NetSerialize(Ar);
+        NewEvent.ExecutionTime = static_cast<Chaos::FReal>(NewEvent.ServerTick) * SimDt;
 
-        NewEvent->ExecutionTime = static_cast<Chaos::FReal>(NewEvent->ServerTick) * SimDt;
-
-        return NewEvent;
+        Events.Emplace(MoveTemp(NewEvent));
     }
 
-    struct FEventSaver {
-        FEventSaver(const TUniquePtr<FEventWrapperBase>& Event) : Event(Event) {}
+    template <typename EventType>
+    void FEventFactory<EventType>::ExecuteEvents(Chaos::FReal ResultsTime, Chaos::FReal SimProxyOffset, ENetRole SimRole) {
+        for (WrappedEvent& Event : Events) {
+            Event.ExecuteIfNeeded(ResultsTime, SimProxyOffset, SimRole);
+        }
+    }
 
-        void NetSerialize(FArchive& Ar, void* Userdata) {
-            check(Ar.IsSaving());
+    template <typename EventType>
+    void FEventFactory<EventType>::Rewind(int32 LocalRewindTick) {
+        for (int32 EventIdx = 0; EventIdx < Events.Num();) {
+            if (Events[EventIdx].LocalTick >= LocalRewindTick && !Events[EventIdx].bHasExecuted) {
+                Events.RemoveAt(EventIdx);
+                continue;
+            }
 
-            Ar << Event->EventId;
-            Event->NetSerialize(Ar);
+            ++EventIdx;
+        }
+    }
+
+    template <typename EventType>
+    int32 FEventFactory<EventType>::EmitEvents(int32 LatestEmittedTick, TArray<FEventSaver>& Serializers) {
+        int32 NewestEvent = INDEX_NONE;
+
+        for (WrappedEvent& Event : Events) {
+            if (Event.ServerTick > LatestEmittedTick) {
+                NewestEvent = FMath::Max(Event.ServerTick, NewestEvent);
+                Serializers.Add(FEventSaver(Event));
+            }
         }
 
-    private:
-        const TUniquePtr<FEventWrapperBase>& Event;
-    };
+        return NewestEvent;
+    }
 
     struct FEventLoaderUserdata {
         const TMap<EventId, TUniquePtr<FEventFactoryBase>>& Factories;
@@ -135,7 +179,6 @@ namespace ClientPrediction {
 
     struct FEventLoader {
         void NetSerialize(FArchive& Ar, const FEventLoaderUserdata& Userdata);
-        TUniquePtr<FEventWrapperBase> Event;
     };
 
     inline void FEventLoader::NetSerialize(FArchive& Ar, const FEventLoaderUserdata& Userdata) {
@@ -145,7 +188,7 @@ namespace ClientPrediction {
         Ar << EventId;
 
         check(Userdata.Factories.Contains(EventId));
-        Event = Userdata.Factories[EventId]->CreateEvent(Ar, Userdata.SimDt);
+        Userdata.Factories[EventId]->CreateEvent(Ar, Userdata.SimDt);
     }
 
     class CLIENTPREDICTION_API USimEvents {
@@ -172,7 +215,6 @@ namespace ClientPrediction {
         TMap<EventId, TUniquePtr<FEventFactoryBase>> Factories;
 
         FCriticalSection EventMutex;
-        TArray<TUniquePtr<FEventWrapperBase>> Events;
 
         // Relevant only for the authorities
         int32 LatestEmittedTick = INDEX_NONE;
@@ -198,6 +240,6 @@ namespace ClientPrediction {
         const EventId EventId = FEventIds::GetId<EventType>();
         if (!Factories.Contains(EventId)) { return; }
 
-        Events.Emplace(Factories[EventId]->CreateEvent(TickInfo, RemoteSimProxyOffset, &NewEvent));
+        Factories[EventId]->CreateEvent(TickInfo, RemoteSimProxyOffset, &NewEvent);
     }
 }
