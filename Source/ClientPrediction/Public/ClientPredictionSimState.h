@@ -60,6 +60,8 @@ namespace ClientPrediction {
     template <typename StateType>
     void FWrappedState<StateType>::Extrapolate(const FWrappedState& PrevState, Chaos::FReal ExtrapolationTime) {
         const Chaos::FReal StateDt = EndTime - PrevState.EndTime;
+        if (StateDt == 0.0) { return; }
+
         PhysState.Extrapolate(PrevState.PhysState, StateDt, ExtrapolationTime);
     }
 
@@ -193,8 +195,6 @@ namespace ClientPrediction {
         TArray<WrappedState> AuthorityStates;
         Packets.Bundle().Retrieve(AuthorityStates, this);
 
-        // We add the states to a queue so that we can update these states as well as the existing ones in SimProxyAdjustStateTimeline(). We can't do all that
-        // logic in this function since the sim proxy offset might change in between receives.
         int32 NewestState = INDEX_NONE;
         for (WrappedState& NewState : AuthorityStates) {
             NewestState = FMath::Max(NewestState, NewState.ServerTick);
@@ -410,8 +410,6 @@ namespace ClientPrediction {
             while (StateHistory.Num() > NextStateIdx) {
                 StateHistory.RemoveAt(NextStateIdx);
             }
-
-            return;
         }
     }
 
@@ -431,7 +429,7 @@ namespace ClientPrediction {
             if (bAutoProxyAppliedFinalState) { return; }
             bAutoProxyAppliedFinalState = true;
 
-            // Now that we know when the final state is actually applied, we can update all of the relevant values on it. 
+            // Now that we know when the final state is actually applied, we can update all of the relevant values on it.
             FinalState.LocalTick = TickInfo.LocalTick;
             FinalState.ServerTick = TickInfo.ServerTick;
 
@@ -676,6 +674,8 @@ namespace ClientPrediction {
         }
 
         const Chaos::FReal ExtrapolationTime = ResultsTime - OutState.EndTime;
+        if (ExtrapolationTime == 0.0) { return; }
+
         OutState.Extrapolate(StateHistory[StateHistory.Num() - 2], ExtrapolationTime);
     }
 
