@@ -17,6 +17,8 @@ struct FPacketBundle {
     template <typename Packet, typename UserdataType>
     bool Retrieve(TArray<Packet>& Packets, UserdataType Userdata) const;
 
+    bool HasData() const;
+
 private:
     template <typename Packet, typename UserdataType>
     void NetSerializePacket(Packet& PacketToSerialize, UserdataType Userdata, FArchive& Ar) const;
@@ -27,8 +29,8 @@ public:
 
 private:
     TArray<uint8> SerializedBits;
-    int32 NumberOfBits = -1;
-    int32 Sequence = 0;
+    int32 NumberOfBits = INDEX_NONE;
+    uint64 Sequence = 0;
 };
 
 template <ClientPrediction::EDataCompleteness Completeness>
@@ -73,6 +75,9 @@ bool FPacketBundle<Completeness>::Retrieve(TArray<Packet>& Packets, UserdataType
 
     return true;
 }
+
+template <ClientPrediction::EDataCompleteness Completeness>
+bool FPacketBundle<Completeness>::HasData() const { return NumberOfBits != INDEX_NONE; }
 
 template <ClientPrediction::EDataCompleteness Completeness>
 template <typename Packet, typename UserdataType>
@@ -135,6 +140,7 @@ struct FBundledPackets {
     bool Identical(const FBundledPackets* Other, uint32 PortFlags) const;
 
     BundleType& Bundle() const { return Impl; }
+    bool HasData() const { return Impl.HasData(); }
 
 private:
     mutable BundleType Impl;
@@ -158,6 +164,7 @@ struct FBundledPacketsLow {
     bool Identical(const FBundledPacketsLow* Other, uint32 PortFlags) const;
 
     BundleType& Bundle() const { return Impl; }
+    bool HasData() const { return Impl.HasData(); }
 
 private:
     mutable BundleType Impl;
@@ -181,6 +188,7 @@ struct FBundledPacketsFull {
     bool Identical(const FBundledPacketsFull* Other, uint32 PortFlags) const;
 
     BundleType& Bundle() const { return Impl; }
+    bool HasData() const { return Impl.HasData(); }
 
 private:
     mutable BundleType Impl;

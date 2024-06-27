@@ -106,6 +106,9 @@ namespace ClientPrediction {
         int32 CachedTickNumber = INDEX_NONE;
         int32 EarliestLocalTick = INDEX_NONE;
         Chaos::FReal LastResultsTime = -1.0;
+
+        FCriticalSection FinalStateMutex;
+        TOptional<FBundledPacketsFull> FinalStatePacket;
     };
 
     template <typename Traits>
@@ -238,6 +241,15 @@ namespace ClientPrediction {
 
         FNetTickInfo TickInfo{};
         if (!BuildTickInfo(TickInfo)) { return; }
+
+        if (SimRole != ROLE_Authority)
+        {
+            FScopeLock FinalStateLock(&FinalStateMutex);
+            if (FinalStatePacket.IsSet()) {
+                SimState->ConsumeFinalState(FinalStatePacket.GetValue(), TickInfo);
+                FinalStatePacket.Reset();
+            }
+        }
 
         // State needs to come before the input because the input depends on the current state. If the simulation is over we don't need to prepare input anymore.
         SimStage = SimState->PreparePrePhysics(TickInfo);
@@ -387,17 +399,8 @@ namespace ClientPrediction {
 
     template <typename Traits>
     void USimCoordinator<Traits>::ConsumeFinalState(FBundledPacketsFull Packets) {
-        if (UpdatedComponent == nullptr || SimState == nullptr || SimRole == ROLE_Authority) { return; }
-
-        FPhysScene* PhysScene = GetPhysScene();
-        if (PhysScene == nullptr) { return; }
-
-        PhysScene->EnqueueAsyncPhysicsCommand(0, UpdatedComponent, [this, Packets = MoveTemp(Packets)]() {
-            FNetTickInfo TickInfo{};
-            if (!BuildTickInfo(TickInfo)) { return; }
-
-            SimState->ConsumeFinalState(Packets, TickInfo);
-        });
+        FScopeLock FinalStateLock(&FinalStateMutex);
+        FinalStatePacket = MoveTemp(Packets);
     }
 
     template <typename Traits>

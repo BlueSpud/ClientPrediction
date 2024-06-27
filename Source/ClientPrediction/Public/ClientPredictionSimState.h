@@ -60,7 +60,7 @@ namespace ClientPrediction {
     template <typename StateType>
     void FWrappedState<StateType>::Extrapolate(const FWrappedState& PrevState, Chaos::FReal ExtrapolationTime) {
         const Chaos::FReal StateDt = EndTime - PrevState.EndTime;
-        if (StateDt == 0.0) { return; }
+        if (StateDt <= 0.0) { return; }
 
         PhysState.Extrapolate(PrevState.PhysState, StateDt, ExtrapolationTime);
     }
@@ -191,7 +191,6 @@ namespace ClientPrediction {
     template <typename Traits>
     int32 USimState<Traits>::ConsumeSimProxyStates(const FBundledPacketsLow& Packets, Chaos::FReal SimDt) {
         FScopeLock StateLock(&StateMutex);
-
         TArray<WrappedState> AuthorityStates;
         Packets.Bundle().Retrieve(AuthorityStates, this);
 
@@ -621,20 +620,18 @@ namespace ClientPrediction {
             Handle.SetR(LastInterpolatedState.PhysState.R);
         }
 
+        if (LastInterpolatedState.bIsFinalState) {
+            if (SimRole == ROLE_SimulatedProxy) {
+                UpdatedComponent->SetCollisionEnabled(CachedCollisionMode);
+            }
+
+            UpdatedComponent->SyncComponentToRBPhysics();
+            BodyInstance->SetInstanceSimulatePhysics(false, true, true);
+        }
+
+
         SimDelegates->FinalizeDelegate.Broadcast(LastInterpolatedState.State, Dt);
-
-        if (!LastInterpolatedState.bIsFinalState) {
-            return;
-        }
-
-        if (SimRole == ROLE_SimulatedProxy) {
-            UpdatedComponent->SetCollisionEnabled(CachedCollisionMode);
-        }
-
-        UpdatedComponent->SyncComponentToRBPhysics();
-        BodyInstance->SetInstanceSimulatePhysics(false, true, true);
-
-        bEndedSimOnGameThread = true;
+        bEndedSimOnGameThread |= LastInterpolatedState.bIsFinalState;
     }
 
     template <typename Traits>
