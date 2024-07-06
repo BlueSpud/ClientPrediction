@@ -1,5 +1,7 @@
 ﻿#include "ClientPredictionPhysState.h"
 
+#include "ClientPredictionCVars.h"
+
 namespace ClientPrediction {
     bool FPhysState::ShouldReconcile(const FPhysState& State) const {
         if (State.ObjectState != ObjectState) { return true; }

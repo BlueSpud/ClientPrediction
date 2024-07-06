@@ -28,7 +28,7 @@ namespace ClientPrediction {
 
         void NetSerialize(FArchive& Ar, EDataCompleteness Completeness, void* Userdata);
         void Interpolate(const FWrappedState& Other, Chaos::FReal Alpha);
-        void Extrapolate(const FWrappedState& PrevState, Chaos::FReal ExtrapolationTime);
+        void Extrapolate(const FWrappedState& PrevState, Chaos::FReal StateDt, Chaos::FReal ExtrapolationTime);
     };
 
     template <typename StateType>
@@ -58,10 +58,7 @@ namespace ClientPrediction {
     }
 
     template <typename StateType>
-    void FWrappedState<StateType>::Extrapolate(const FWrappedState& PrevState, Chaos::FReal ExtrapolationTime) {
-        const Chaos::FReal StateDt = EndTime - PrevState.EndTime;
-        if (StateDt <= 0.0) { return; }
-
+    void FWrappedState<StateType>::Extrapolate(const FWrappedState& PrevState, Chaos::FReal StateDt, Chaos::FReal ExtrapolationTime) {
         PhysState.Extrapolate(PrevState.PhysState, StateDt, ExtrapolationTime);
     }
 
@@ -673,7 +670,15 @@ namespace ClientPrediction {
         const Chaos::FReal ExtrapolationTime = ResultsTime - OutState.EndTime;
         if (ExtrapolationTime == 0.0) { return; }
 
-        OutState.Extrapolate(StateHistory[StateHistory.Num() - 2], ExtrapolationTime);
+        const WrappedState& PrevExtrapolationState = StateHistory[StateHistory.Num() - 2];
+        const Chaos::FReal StateDt = OutState.EndTime - PrevExtrapolationState.EndTime;
+        if (StateDt <= 0.0) { return; }
+
+        OutState.Extrapolate(PrevExtrapolationState, StateDt, ExtrapolationTime);
+
+        if (SimDelegates != nullptr) {
+            SimDelegates->ExtrapolateDelegate.Broadcast(OutState.State, PrevExtrapolationState.State, StateDt, ExtrapolationTime);
+        }
     }
 
     template <typename Traits>

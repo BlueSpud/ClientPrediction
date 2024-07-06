@@ -68,6 +68,9 @@ namespace ClientPrediction {
         DECLARE_MULTICAST_DELEGATE_TwoParams(FFinalizeDelegate, const StateType& State, Chaos::FReal Dt)
         FFinalizeDelegate FinalizeDelegate;
 
+        DECLARE_MULTICAST_DELEGATE_FourParams(FExtrapolateDelegate, StateType&, const StateType&, Chaos::FReal, Chaos::FReal)
+        FExtrapolateDelegate ExtrapolateDelegate;
+
         DECLARE_DELEGATE_RetVal_TwoParams(bool, FIsSimFinishedDelegate, const FSimTickInfo& TickInfo, const StateType& State)
         FIsSimFinishedDelegate IsSimFinishedDelegate;
 
