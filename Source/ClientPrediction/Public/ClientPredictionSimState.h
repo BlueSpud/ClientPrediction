@@ -615,6 +615,10 @@ namespace ClientPrediction {
 
             Handle.SetX(LastInterpolatedState.PhysState.X);
             Handle.SetR(LastInterpolatedState.PhysState.R);
+
+            if (Cast<USkeletalMeshComponent>(UpdatedComponent) == nullptr) {
+                UpdatedComponent->SyncComponentToRBPhysics();
+            }
         }
 
         if (LastInterpolatedState.bIsFinalState) {

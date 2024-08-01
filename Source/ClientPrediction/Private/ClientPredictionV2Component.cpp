@@ -33,7 +33,7 @@ void UClientPredictionV2Component::BeginPlay() {
     const AActor* OwnerActor = GetOwner();
     if (OwnerActor == nullptr || SimCoordinator == nullptr) { return; }
 
-    SimCoordinator->Initialize(UpdatedComponent, OwnerActor->GetNetConnection() != nullptr, OwnerActor->GetLocalRole());
+    SimCoordinator->Initialize(UpdatedComponent, OwnerActor->GetLocalRole());
 
     if (FinalState.HasData()) {
         SimCoordinator->ConsumeFinalState(FinalState);

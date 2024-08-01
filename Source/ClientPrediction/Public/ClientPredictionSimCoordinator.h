@@ -15,7 +15,7 @@ namespace ClientPrediction {
     class USimCoordinatorBase {
     public:
         virtual ~USimCoordinatorBase() = default;
-        virtual void Initialize(UPrimitiveComponent* NewUpdatedComponent, bool bNowHasNetConnection, ENetRole NewSimRole) = 0;
+        virtual void Initialize(UPrimitiveComponent* NewUpdatedComponent, ENetRole NewSimRole) = 0;
         virtual void Destroy() = 0;
 
         virtual void ConsumeInputBundle(FBundledPackets Packets) = 0;
@@ -44,7 +44,7 @@ namespace ClientPrediction {
         TSharedPtr<USimEvents> SimEvents;
 
     public:
-        virtual void Initialize(UPrimitiveComponent* NewUpdatedComponent, bool bNowHasNetConnection, ENetRole NewSimRole) override;
+        virtual void Initialize(UPrimitiveComponent* NewUpdatedComponent, ENetRole NewSimRole) override;
         virtual void Destroy() override;
 
     private:
@@ -99,7 +99,6 @@ namespace ClientPrediction {
         TSharedPtr<FSimDelegates<Traits>> SimDelegates;
 
         class UPrimitiveComponent* UpdatedComponent = nullptr;
-        bool bHasNetConnection = false;
         ENetRole SimRole = ROLE_None;
 
         Chaos::FReal CachedSolverTime = -1.0;
@@ -122,11 +121,10 @@ namespace ClientPrediction {
     }
 
     template <typename Traits>
-    void USimCoordinator<Traits>::Initialize(UPrimitiveComponent* NewUpdatedComponent, bool bNowHasNetConnection, ENetRole NewSimRole) {
+    void USimCoordinator<Traits>::Initialize(UPrimitiveComponent* NewUpdatedComponent, ENetRole NewSimRole) {
         if (SimInput == nullptr || SimState == nullptr) { return; }
 
         UpdatedComponent = NewUpdatedComponent;
-        bHasNetConnection = bNowHasNetConnection;
         SimRole = NewSimRole;
 
         FPhysScene* PhysScene = GetPhysScene();
@@ -323,7 +321,7 @@ namespace ClientPrediction {
         Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
         if (PhysSolver == nullptr) { return false; }
 
-        Info.bHasNetConnection = bHasNetConnection;
+        Info.bHasNetConnection = UpdatedComponent->GetOwner() != nullptr && UpdatedComponent->GetOwner()->GetNetConnection() != nullptr;
         Info.bIsResim = PhysSolver->GetEvolution()->IsResimming();
 
         Info.Dt = PhysSolver->GetAsyncDeltaTime();
