@@ -35,7 +35,7 @@ namespace ClientPrediction {
         static TMap<class UWorld*, FSimProxyWorldManager*> Managers;
 
     public:
-        static FSimProxyWorldManager* InitializeWorld(class UWorld* World);
+        static void InitializeWorld(class UWorld* World);
         static FSimProxyWorldManager* ManagerForWorld(const class UWorld* World);
         static void CleanupWorld(const class UWorld* World);
 

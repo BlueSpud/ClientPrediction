@@ -8,13 +8,12 @@ namespace ClientPrediction {
 
     // Initialization
 
-    FSimProxyWorldManager* FSimProxyWorldManager::InitializeWorld(UWorld* World) {
+    void FSimProxyWorldManager::InitializeWorld(UWorld* World) {
+        if (!World->IsGameWorld()) { return; }
         check(!Managers.Contains(World));
 
         FSimProxyWorldManager* Manager = new FSimProxyWorldManager(World);
         Managers.Add(World, Manager);
-
-        return Manager;
     }
 
     FSimProxyWorldManager* FSimProxyWorldManager::ManagerForWorld(const UWorld* World) {
