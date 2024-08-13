@@ -15,4 +15,6 @@ namespace ClientPrediction {
     extern CLIENTPREDICTION_API int32 ClientPredictionSimProxyCorrectionThreshold;
 
     extern CLIENTPREDICTION_API int32 ClientPredictionInputWindowSize;
+
+    extern CLIENTPREDICTION_API float ClientPredictionSimProxyTickInterval;
 }

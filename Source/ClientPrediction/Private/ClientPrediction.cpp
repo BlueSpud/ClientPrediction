@@ -20,11 +20,11 @@ void FClientPredictionModule::ShutdownModule() {
 }
 
 void FClientPredictionModule::OnPostWorldInitialize(UWorld* InWorld, const UWorld::InitializationValues) {
-	ClientPrediction::FSimProxyWorldManager::InitializeWorld(InWorld);
+	AClientPredictionSimProxyManager::InitializeWorld(InWorld);
 }
 
 void FClientPredictionModule::OnWorldCleanup(UWorld* InWorld, bool bSessionEnded, bool bCleanupResources) {
-	ClientPrediction::FSimProxyWorldManager::CleanupWorld(InWorld);
+	AClientPredictionSimProxyManager::CleanupWorld(InWorld);
 }
 
 #undef LOCTEXT_NAMESPACE

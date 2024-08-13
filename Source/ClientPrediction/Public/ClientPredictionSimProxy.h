@@ -29,35 +29,40 @@ struct TStructOpsTypeTraits<FRemoteSimProxyOffset> : public TStructOpsTypeTraits
     };
 };
 
-namespace ClientPrediction {
-    struct CLIENTPREDICTION_API FSimProxyWorldManager {
-    private:
-        static TMap<class UWorld*, FSimProxyWorldManager*> Managers;
+UCLASS()
+class CLIENTPREDICTION_API AClientPredictionSimProxyManager : public AActor {
+    GENERATED_BODY()
 
-    public:
-        static void InitializeWorld(class UWorld* World);
-        static FSimProxyWorldManager* ManagerForWorld(const class UWorld* World);
-        static void CleanupWorld(const class UWorld* World);
+    static TMap<class UWorld*, AClientPredictionSimProxyManager*> Managers;
 
-        virtual ~FSimProxyWorldManager() = default;
+public:
+    static void InitializeWorld(class UWorld* World);
+    static AClientPredictionSimProxyManager* ManagerForWorld(const class UWorld* World);
+    static void CleanupWorld(const class UWorld* World);
 
-    private:
-        explicit FSimProxyWorldManager(class UWorld* World);
+    AClientPredictionSimProxyManager();
+    virtual void PostInitProperties() override;
 
-    public:
-        void ReceivedSimProxyStates(const FNetTickInfo& TickInfo, const int32 LatestReceivedServerTick);
-        int32 GetLocalToServerOffset() const { return LocalToServerOffset; }
-        const TOptional<FRemoteSimProxyOffset>& GetRemoteSimProxyOffset() const { return RemoteSimProxyOffset; }
+    virtual void Tick(float DeltaSeconds) override;
 
-    private:
-        UWorld* World = nullptr;
+    int32 GetLocalToServerOffset() const;
+    const TOptional<FRemoteSimProxyOffset>& GetRemoteSimProxyOffset() const;
 
-        /** This offset can be added to a local tick to get the server tick for sim proxies. */
-        int32 LocalToServerOffset = INDEX_NONE;
-        TOptional<FRemoteSimProxyOffset> RemoteSimProxyOffset{};
+private:
+    UFUNCTION()
+    void LatestServerTickChangedGT();
+    void LatestServerTickChangedPT(const int32 TickToProcess);
 
-    public:
-        DECLARE_MULTICAST_DELEGATE_OneParam(FRemoteSimProxyOffsetChangedDelegate, const TOptional<FRemoteSimProxyOffset>& Offset)
-        FRemoteSimProxyOffsetChangedDelegate RemoteSimProxyOffsetChangedDelegate;
-    };
-}
+    UPROPERTY(ReplicatedUsing=LatestServerTickChangedGT)
+    int32 LatestServerTick = INDEX_NONE;
+
+    mutable FCriticalSection OffsetsMutex{};
+
+    /** This offset can be added to a local tick to get the server tick for sim proxies. */
+    int32 LocalToServerOffset = INDEX_NONE;
+    TOptional<FRemoteSimProxyOffset> RemoteSimProxyOffset{};
+
+public:
+    DECLARE_MULTICAST_DELEGATE_OneParam(FRemoteSimProxyOffsetChangedDelegate, const TOptional<FRemoteSimProxyOffset>& Offset)
+    FRemoteSimProxyOffsetChangedDelegate RemoteSimProxyOffsetChangedDelegate;
+};

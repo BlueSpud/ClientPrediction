@@ -98,7 +98,7 @@ namespace ClientPrediction {
         TSharedPtr<USimEvents> SimEvents;
 
     public:
-        int32 ConsumeSimProxyStates(const FBundledPacketsLow& Packets, Chaos::FReal SimDt);
+        void ConsumeSimProxyStates(const FBundledPacketsLow& Packets, Chaos::FReal SimDt);
         void ConsumeAutoProxyStates(const FBundledPacketsFull& Packets);
         void ConsumeFinalState(const FBundledPacketsFull& Packets, const FNetTickInfo& TickInfo);
 
@@ -186,15 +186,12 @@ namespace ClientPrediction {
     }
 
     template <typename Traits>
-    int32 USimState<Traits>::ConsumeSimProxyStates(const FBundledPacketsLow& Packets, Chaos::FReal SimDt) {
+    void USimState<Traits>::ConsumeSimProxyStates(const FBundledPacketsLow& Packets, Chaos::FReal SimDt) {
         FScopeLock StateLock(&StateMutex);
         TArray<WrappedState> AuthorityStates;
         Packets.Bundle().Retrieve(AuthorityStates, this);
 
-        int32 NewestState = INDEX_NONE;
         for (WrappedState& NewState : AuthorityStates) {
-            NewestState = FMath::Max(NewestState, NewState.ServerTick);
-
             if (StateHistory.ContainsByPredicate([&](const WrappedState& Other) { return Other.ServerTick == NewState.ServerTick; })) {
                 continue;
             }
@@ -204,8 +201,6 @@ namespace ClientPrediction {
         }
 
         StateHistory.Sort([](const WrappedState& Lhs, const WrappedState& Rhs) { return Lhs.ServerTick < Rhs.ServerTick; });
-
-        return NewestState;
     }
 
     template <typename Traits>

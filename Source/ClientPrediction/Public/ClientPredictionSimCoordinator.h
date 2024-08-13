@@ -9,6 +9,7 @@
 #include "ClientPredictionSimProxy.h"
 #include "ClientPredictionSimState.h"
 #include "ClientPredictionSimEvents.h"
+#include "ClientPredictionUtils.h"
 #include "ClientPredictionTick.h"
 
 namespace ClientPrediction {
@@ -139,7 +140,7 @@ namespace ClientPrediction {
         FNetworkPhysicsCallback* PhysCallback = GetPhysCallback();
         if (PhysCallback == nullptr) { return; }
 
-        FSimProxyWorldManager* SimProxyWorldManager = FSimProxyWorldManager::ManagerForWorld(UpdatedComponent->GetWorld());
+        AClientPredictionSimProxyManager* SimProxyWorldManager = AClientPredictionSimProxyManager::ManagerForWorld(GetWorld());
         if (SimProxyWorldManager == nullptr) { return; }
 
         SimInput->SetBufferSize(RewindData->Capacity());
@@ -181,7 +182,7 @@ namespace ClientPrediction {
         FNetworkPhysicsCallback* PhysCallback = GetPhysCallback();
         if (PhysCallback == nullptr) { return; }
 
-        FSimProxyWorldManager* SimProxyWorldManager = FSimProxyWorldManager::ManagerForWorld(UpdatedComponent->GetWorld());
+        AClientPredictionSimProxyManager* SimProxyWorldManager = AClientPredictionSimProxyManager::ManagerForWorld(GetWorld());
         if (SimProxyWorldManager == nullptr) { return; }
 
         PhysCallback->InjectInputsExternal.Remove(InjectInputsGTDelegateHandle);
@@ -240,8 +241,7 @@ namespace ClientPrediction {
         FNetTickInfo TickInfo{};
         if (!BuildTickInfo(TickInfo)) { return; }
 
-        if (SimRole != ROLE_Authority)
-        {
+        if (SimRole != ROLE_Authority) {
             FScopeLock FinalStateLock(&FinalStateMutex);
             if (FinalStatePacket.IsSet()) {
                 SimState->ConsumeFinalState(FinalStatePacket.GetValue(), TickInfo);
@@ -292,7 +292,7 @@ namespace ClientPrediction {
         Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
         if (PhysSolver == nullptr) { return; }
 
-        FSimProxyWorldManager* SimProxyWorldManager = FSimProxyWorldManager::ManagerForWorld(UpdatedComponent->GetWorld());
+        AClientPredictionSimProxyManager* SimProxyWorldManager = AClientPredictionSimProxyManager::ManagerForWorld(GetWorld());
         if (SimProxyWorldManager == nullptr) { return; }
 
         if (SimRole == ENetRole::ROLE_AutonomousProxy) {
@@ -318,33 +318,21 @@ namespace ClientPrediction {
     bool USimCoordinator<Traits>::BuildTickInfo(FNetTickInfo& Info) const {
         if (UpdatedComponent == nullptr) { return false; }
 
-        Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
-        if (PhysSolver == nullptr) { return false; }
+        const UWorld* World = GetWorld();
+        if (World == nullptr) { return false; }
+
+        if (!FUtils::FillTickInfo(Info, CachedTickNumber, SimRole, World)) {
+            return false;
+        }
 
         Info.bHasNetConnection = UpdatedComponent->GetOwner() != nullptr && UpdatedComponent->GetOwner()->GetNetConnection() != nullptr;
-        Info.bIsResim = PhysSolver->GetEvolution()->IsResimming();
 
-        Info.Dt = PhysSolver->GetAsyncDeltaTime();
         Info.StartTime = CachedSolverTime;
         Info.EndTime = Info.StartTime + Info.Dt;
 
         Info.UpdatedComponent = UpdatedComponent;
-        Info.SimProxyWorldManager = FSimProxyWorldManager::ManagerForWorld(UpdatedComponent->GetWorld());
+        Info.SimProxyWorldManager = AClientPredictionSimProxyManager::ManagerForWorld(World);
         Info.SimRole = SimRole;
-
-        if (SimRole != ENetRole::ROLE_Authority) {
-            APlayerController* PlayerController = GetPlayerController();
-            if (PlayerController == nullptr || !PlayerController->GetNetworkPhysicsTickOffsetAssigned()) {
-                return false;
-            }
-
-            Info.LocalTick = CachedTickNumber;
-            Info.ServerTick = CachedTickNumber + PlayerController->GetNetworkPhysicsTickOffset();
-        }
-        else {
-            Info.LocalTick = CachedTickNumber;
-            Info.ServerTick = CachedTickNumber;
-        }
 
         return true;
     }
@@ -369,16 +357,8 @@ namespace ClientPrediction {
         if (PhysScene == nullptr) { return; }
 
         PhysScene->EnqueueAsyncPhysicsCommand(0, UpdatedComponent, [this, Packets = MoveTemp(Packets)]() {
-            Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
-            if (PhysSolver == nullptr) { return; }
-
-            int32 LatestReceivedServerTick = SimState->ConsumeSimProxyStates(Packets, PhysSolver->GetAsyncDeltaTime());
-
-            FNetTickInfo TickInfo{};
-            FSimProxyWorldManager* WorldManager = FSimProxyWorldManager::ManagerForWorld(UpdatedComponent->GetWorld());
-
-            if (WorldManager != nullptr && BuildTickInfo(TickInfo)) {
-                WorldManager->ReceivedSimProxyStates(TickInfo, LatestReceivedServerTick);
+            if (Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver()) {
+                SimState->ConsumeSimProxyStates(Packets, PhysSolver->GetAsyncDeltaTime());
             }
         });
     }

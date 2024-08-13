@@ -2,20 +2,25 @@
 
 #include "CoreMinimal.h"
 
+class AClientPredictionSimProxyManager;
+
 namespace ClientPrediction {
-    struct FNetTickInfo {
+    struct FTickInfo {
         int32 LocalTick = INDEX_NONE;
         int32 ServerTick = INDEX_NONE;
 
-        bool bHasNetConnection = false;
-        bool bIsResim = false;
-
         Chaos::FReal Dt = 0.0;
+        bool bIsResim = false;
+    };
+
+    struct FNetTickInfo : public FTickInfo {
+        bool bHasNetConnection = false;
+
         Chaos::FReal StartTime = 0.0;
         Chaos::FReal EndTime = 0.0;
 
         class UPrimitiveComponent* UpdatedComponent = nullptr;
-        struct FSimProxyWorldManager* SimProxyWorldManager = nullptr;
+        AClientPredictionSimProxyManager* SimProxyWorldManager = nullptr;
         ENetRole SimRole = ROLE_None;
     };
 

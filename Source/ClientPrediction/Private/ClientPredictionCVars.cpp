@@ -37,4 +37,8 @@ namespace ClientPrediction {
     CLIENTPREDICTION_API int32 ClientPredictionInputWindowSize = 3;
     FAutoConsoleVariableRef CVarClientPredictionInputWindowSize(TEXT("cp.InputWindowSize"), ClientPredictionInputWindowSize,
                                                                 TEXT("The size of the sliding window used to send inputs"));
+
+    CLIENTPREDICTION_API float ClientPredictionSimProxyTickInterval = 0.1;
+    FAutoConsoleVariableRef CVarClientPredictionSimProxyTickInterval(TEXT("cp.SimProxyTickInterval"), ClientPredictionSimProxyTickInterval,
+                                                                     TEXT("The interval that the authority sends the latest tick to the remotes"));
 }
