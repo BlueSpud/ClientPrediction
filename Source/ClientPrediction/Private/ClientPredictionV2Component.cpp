@@ -84,3 +84,7 @@ void UClientPredictionV2Component::ClientRecvEvents_Implementation(const FBundle
 void UClientPredictionV2Component::ServerRecvRemoteSimProxyOffset_Implementation(const FRemoteSimProxyOffset& Offset) {
     if (SimCoordinator != nullptr) { SimCoordinator->ConsumeRemoteSimProxyOffset(Offset); }
 }
+
+bool UClientPredictionV2Component::ShouldSendToServer() const {
+    return GetOwner() != nullptr && GetOwner()->GetNetConnection() != nullptr;
+}

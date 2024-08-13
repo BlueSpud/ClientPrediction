@@ -54,6 +54,8 @@ private:
     UFUNCTION(Server, Reliable)
     void ServerRecvRemoteSimProxyOffset(const FRemoteSimProxyOffset& Offset);
 
+    bool ShouldSendToServer() const;
+
     UPROPERTY()
     class UPrimitiveComponent* UpdatedComponent;
 
@@ -72,14 +74,22 @@ TSharedPtr<ClientPrediction::FSimDelegates<Traits>> UClientPredictionV2Component
     TUniquePtr<ClientPrediction::USimCoordinator<Traits>> Impl = MakeUnique<ClientPrediction::USimCoordinator<Traits>>(InputImpl, StateImpl, SimEvents);
     TSharedPtr<ClientPrediction::FSimDelegates<Traits>> Delegates = Impl->GetSimDelegates();
 
-    InputImpl->EmitInputBundleDelegate.BindUFunction(this, TEXT("ServerRecvInput"));
+    InputImpl->EmitInputBundleDelegate.BindWeakLambda(this, [&](const FBundledPackets& Bundle) {
+        if (!ShouldSendToServer()) { return; }
+        ServerRecvInput(Bundle);
+    });
+
+
     StateImpl->EmitSimProxyBundle.BindLambda([&](const FBundledPacketsLow& Packets) { SimProxyStates.Bundle().Copy(Packets.Bundle()); });
     StateImpl->EmitAutoProxyBundle.BindLambda([&](const FBundledPacketsFull& Packets) { AutoProxyStates.Bundle().Copy(Packets.Bundle()); });
     StateImpl->EmitFinalBundle.BindLambda([&](const FBundledPacketsFull& Packets) { FinalState.Bundle().Copy(Packets.Bundle()); });
 
     SimEvents->EmitEventBundle.BindUFunction(this, TEXT("ClientRecvEvents"));
 
-    Impl->RemoteSimProxyOffsetChangedDelegate.BindUFunction(this, TEXT("ServerRecvRemoteSimProxyOffset"));
+    Impl->RemoteSimProxyOffsetChangedDelegate.BindWeakLambda(this, [&](const FRemoteSimProxyOffset& Offset) {
+        if (!ShouldSendToServer()) { return; }
+        ServerRecvRemoteSimProxyOffset(Offset);
+    });
 
     SimInput = MoveTemp(InputImpl);
     SimState = MoveTemp(StateImpl);
