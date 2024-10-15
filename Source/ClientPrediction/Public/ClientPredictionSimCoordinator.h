@@ -173,23 +173,19 @@ namespace ClientPrediction {
     void USimCoordinator<Traits>::DestroyPT() {
         if (bDestroyedPT.Exchange(true)) { return; }
 
-        FPhysScene* PhysScene = GetPhysScene();
-        if (PhysScene == nullptr) { return; }
+        if (Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver()) {
+            PhysSolver->RemovePostAdvanceCallback(PostAdvanceDelegateHandle);
+        }
 
-        Chaos::FPhysicsSolver* PhysSolver = GetPhysSolver();
-        if (PhysSolver == nullptr) { return; }
+        if (FNetworkPhysicsCallback* PhysCallback = GetPhysCallback()) {
+            PhysCallback->InjectInputsExternal.Remove(InjectInputsGTDelegateHandle);
+            PhysCallback->PreProcessInputsInternal.Remove(PreAdvanceDelegateHandle);
+            PhysCallback->UnregisterRewindableSimCallback_Internal(this);
+        }
 
-        FNetworkPhysicsCallback* PhysCallback = GetPhysCallback();
-        if (PhysCallback == nullptr) { return; }
-
-        AClientPredictionSimProxyManager* SimProxyWorldManager = AClientPredictionSimProxyManager::ManagerForWorld(GetWorld());
-        if (SimProxyWorldManager == nullptr) { return; }
-
-        PhysCallback->InjectInputsExternal.Remove(InjectInputsGTDelegateHandle);
-        PhysCallback->PreProcessInputsInternal.Remove(PreAdvanceDelegateHandle);
-        PhysSolver->RemovePostAdvanceCallback(PostAdvanceDelegateHandle);
-
-        PhysCallback->UnregisterRewindableSimCallback_Internal(this);
+        if (AClientPredictionSimProxyManager* SimProxyWorldManager = AClientPredictionSimProxyManager::ManagerForWorld(GetWorld())) {
+            SimProxyWorldManager->RemoteSimProxyOffsetChangedDelegate.Remove(RemoteSimProxyOffsetChangedDelegateHandle);
+        }
     }
 
     template <typename Traits>
