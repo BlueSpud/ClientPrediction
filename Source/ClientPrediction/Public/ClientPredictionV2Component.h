@@ -22,7 +22,8 @@ public:
     virtual void UninitializeComponent() override;
 
     template <typename Traits>
-    TSharedPtr<ClientPrediction::FSimDelegates<Traits>> CreateSimulation();
+    TSharedPtr<ClientPrediction::FSimDelegates<Traits>> CreateSimulation(
+        const TFunction<void(typename Traits::StateType&, FArchive& Ar, ClientPrediction::EDataCompleteness)>& NetSerialize);
 
 private:
     void DestroySimulation();
@@ -66,9 +67,10 @@ private:
 };
 
 template <typename Traits>
-TSharedPtr<ClientPrediction::FSimDelegates<Traits>> UClientPredictionV2Component::CreateSimulation() {
+TSharedPtr<ClientPrediction::FSimDelegates<Traits>> UClientPredictionV2Component::CreateSimulation(
+    const TFunction<void(typename Traits::StateType&, FArchive& Ar, ClientPrediction::EDataCompleteness)>& NetSerializeState) {
     TSharedPtr<ClientPrediction::USimInput<Traits>> InputImpl = MakeShared<ClientPrediction::USimInput<Traits>>();
-    TSharedPtr<ClientPrediction::USimState<Traits>> StateImpl = MakeShared<ClientPrediction::USimState<Traits>>();
+    TSharedPtr<ClientPrediction::USimState<Traits>> StateImpl = MakeShared<ClientPrediction::USimState<Traits>>(NetSerializeState);
     SimEvents = MakeShared<ClientPrediction::USimEvents>();
 
     TUniquePtr<ClientPrediction::USimCoordinator<Traits>> Impl = MakeUnique<ClientPrediction::USimCoordinator<Traits>>(InputImpl, StateImpl, SimEvents);

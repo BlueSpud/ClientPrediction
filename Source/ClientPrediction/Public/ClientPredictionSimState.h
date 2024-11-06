@@ -13,8 +13,10 @@
 #include "ClientPredictionCVars.h"
 
 namespace ClientPrediction {
-    template <typename StateType>
+    template <typename Traits>
     struct FWrappedState {
+        using StateType = typename Traits::StateType;
+
         int32 LocalTick = INDEX_NONE;
         int32 ServerTick = INDEX_NONE;
         bool bIsFinalState = false;
@@ -31,8 +33,10 @@ namespace ClientPrediction {
         void Extrapolate(const FWrappedState& PrevState, Chaos::FReal StateDt, Chaos::FReal ExtrapolationTime);
     };
 
-    template <typename StateType>
-    void FWrappedState<StateType>::NetSerialize(FArchive& Ar, EDataCompleteness Completeness, void* Userdata) {
+    template <typename Traits>
+    void FWrappedState<Traits>::NetSerialize(FArchive& Ar, EDataCompleteness Completeness, void* Userdata) {
+        auto& NetSerialize = *static_cast<TFunction<void(StateType&, FArchive& Ar, ClientPrediction::EDataCompleteness)>*>(Userdata);
+
         if (Ar.IsSaving()) {
             checkSlow(ServerTick >= INDEX_NONE);
 
@@ -48,17 +52,17 @@ namespace ClientPrediction {
         }
 
         PhysState.NetSerialize(Ar, Completeness);
-        State.NetSerialize(Ar, Completeness);
+        NetSerialize(State, Ar, Completeness);
     }
 
-    template <typename StateType>
-    void FWrappedState<StateType>::Interpolate(const FWrappedState& Other, Chaos::FReal Alpha) {
+    template <typename Traits>
+    void FWrappedState<Traits>::Interpolate(const FWrappedState& Other, Chaos::FReal Alpha) {
         PhysState.Interpolate(Other.PhysState, Alpha);
         State.Interpolate(Other.State, Alpha);
     }
 
-    template <typename StateType>
-    void FWrappedState<StateType>::Extrapolate(const FWrappedState& PrevState, Chaos::FReal StateDt, Chaos::FReal ExtrapolationTime) {
+    template <typename Traits>
+    void FWrappedState<Traits>::Extrapolate(const FWrappedState& PrevState, Chaos::FReal StateDt, Chaos::FReal ExtrapolationTime) {
         PhysState.Extrapolate(PrevState.PhysState, StateDt, ExtrapolationTime);
     }
 
@@ -85,10 +89,12 @@ namespace ClientPrediction {
     private:
         using InputType = typename Traits::InputType;
         using StateType = typename Traits::StateType;
-        using WrappedState = typename FWrappedState<StateType>;
+        using WrappedState = typename FWrappedState<Traits>;
 
     public:
+        USimState(const TFunction<void(StateType&, FArchive& Ar, ClientPrediction::EDataCompleteness)>& NetSerialize);
         virtual ~USimState() override = default;
+
         void SetSimDelegates(const TSharedPtr<FSimDelegates<Traits>>& NewSimDelegates);
         void SetSimEvents(const TSharedPtr<USimEvents>& NewSimEvents);
         void SetBufferSize(int32 BufferSize);
@@ -143,6 +149,8 @@ namespace ClientPrediction {
         const StateType& GetPrevState() { return PrevState.State; }
 
     private:
+        TFunction<void(StateType&, FArchive& Ar, ClientPrediction::EDataCompleteness)> NetSerialize;
+
         FCriticalSection StateMutex;
         TArray<WrappedState> StateHistory;
         int32 StateHistoryCapacity = INDEX_NONE;
@@ -171,6 +179,9 @@ namespace ClientPrediction {
     };
 
     template <typename Traits>
+    USimState<Traits>::USimState(const TFunction<void(StateType&, FArchive& Ar, ClientPrediction::EDataCompleteness)>& NetSerialize) : NetSerialize(NetSerialize) {}
+
+    template <typename Traits>
     void USimState<Traits>::SetSimDelegates(const TSharedPtr<FSimDelegates<Traits>>& NewSimDelegates) {
         SimDelegates = NewSimDelegates;
     }
@@ -189,7 +200,7 @@ namespace ClientPrediction {
     void USimState<Traits>::ConsumeSimProxyStates(const FBundledPacketsLow& Packets, Chaos::FReal SimDt) {
         FScopeLock StateLock(&StateMutex);
         TArray<WrappedState> AuthorityStates;
-        Packets.Bundle().Retrieve(AuthorityStates, this);
+        Packets.Bundle().Retrieve(AuthorityStates, &NetSerialize);
 
         for (WrappedState& NewState : AuthorityStates) {
             if (StateHistory.ContainsByPredicate([&](const WrappedState& Other) { return Other.ServerTick == NewState.ServerTick; })) {
@@ -206,7 +217,7 @@ namespace ClientPrediction {
     template <typename Traits>
     void USimState<Traits>::ConsumeAutoProxyStates(const FBundledPacketsFull& Packets) {
         TArray<WrappedState> AuthorityStates;
-        Packets.Bundle().Retrieve(AuthorityStates, this);
+        Packets.Bundle().Retrieve(AuthorityStates, &NetSerialize);
 
         if (AuthorityStates.IsEmpty() || AuthorityStates.Last().ServerTick <= LatestAuthorityState.ServerTick) { return; }
         LatestAuthorityState = AuthorityStates.Last();
@@ -218,7 +229,7 @@ namespace ClientPrediction {
         FScopeLock StateLock(&StateMutex);
 
         TArray<WrappedState> AuthorityState;
-        Packets.Bundle().Retrieve(AuthorityState, this);
+        Packets.Bundle().Retrieve(AuthorityState, &NetSerialize);
 
         check(AuthorityState.Num() == 1);
         FinalState = AuthorityState[0];
@@ -549,7 +560,7 @@ namespace ClientPrediction {
             FBundledPacketsFull FinalStatePacket{};
             TArray<WrappedState> FinalStateArr = {FinalState};
 
-            FinalStatePacket.Bundle().Store(FinalStateArr, this);
+            FinalStatePacket.Bundle().Store(FinalStateArr, &NetSerialize);
             EmitFinalBundle.ExecuteIfBound(FinalStatePacket);
 
             LatestEmittedTick = TNumericLimits<int32>::Max();
@@ -565,7 +576,7 @@ namespace ClientPrediction {
             FBundledPacketsFull AutoProxyPackets{};
             TArray<WrappedState> AutoProxyStates{StateHistory[StateIdx]};
 
-            AutoProxyPackets.Bundle().Store(AutoProxyStates, this);
+            AutoProxyPackets.Bundle().Store(AutoProxyStates, &NetSerialize);
             EmitAutoProxyBundle.ExecuteIfBound(AutoProxyPackets);
         }
 
@@ -578,7 +589,7 @@ namespace ClientPrediction {
 
         if (!SimProxyStates.IsEmpty()) {
             FBundledPacketsLow SimProxyPackets{};
-            SimProxyPackets.Bundle().Store(SimProxyStates, this);
+            SimProxyPackets.Bundle().Store(SimProxyStates, &NetSerialize);
             EmitSimProxyBundle.ExecuteIfBound(SimProxyPackets);
         }
 
