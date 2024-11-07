@@ -49,6 +49,10 @@ namespace ClientPrediction {
             LatestEmittedTick = FMath::Max(FactoryNewestEvent, LatestEmittedTick);
         }
 
+        if (Serializers.IsEmpty()) {
+            return;
+        }
+
         FBundledPackets EventPackets{};
         EventPackets.Bundle().Store(Serializers, this);
         EmitEventBundle.ExecuteIfBound(EventPackets);

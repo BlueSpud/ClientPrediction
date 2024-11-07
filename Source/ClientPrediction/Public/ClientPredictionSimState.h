@@ -578,6 +578,8 @@ namespace ClientPrediction {
 
             AutoProxyPackets.Bundle().Store(AutoProxyStates, &NetSerialize);
             EmitAutoProxyBundle.ExecuteIfBound(AutoProxyPackets);
+
+            break;
         }
 
         TArray<WrappedState> SimProxyStates;
@@ -587,13 +589,14 @@ namespace ClientPrediction {
             }
         }
 
-        if (!SimProxyStates.IsEmpty()) {
-            FBundledPacketsLow SimProxyPackets{};
-            SimProxyPackets.Bundle().Store(SimProxyStates, &NetSerialize);
-            EmitSimProxyBundle.ExecuteIfBound(SimProxyPackets);
+        LatestEmittedTick = StateHistory.Last().ServerTick;
+        if (SimProxyStates.IsEmpty()) {
+            return;
         }
 
-        LatestEmittedTick = StateHistory.Last().ServerTick;
+        FBundledPacketsLow SimProxyPackets{};
+        SimProxyPackets.Bundle().Store(SimProxyStates, &NetSerialize);
+        EmitSimProxyBundle.ExecuteIfBound(SimProxyPackets);
     }
 
     template <typename Traits>

@@ -104,7 +104,7 @@ bool FPacketBundle<Completeness>::NetSerialize(FArchive& Ar, UPackageMap* Map, b
         Ar << NumberOfBits;
         Ar << CompressedBuffer;
 
-        FArchiveLoadCompressedProxy Decompressor(CompressedBuffer, NAME_Zlib);
+        FArchiveLoadCompressedProxy Decompressor(CompressedBuffer, NAME_Zlib, COMPRESS_BiasMemory);
         Decompressor << SerializedBits;
 
         ++Sequence;

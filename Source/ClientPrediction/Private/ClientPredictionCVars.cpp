@@ -17,11 +17,11 @@ namespace ClientPrediction {
     FAutoConsoleVariableRef CVarClientPredictionAngularVelTolerance(TEXT("cp.AngularVelTolerance"), ClientPredictionAngularVelTolerance,
                                                                     TEXT("If the angular velocity deleta is less than this, a correction won't be applied"));
 
-    CLIENTPREDICTION_API int32 ClientPredictionAutoProxySendInterval = 4;
+    CLIENTPREDICTION_API int32 ClientPredictionAutoProxySendInterval = 8;
     FAutoConsoleVariableRef CVarClientPredictionAutoProxySendInterval(TEXT("cp.AutoProxySendInterval"), ClientPredictionSimProxySendInterval,
                                                                       TEXT("1 out of cp.AutoProxySendInterval ticks will be sent to auto proxies"));
 
-    CLIENTPREDICTION_API int32 ClientPredictionSimProxySendInterval = 2;
+    CLIENTPREDICTION_API int32 ClientPredictionSimProxySendInterval = 3;
     FAutoConsoleVariableRef CVarClientPredictionSimProxySendInterval(TEXT("cp.SimProxySendInterval"), ClientPredictionSimProxySendInterval,
                                                                      TEXT("1 out of cp.SimProxySendInterval ticks will be sent to sim proxies"));
 
