@@ -31,7 +31,7 @@ namespace ClientPrediction {
 
     void FPhysState::NetSerialize(FArchive& Ar, EDataCompleteness Completeness) {
         if (Completeness == EDataCompleteness::kLow) {
-            SerializePackedVector<100, 30>(X, Ar);
+            SerializePackedVector<10, 24>(X, Ar);
 
             FRotator3f HalfRotator;
             if (Ar.IsSaving()) {
