@@ -33,15 +33,15 @@ namespace ClientPrediction {
         if (Completeness == EDataCompleteness::kLow) {
             SerializePackedVector<10, 24>(X, Ar);
 
-            FRotator3f HalfRotator;
+            FRotator Rotator{};
             if (Ar.IsSaving()) {
-                HalfRotator = Chaos::FRotation3f(R).Rotator();
+                Rotator = R.Rotator();
             }
 
-            HalfRotator.SerializeCompressedShort(Ar);
+            Rotator.SerializeCompressedShort(Ar);
 
             if (Ar.IsLoading()) {
-                R = HalfRotator.Quaternion();
+                R = Rotator.Quaternion();
             }
 
             return;
